@@ -20,7 +20,7 @@
   --span-taxon-color: #444;
   --article-taxon-color: #888;
   --mark-color: rgb(255, 255, 151);
-  --filter-math: none;
+  --auto-filter: none;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,7 +40,7 @@
     --logo-color: #999;
     --logo-hover-color: #eee;
     --span-taxon-color: #bbb;
-    --filter-math: invert(100%);
+    --auto-filter: invert(100%);
   }
 }
 
@@ -89,6 +89,10 @@ table {
 th {
   font-weight: normal;
   padding: 0 1rem;
+}
+
+.auto-filter svg { 
+  filter: var(--auto-filter);
 }
 
 /* !forest */

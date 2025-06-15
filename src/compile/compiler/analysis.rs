@@ -7,11 +7,11 @@ use std::collections::{HashMap, HashSet};
 pub(super) type Relation = HashMap<Key, HashSet<Key>>;
 
 pub(super) fn analyse_parents_and_backlinks<'b, 'a: 'b>(
-    changed_articles: &Vec<Article<'a>>,
+    changed_articles: Vec<&Article<'a>>,
 ) -> (Relation, Relation) {
     let mut parents: HashMap<Key, HashSet<Key>> = HashMap::new();
     let mut backlinks: HashMap<Key, HashSet<Key>> = HashMap::new();
-    changed_articles.iter().for_each(|article| {
+    changed_articles.into_iter().for_each(|article| {
         let node = article.get_meta_node();
         for cited in &node.references {
             backlinks

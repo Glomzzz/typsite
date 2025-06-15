@@ -153,6 +153,12 @@ fn load_hashes(hash_path: &Path, hash_cache_path: &Path, ext: &str) -> HashMap<P
 fn hash_pattern(pattern: &str) -> Vec<(PathBuf, Hash)> {
     walk_glob!("{pattern}")
         .par_bridge()
+        .filter(|it| {
+            it.extension()
+                .and_then(|it| it.to_str())
+                .map(|it| !it.ends_with("~"))
+                .unwrap_or(true)
+        })
         .filter_map(|path| {
             let hash = compute_hash(&path)?;
             Some((path, hash))

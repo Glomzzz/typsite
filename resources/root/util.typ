@@ -42,6 +42,9 @@
   if target() != "html" {
     return align(alignment, content)
   }
+  if alignment == none {
+    return content
+  }
   let horizontally = if alignment == none { "left" } else if alignment == center { "center" } else if (
     alignment == left
   ) { "left" } else if alignment == right { "right" } else if alignment.x == center { "center" } else if (
@@ -55,22 +58,25 @@
 
 #let inline-content = state("inline-content", false)
 
-#let inline(scale: 100%, alignment: none, fill: none, content) = {
+#let inline(scale: 100%, alignment: none, fill: none, auto-filter: false, content) = {
   context {
     let content = if fill != none { block(content, fill: fill) } else { content }
     let content = typst-scale(scale, origin: left + top, content)
     if target() != "html" {
       return align(alignment, content)
     }
-    let size = measure(box(content))
+    let size = measure(content)
     let width = size.width * scale
     let height = size.height * scale
     let width = if width == 0pt { auto } else { width }
     let height = if height == 0pt { auto } else { height }
+    let content-frame(content) = html.elem("span", attrs: (class: "auto-svg", scale: to-string([#scale])), content)
+    if auto-filter {
+      content-frame = content => html.elem("span", attrs: (class: "auto-filter"), content-frame(content))
+    }
     let content = [
       #inline-content.update(true)
-      #let frame = html.frame(content)
-      #html.elem("span", attrs: (class: "auto-svg", scale: to-string([#scale])), frame)
+      #content-frame(html.frame(content))
       #inline-content.update(false)
     ]
     text-align(alignment, content)
@@ -99,14 +105,14 @@
 #let inline_math(body, block: bool, scale: 100%) = {
   if block {
     html.elem("div", attrs: (class: "math-container"))[
-      #html.elem("span", attrs: (class: "math-block", content: to-string(body)))[
-        #inline(scale: scale)[#body]
+      #html.elem("span", attrs: (class: "math-block"))[
+        #inline(scale: scale, auto-filter: true)[#body]
       ]
     ]
   } else {
     box[
-      #html.elem("span", attrs: (id: "math-inline", content: to-string(body)))[
-        #inline(scale: scale)[#body]
+      #html.elem("span", attrs: (class: "math-inline"))[
+        #inline(scale: scale + 70%, auto-filter: true)[#body]
       ]
     ]
   }

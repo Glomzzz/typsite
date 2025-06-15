@@ -11,6 +11,8 @@
 
 这是一段普通的文本.
 
+这是 #metacontent("LaTeX",from: "/index.typ")
+
 #text-align(center)[
 
   #html-text(size: 52pt, weight: "bold", fill: rgb("#22D3EE"))[Typst]

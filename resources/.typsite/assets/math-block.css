@@ -27,7 +27,6 @@
 .math-block svg {
   transform: scale(2);
   transform-origin: center;
-  filter: var(--filter-math);
   display: block !important;
   width: auto !important;
   height: auto !important;

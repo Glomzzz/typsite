@@ -14,6 +14,8 @@
 
 This is a regular paragraph of text.
 
+This is #metacontent("LaTeX",from: "/index.typ")
+
 #text-align(center)[
 
   #html-text(size: 52pt, weight: "bold", fill: rgb("#22D3EE"))[Typst]

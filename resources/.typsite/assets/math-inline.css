@@ -12,12 +12,7 @@
 }
 
 .math-inline svg {
-    filter: var(--filter-math); 
-    display: block !important;
-    width: auto;
-    height: 0.82em; 
-    margin: 0.12em 0.3em; 
-    transform: translateY(0.06em);
+    margin: 0.12em 0.2em; 
     padding: 0.08em 0;
     shape-rendering: geometricPrecision;
 }

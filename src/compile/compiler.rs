@@ -70,8 +70,8 @@ impl Compiler {
             output_path,
         })
     }
-    pub async fn watch(self,host:String, port: u16) -> Result<()> {
-        watch(self,host, port).await
+    pub async fn watch(self, host: String, port: u16) -> Result<()> {
+        watch(self, host, port).await
     }
     pub fn compile(&self) -> Result<bool> {
         //1. Initialize input & config
@@ -141,15 +141,16 @@ impl Compiler {
             .map(|article| article.slug.clone())
             .collect::<HashSet<_>>();
 
-        //4. Analyse articles
-        // Record parents and backlinks
-        let (parents, backlinks) = analyse_parents_and_backlinks(&changed_articles);
-
         // Collect all updated articles
         let mut loaded_articles = article_cache
             .drain() // Drain all articles from Article Manager ( for a simpler lifetime)
             .chain(changed_articles.into_iter().map(|a| (a.slug.clone(), a)))
             .collect::<HashMap<_, _>>();
+
+        //4. Analyse articles
+        // Record parents and backlinks
+        let (parents, backlinks) =
+            analyse_parents_and_backlinks(loaded_articles.values().collect());
 
         // Update parents and backlinks into all loaded articles
         apply_parents_and_backlinks(&mut loaded_articles, parents, backlinks);
