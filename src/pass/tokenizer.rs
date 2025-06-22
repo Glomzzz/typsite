@@ -23,13 +23,16 @@ pub enum Event<T: Label> {
 #[derive(Debug, Clone)]
 pub enum HeadTag {
     Schema { schema: String },
+    Unique
 }
 
 const SCHEMA_KEY: &str = "schema";
+const UNIQUE_KEY: &str = "unique";
 impl Label for HeadTag {
     fn name(&self) -> &'static str {
         match &self {
             HeadTag::Schema { .. } => SCHEMA_KEY,
+            HeadTag::Unique => UNIQUE_KEY
         }
     }
 }
@@ -151,6 +154,9 @@ fn emit_head_next(
                         .to_string();
                     HeadTag::Schema { schema }
                 }
+                UNIQUE_KEY => {
+                    HeadTag::Unique
+                }
                 _ => return Ok(Some(Event::Other(Token::StartTag(start_tag)))),
             };
             if !start_tag.self_closing {
@@ -166,6 +172,9 @@ fn emit_head_next(
                 SCHEMA_KEY => {
                     let backtrace = tokenizer.backtrace.pop();
                     Event::End(backtrace.context("Expect a start tag in the backtrace stack.")?)
+                }
+                UNIQUE_KEY => {
+                    Event::End(HeadTag::Unique)
                 }
                 _ => Event::Other(Token::EndTag(end_tag)),
             };

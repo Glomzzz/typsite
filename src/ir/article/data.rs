@@ -193,12 +193,10 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
         article.head.iter().for_each(|it| head.end(it.to_string()));
         metadata
             .node
-            .refs_and_backlinks()
-            .into_iter()
-            .filter_map(|slug| self.article(slug))
-            .map(|article| &article.head)
-            .flatten()
-            .for_each(|it| head.end(it.to_string()));
+            .children
+            .iter()
+            .filter_map(|it| self.article(it))
+            .for_each(|it| self.init_article_head(it, head));
     }
 
     pub fn init_html_head(&'c self, article: &'b Article<'a>) -> &'b OutputHead<'a> {
@@ -223,8 +221,8 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
             }
 
             self.init_rewrite_head(article, &mut head);
-
             self.init_article_head(article, &mut head);
+
             head
         })
     }
