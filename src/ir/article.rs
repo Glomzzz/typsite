@@ -164,6 +164,7 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
             .content
             .get_or_init(|| global_data.init_cache(self))
     }
+
     pub fn get_pending_or_init(
         &'b self,
         global_data: &'c GlobalData<'a, 'b, 'c>,
@@ -198,9 +199,11 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
     pub fn get_meta_node(&self) -> &MetaNode {
         &self.metadata.node
     }
+
     pub fn get_mut_meta_node(&mut self) -> &mut MetaNode {
         &mut self.metadata.node
     }
+
 
     pub fn all_used_rules(&self, global_data: &'c GlobalData<'a, 'b, 'c>) -> &HashSet<&'a str> {
         self.cache.all_used_rules.get_or_init(|| {

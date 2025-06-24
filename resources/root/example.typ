@@ -3,11 +3,11 @@
 #show: schema.with(
   "page",
   head: [
-    #html.tag(
+    #unique(html.tag(
       "link",
       rel: "stylesheet",
       href: "https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC&amp;display=swap",
-    )[]
+    )[])
   ],
 )
 

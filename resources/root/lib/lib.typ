@@ -12,6 +12,7 @@
   heading-numbering,
   sidebar,
   parent,
+  unique
 )
 
 #import "html.typ" as html
@@ -51,7 +52,7 @@
     body,
     [
       #import "@local/typsite:0.1.0": mathyml
-      #mathyml.include-mathfont()
+      #unique(mathyml.include-mathfont())
       #head
     ],
     body => {

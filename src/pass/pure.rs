@@ -341,10 +341,19 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
                 self.schema = Some(schema);
                 self.skip = Some("schema".to_string());
             }
+            HeadTag::Unique => {
+                self.push_head_buffer();
+            }
         }
         Ok(())
     }
-    fn handle_head_end_tag(&mut self, _: HeadTag) -> std::result::Result<(), Error> {
+    fn handle_head_end_tag(&mut self, end_tag: HeadTag) -> std::result::Result<(), Error> {
+        match end_tag {
+            HeadTag::Unique => {
+                self.push_head_buffer();
+            }
+            _ => {}
+        }
         Ok(())
     }
 
