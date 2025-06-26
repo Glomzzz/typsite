@@ -3,7 +3,7 @@
 [ [English](./README.md) | **中文** ]
 
 <div style="text-align: center;">
-<img src="./icon.png" width="37.5%"/>
+<img src="./icon.svg" width="50%"/>
 </div>
 
 <div style="text-align: center;">
@@ -79,4 +79,6 @@ nix build .
 来和我一起壮大typsite!
 
 ## 鸣谢
+
+- [gjz010](https://github.com/gjz010) : typsite logo
 - [kokic](https://github.com/kokic) : [kodama](https://github.com/kokic/kodama) for **Markdown + Typst + LaTeX SSG**

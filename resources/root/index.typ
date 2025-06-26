@@ -174,7 +174,7 @@
 ]
 
 #metacontent("icon")[
-  #html.align(center, inline(scale: 37.5%, image("icon.png")))
+  #html.align(center, inline(scale: 200%, image("icon.svg")))
 ]
 
 #set text(font: "Inria Sans") // From .typsite/assets/font
