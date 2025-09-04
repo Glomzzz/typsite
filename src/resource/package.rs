@@ -160,14 +160,37 @@ impl fmt::Display for PackageInfo {
         Ok(())
     }
 }
+
+/**
+* Get the cache directory based on the operating system.
+*
+* - On Linux: `$HOME/.cache`
+* - On macOS: `$HOME/Library/Caches`
+* - On Windows: `$HOME/AppData/Local`
+*/
+fn cache_dir() -> Result<PathBuf> {
+    let cache_path = home_dir().with_context(|| "Failed to get home directory")?;
+    let cache_path = if cfg!(target_os = "linux") {
+        cache_path.join(".cache")
+    } else if cfg!(target_os = "macos") {
+        cache_path.join("Library").join("Caches")
+    } else if cfg!(target_os = "windows") {
+        cache_path.join("AppData").join("Local")
+    } else {
+        return Err(anyhow!("Unsupported OS"));
+    };
+    Ok(cache_path)
+}
+
 impl PackageInfo {
+
     pub fn get_local_dir(&self) -> Result<PathBuf> {
-        let home_path = home_dir().with_context(|| {
-            format!("Failed to get home directory while installing {self} into @local")
+        let cache_path = cache_dir().with_context(|| {
+            format!("Failed to get cache directory while installing {self} into @local")
         })?;
         let PackageInfo { name, version } = self;
         let local_package =
-            home_path.join(format!(".cache/typst/packages/local/{name}/{version}/"));
+            cache_path.join(format!("typst/packages/local/{name}/{version}/"));
         Ok(local_package)
     }
 }
