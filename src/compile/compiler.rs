@@ -116,7 +116,6 @@ impl Compiler {
         }
         let Input {
             mut monitor,
-            config,
             changed_typst_paths,
             deleted_typst_paths,
             changed_config_paths,
@@ -129,6 +128,12 @@ impl Compiler {
             overall_compile_needed,
             ..
         } = input;
+
+
+        let config =
+            TypsiteConfig::load(&self.config_path, &self.typst_path, &self.html_cache_path).with_context(|| {
+                format!("Loading '{:?}' failed, try to init Typsite first by: typsite init",&self.config_path)
+            })?;
 
         let mut registry = KeyRegistry::new();
 

@@ -1,7 +1,6 @@
 use super::{PathBufs, cache::monitor::Monitor};
 use crate::{
     compile::{compile_options, init_proj_options, options::ProjOptions, proj_options},
-    config::TypsiteConfig,
     resource::package::install_packages,
     util::path::file_ext,
 };
@@ -10,7 +9,6 @@ use std::{collections::HashSet, path::Path};
 
 pub struct Input<'a> {
     pub monitor: Monitor<'a>,
-    pub config: TypsiteConfig<'a>,
     pub changed_typst_paths: PathBufs,
     pub deleted_typst_paths: PathBufs,
     pub changed_config_paths: PathBufs,
@@ -54,11 +52,6 @@ pub fn initialize<'a>(
     // Get retry paths
     let retry_typst_paths = monitor.retry_typsts();
     let retry_html_paths = monitor.retry_htmls();
-
-    let config =
-        TypsiteConfig::load(config_path, typst_path, html_cache_path).with_context(|| {
-            format!("Loading '{config_path:?}' failed, try to init Typsite first by: typsite init")
-        })?;
 
     let mut options_changed = false;
     let mut components_changed = false;
@@ -152,9 +145,11 @@ pub fn initialize<'a>(
         .filter(|path| path.starts_with(assets_path) && file_ext(path) != Some("html".to_string()))
         .cloned()
         .collect();
+
+
+
     let input = Input {
         monitor,
-        config,
         changed_typst_paths,
         deleted_typst_paths,
         changed_config_paths,
