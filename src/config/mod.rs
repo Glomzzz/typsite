@@ -100,7 +100,8 @@ impl<'a> TypsiteConfig<'a> {
         } else if path.starts_with(self.config_path) {
             let path = path.strip_prefix(self.config_path).ok()?;
             let path_str = path.as_os_str().to_str()?;
-            match path_str {
+            let path_str = path_str.replace("\\", "/");
+            match path_str.as_str() {
                 SECTION_PATH => Some(self.section.path.clone()),
                 HEADING_NUMBERING_PATH => Some(self.heading_numbering.path.clone()),
                 FOOTER_PATH => Some(self.footer.footer.path.clone()),
@@ -146,7 +147,7 @@ impl<'a> TypsiteConfig<'a> {
         let path = if path.starts_with(self.typst_path) {
             path
         } else if path.starts_with(self.html_path) {
-            path.strip_prefix(self.html_path).unwrap()
+            path.strip_prefix(self.html_path)?
         } else {
             return Err(anyhow!("Can't find a slug for {:?}", path));
         };
