@@ -69,7 +69,7 @@ pub(super) fn analyse_slugs_to_update_and_load<'b, 'a: 'b>(
     let mut slugs_to_update = HashSet::new();
     let mut slugs_to_load = HashSet::new();
 
-    let mut slugs: HashSet<Key> = updated_typst_paths // Changed typst files
+    let mut slugs: HashSet<Key> = updated_typst_paths // Slugs need to be updated
         .iter()
         .chain(changed_config_paths.iter()) // Changed config files
         .filter_map(|path| rev_dep.get(path)) // All files that depend on them need to be updated
@@ -151,8 +151,10 @@ pub(super) fn analyse_slugs_to_update_and_load<'b, 'a: 'b>(
 
     let mut walked = HashSet::new();
     // Spread all dependencies
-    // Make sure all files that need to update are collected in slugs_need_to_update
+    // Make sure all files that need to update are collected in slugs_to_update
+    // Make sure all files that need to load are collected in slugs_to_load
     slugs.into_iter().for_each(|slug| {
+        slugs_to_update.insert(slug.clone());
         spread_parent(
             loaded_articles,
             &slug,
