@@ -78,7 +78,6 @@ impl Executor {
         if typst != "typst" {
             println!("  - Typst excutable: {typst}")
         }
-        
 
         let config = CompileOptions {
             watch: cmd.port != 0,
@@ -92,7 +91,7 @@ impl Executor {
             input_path,
             output_path,
             packages_path,
-            typst
+            typst,
         )?;
         Ok(compiler)
     }

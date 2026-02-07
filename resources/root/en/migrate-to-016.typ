@@ -2,10 +2,10 @@
 
 #show : schema.with("page")
 
-#let version = html.text(fill: rgb("#22D3EE"))[1.1.6]
+#let version = html.text(fill: rgb("#22D3EE"))[0.1.6]
 
 #title[Migrating to Typsite #version]
-#page-title[Migrating to Typsite 1.1.6]
+#page-title[Migrating to Typsite 0.1.6]
 #date[2025-06-21 02:47]
 #author[Glomzzz]
 #parent("index.typ")
@@ -33,14 +33,14 @@ If you're relying on site libraries from before version #version, you'll need to
 
 - `import "lib.typ"` |-> `import "/lib/lib.typ"`
 - `html-text` |-> `html.text`
-- `text-align` |-> `html.align`  
+- `text-align` |-> `html.align`
   - (Make sure *not*- to replace `text-align` inside `/lib/site.typ`)
 
 It's recommended to import `lib.typ` using an absolute path. If you're using #link("https://github.com/Myriad-Dreamin/tinymist")[tinymist] as your LSP, you'll need to specify the Typst `root-path` for better experience:
 
 - In VSCode, you can add the following to `.vscode/settings.json` in your site directory:
   ```json
-  "tinymist.rootPath": "absolute path of your site/root" 
+  "tinymist.rootPath": "absolute path of your site/root"
   ```
 
 For any #breaking-changes not anticipated here, you can easily detect them by launching `watch-mode` with `typsite compile --port 8000`. Typsite will provide helpful error messages whenever you modify a file, allowing you to fix issues quickly.
@@ -53,4 +53,3 @@ For any #breaking-changes not anticipated here, you can easily detect them by la
 - For pages containing backlinks and references, duplicate tags in the `<head>` section are now removed, resulting in a much cleaner structure.
 - In the default site library, `show-rules` have been modularized. You can easily add/remove/modify `show-rule` items in `/lib/lib.typ`.
 - In the default site configuration, link titles have been optimized. You can now preview links as `Link Title [Link URL]`.
-

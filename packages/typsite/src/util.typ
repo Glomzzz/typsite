@@ -19,6 +19,9 @@
   if type(content) == str {
     return content
   }
+  if type(content) == int or type(content) == float {
+    return str(content)
+  }
   if content.has("text") {
     if type(content.text) == str {
       content.text

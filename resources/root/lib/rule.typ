@@ -119,8 +119,7 @@
   body
 }
 // Use before `rule-ref-label`
-#let rule-ref-footnote(body) = context {
-  let footnotes = query(footnote).map(it => it.at("label", default: none)).filter(it => it != none)
+#let rule-ref-footnote(footnotes) = body => {
   show ref: it => context {
     if inline-content.get() or target() != "html"  {
       return it.supplement
@@ -148,20 +147,25 @@
   body
 }
 
-#let rule-ref(body) = {
-  let body = rule-ref-footnote(body)
+#let rule-ref(footnotes) = body => {
+  let body = rule-ref-footnote(footnotes)(body)
   rule-ref-label(body)
 }
 
 
-#let rule-footnote(body) = {
+#let rule-footnote(footnotes) = body => {
   show footnote: it => context {
     if inline-content.get() or target() != "html"  {
       return it
     }
     let body = it.body
     if type(body) == label {
-      return footnote-ref(str(body))
+      for (index, id) in footnotes.enumerate() {
+        if id == body {
+          return footnote-ref(str(id))
+        }
+      }
+      return it
     }
     if not it.has("label") {
       return footnote-def("!numbering", body)

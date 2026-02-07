@@ -132,6 +132,35 @@ impl<'ce> Deserialize<'ce> for Attributes {
     }
 }
 
+pub fn from_css_style(str: &str) -> Result<BTreeMap<HtmlString,HtmlString>> {
+    let mut attrs = BTreeMap::new();
+    for decl in str.split(';') {
+        let decl = decl.trim();
+        if decl.is_empty() {
+            continue;
+        }
+        if let Some((k, val)) = decl.split_once(':') {
+            let key = k.trim();
+            let value = val.trim();
+            attrs.insert(
+                HtmlString::from(key.as_bytes().to_vec()),
+                HtmlString::from(value.as_bytes().to_vec()),
+            );
+        } else {
+            return Err(anyhow!("Invalid CSS declaration: {}", decl));
+        }
+    }
+    Ok(attrs)
+}
+
+pub fn to_css_style(attrs: &BTreeMap<HtmlString, HtmlString>) -> String {
+    let mut style = String::new();
+    for (key, value) in attrs {
+        style.push_str(&format!("{}: {}; ", html_as_str(key), html_as_str(value)));
+    }
+    style.trim_end().to_string()
+}
+
 #[derive(Debug, Clone)]
 pub struct OutputHead<'a> {
     start: Vec<String>,
@@ -536,5 +565,57 @@ mod tests {
         let json = serde_json::to_string(&attrs).unwrap();
         let de_attrs: Attributes = serde_json::from_str(&json).unwrap();
         assert_eq!(de_attrs.to_string(), attrs.to_string());
+    }
+
+    #[test]
+    fn style_attributes_serialize() {
+        let attrs = BTreeMap::from_iter(
+            vec![
+                (
+                    HtmlString::from("color".as_bytes().to_vec()),
+                    HtmlString::from("red".as_bytes().to_vec()),
+                ),
+                (
+                    HtmlString::from("font-size".as_bytes().to_vec()),
+                    HtmlString::from("16px".as_bytes().to_vec()),
+                ),
+                (
+                    HtmlString::from("margin".as_bytes().to_vec()),
+                    HtmlString::from("0".as_bytes().to_vec()),
+                ),
+            ]
+            .into_iter()
+        );
+        // Should serialize to a single CSS string
+        assert_eq!(
+            "color: red; font-size: 16px; margin: 0;",
+            to_css_style(&attrs)
+        );
+    }
+    #[test]
+    fn style_attributes_deserialize() {
+        let attrs = BTreeMap::from_iter(
+            vec![
+                (
+                    HtmlString::from("color".as_bytes().to_vec()),
+                    HtmlString::from("red".as_bytes().to_vec()),
+                ),
+                (
+                    HtmlString::from("font-size".as_bytes().to_vec()),
+                    HtmlString::from("16px".as_bytes().to_vec()),
+                ),
+                (
+                    HtmlString::from("margin".as_bytes().to_vec()),
+                    HtmlString::from("0".as_bytes().to_vec()),
+                ),
+            ]
+            .into_iter()
+        );
+        let serialized = to_css_style(&attrs);
+        assert_eq!(serialized, to_css_style(&from_css_style(&serialized).unwrap()));
+
+        let raw = "color: red; font-size: 16px; margin: 0;";
+        let de2  = from_css_style(raw).unwrap();
+        assert_eq!(de2, attrs);
     }
 }

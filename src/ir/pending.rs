@@ -292,11 +292,13 @@ impl<'c> EmbedData<'c> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum AnchorKind {
     Define,
     GotoHead,
     GotoTail,
+    DefineSvg{transform: String},
+    GotoHeadSvg{transform: String},
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -307,7 +309,7 @@ pub struct AnchorData {
 }
 
 impl AnchorData {
-    pub fn new(anchor: String, kind: AnchorKind, body_indexes: HashSet<usize>) -> Self {
+    pub fn new(anchor: String, kind: AnchorKind,  body_indexes: HashSet<usize>) -> Self {
         Self {
             anchor,
             kind,
@@ -315,11 +317,7 @@ impl AnchorData {
         }
     }
     fn based_on(&self, config: &AnchorConfig, base: Option<&Pos>, body: &mut [String]) {
-        let text = match &self.kind {
-            AnchorKind::Define => config.get_define(base, self.anchor.as_str()),
-            AnchorKind::GotoHead => config.get_goto_head(base, self.anchor.as_str()),
-            AnchorKind::GotoTail => config.get_goto_tail(base, self.anchor.as_str()),
-        };
+        let text = config.get(&self.kind, base, &self.anchor);
         for &index in &self.body_indexes {
             body[index] = text.clone();
         }

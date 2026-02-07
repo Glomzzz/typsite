@@ -323,7 +323,7 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
     }
 
     fn add_anchor(&mut self, kind: AnchorKind, id: String) {
-        let anchor = self.config.anchor.get(kind, None, id.as_str());
+        let anchor = self.config.anchor.get(&kind, None, id.as_str());
         self.push_plain(anchor);
         let index = self.body.body_index();
         self.anchors
@@ -412,11 +412,19 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
                 self.push_embed(slug, open, variables, sidebar, heading_level)?;
             }
 
-            BodyTag::AnchorGoto { id } => {
-                self.add_anchor(AnchorKind::GotoHead, id);
+            BodyTag::AnchorGoto { id, svg_transform } => {
+                if let Some(transform) = svg_transform {
+                    self.add_anchor(AnchorKind::GotoHeadSvg { transform }, id);
+                } else {
+                    self.add_anchor(AnchorKind::GotoHead, id);
+                }
             }
-            BodyTag::AnchorDef { id } => {
-                self.add_anchor(AnchorKind::Define, id);
+            BodyTag::AnchorDef { id, svg_transform } => {
+                if let Some(transform) = svg_transform {
+                    self.add_anchor(AnchorKind::DefineSvg { transform }, id);
+                } else {
+                    self.add_anchor(AnchorKind::Define, id);
+                }
             }
 
             BodyTag::Section { heading_level } => {
@@ -445,7 +453,7 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
                 let plain_buffer = std::mem::take(&mut self.content_buffer);
                 self.metadata.emit_metacontent_end(plain_buffer);
             }
-            BodyTag::AnchorGoto { id } => {
+            BodyTag::AnchorGoto { id, .. } => {
                 self.add_anchor(AnchorKind::GotoTail, id.to_string());
             }
             BodyTag::Section { heading_level } => {

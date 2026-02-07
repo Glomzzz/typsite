@@ -15,6 +15,8 @@ mod code;
 mod footnote;
 mod metacontent;
 
+mod footnote_ref_svg;
+
 pub const METACONTENT_TAG: &str = "metacontent";
 
     static REWRITE_PASSES: LazyLock<Arc<Mutex<HashMap<String, Arc<dyn TagRewritePass>>>>> =

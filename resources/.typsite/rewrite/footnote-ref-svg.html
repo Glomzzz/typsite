@@ -1,0 +1,17 @@
+<rewrite pass="footnote-ref-svg" />
+<head> </head>
+<!--
+Inline var could be used:
+- {name} - name of the footnote
+- {numbering} - numbering of the footnote
+-->
+<body>
+  <a
+    transform="{transform}"
+    id="{name}-back"
+    href="#{name}"
+    xlink:href="#{name}"
+  >
+    {body}
+  </a>
+</body>

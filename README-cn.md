@@ -7,7 +7,11 @@
 </div>
 
 <div style="text-align: center;">
-<a href="https://typ.rowlib.com/migrate-to-116" title="迁移到 Typsite 1.1.6 [https://typ.rowlib.com/migrate-to-116]">迁移到 Typsite <span style="color: #22d3ee;">1.1.6</span></a>
+<a href="https://typ.rowlib.com/migrate-to-017" title="迁移到 Typsite 0.1.7 [https://typ.rowlib.com/migrate-to-017]">迁移到 Typsite <span style="color: #22d3ee;">0.1.7</span></a>
+</div>
+
+<div style="text-align: center;">
+<a href="https://typ.rowlib.com/migrate-to-016" title="迁移到 Typsite 0.1.6 [https://typ.rowlib.com/migrate-to-016]">迁移到 Typsite <span style="color: #22d3ee;">0.1.6</span></a>
 </div>
 
 ## 1. 介绍
@@ -23,6 +27,7 @@ Typsite 是一个用于构建静态网站的工具，其文章内容由纯 `Typs
 - 将 Typst math 转换为 Mathml （自动检测math-font)
 - 支持现代 Web 技术规范，如 HTML5、CSS3 和 JavaScript（ES6+）
 - 自动安装 typst-packages, 在 watch-mode 下自动同步包文件
+- 链接/注脚 SVG (0.1.7+)
 - 增量编译, 实时预览
 
 ## 3. Typst 简介
