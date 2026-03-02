@@ -5,11 +5,11 @@
 /// Creates a code snippet inline rewrite in HTML.
 ///
 /// - lang (str):
-///     The programming language of the code snippet. 
+///     The programming language of the code snippet.
 /// - theme (str):
-///    The theme to be applied to the code snippet. 
+///    The theme to be applied to the code snippet.
 /// - content (content):
-///    The content of the code snippet. 
+///    The content of the code snippet.
 /// -> rewrite ~> HTML code inline element
 #let code-inline(lang: "text", theme: "onedark", content) = {
   let code = rewrite(
@@ -23,12 +23,12 @@
 }
 /// Creates a code snippet block rewrite in HTML.
 ///
-/// - lang (str): 
-///     The programming language of the code snippet. 
-/// - theme (str): 
-///     The theme to be applied to the code snippet. 
-/// - content (content): 
-///     The content of the code snippet. 
+/// - lang (str):
+///     The programming language of the code snippet.
+/// - theme (str):
+///     The theme to be applied to the code snippet.
+/// - content (content):
+///     The content of the code snippet.
 /// -> rewrite ~> HTML code block element
 #let code-block(lang: "text", theme: "onedark", content) = {
   rewrite(
@@ -40,28 +40,39 @@
   )
 }
 
-/// Creates a footnote definition rewrite in HTML. 
+/// Creates a footnote definition rewrite in HTML.
 ///
 /// - name (str):
-///     The name of the footnote definition. 
+///     The name of the footnote definition.
 /// - content (content):
-///     The content of the footnote definition. 
+///     The content of the footnote definition.
 /// -> rewrite ~> HTML footnote definition element
 #let footnote-def(name, content) = {
   box(rewrite("footnote-def", name: name, content))
 }
 
 /// Creates a footnote reference rewrite in HTML.
-/// 
+///
 /// - name (str):
 ///     The name of the footnote reference.
+/// - svg (bool):
+///     Wether in SVG.
 /// -> rewrite ~> HTML footnote reference element
 #let footnote-ref(name) = {
   box(rewrite("footnote-ref", name: name)[])
 }
 
+/// Creates a footnote reference rewrite in SVG.
+///
+/// - name (str):
+///     The name of the footnote reference.
+/// -> rewrite ~> HTML footnote reference element
+#let footnote-ref-svg(name) = {
+  box(rewrite("footnote-ref-svg", name: name)[])
+}
+
 /// Creates a citation rewrite in HTML.
-/// 
+///
 /// - slug (str):
 ///     The slug of the citation, which is used to reference the citation in the document.
 /// -> rewrite ~> HTML citation element
@@ -75,7 +86,7 @@
 
 
 /// Creates a citation rewrite in HTML.
-/// 
+///
 /// - slug (str):
 ///     The slug of the citation, which is used to reference the citation in the document.
 /// - anchor (str):

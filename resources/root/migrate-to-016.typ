@@ -2,10 +2,10 @@
 
 #show : schema.with("page")
 
-#let version = html.text(fill: rgb("#22D3EE"))[1.1.6]
+#let version = html.text(fill: rgb("#22D3EE"))[0.1.6]
 
 #title[迁移到 Typsite #version]
-#page-title[迁移到 Typsite 1.1.6]
+#page-title[迁移到 Typsite 0.1.6]
 #date[2025-06-21 02:47]
 #author[Glomzzz]
 #parent("index.typ")
@@ -31,13 +31,13 @@
 如果您依赖了 #version 之前的站点库，迁移到 #version 版本时，您需要做如下替换：
 - `import "lib.typ"` |-> `import "/lib/lib.typ"`
 - `html-text` |-> `html.text`
-- `text-align` |-> `html.align`  
+- `text-align` |-> `html.align`
   - (注意不要把 `/lib/site.typ` 中的 `text-align` 替换掉了)
 
 推荐通过绝对路径去`import` `lib.typ`，如果您使用的是 #link("https://github.com/Myriad-Dreamin/tinymist")[tinymist] 作为LSP, 您需要指定 Typst 的 `root-path` 来获取更好的体验：
 - 在 VSCode 中，您可以在 站点目录的 `.vscode/settings.json` 中添加如下配置：
   ```json
-  "tinymist.rootPath": "站点目录的绝对路径/root" 
+  "tinymist.rootPath": "站点目录的绝对路径/root"
   ```
 
 对于我在此没有预期到的 #breaking-changes ，您可以非常便捷地通过 `typsite compile --port 8000` 开启 `watch-mode`，typsite会在您每次修改文件时给予您错误提示，您可以根据提示进行修复。

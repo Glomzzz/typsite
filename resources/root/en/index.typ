@@ -9,7 +9,8 @@
 
 #get-metacontent("icon", from: "/index.typ")
 
-#html.align(center)[ #cite-title("./migrate-to-116.typ") ]
+#html.align(center)[ #cite-title("./migrate-to-017.typ") ]
+#html.align(center)[ #cite-title("./migrate-to-016.typ") ]
 
 = Introduction
 *Typsite* is a tool for building static websites. It uses pure *Typst* to write content and processes it through *Typsite* to generate a fully functional static site.
@@ -144,7 +145,7 @@ Options:
 == syntect
 
 ```
-View the list of syntax highlighting and supported languages  
+View the list of syntax highlighting and supported languages
 Usage: typsite syntect [OPTIONS]
 
 Options:
@@ -171,4 +172,3 @@ Based on these, you can fully customize your entire site.
 
 = #embed("./article.typ", sidebar: "only_title", open: false)
 #html.align(center)[Why not take a look at #cite-title("./example.typ") first?]
-

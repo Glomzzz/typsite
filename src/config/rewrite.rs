@@ -98,7 +98,8 @@ impl<'b, 'a: 'b> TagRewriteRule {
         let (head, body, tail) = HtmlWithTail::load_by_tokenizer(tokenizer, "{body}")
             .map(|HtmlWithTail { head, body, tail }| (head, body, tail))?;
 
-        let pass = find_rewrite_pass(&pass).with_context(|| format!("No rewrite pass called {pass}"))?;
+        let pass =
+            find_rewrite_pass(&pass).with_context(|| format!("No rewrite pass called {pass}"))?;
 
         let path = Some(Arc::from(path));
         let rule = Self {
@@ -108,7 +109,6 @@ impl<'b, 'a: 'b> TagRewriteRule {
             body,
             tail,
         };
-
         anyhow::Ok((tag, rule))
     }
     pub fn init(

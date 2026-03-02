@@ -5,10 +5,9 @@ use std::result::Result::Ok;
 
 use std::iter::Peekable;
 
-use html5gum::{EndTag, HtmlString, StartTag, StringReader, Token};
-
 use crate::ir::embed::EmbedVariables;
-use crate::util::html::{Attributes, html_as_str};
+use crate::util::html::{Attributes, from_css_style, html_as_str, to_css_style};
+use html5gum::{EndTag, HtmlString, StartTag, StringReader, Token};
 
 pub trait Label {
     fn name(&self) -> &'static str;
@@ -72,9 +71,11 @@ pub enum BodyTag {
     },
     AnchorGoto {
         id: String,
+        svg_transform: Option<String>,
     },
     AnchorDef {
         id: String,
+        svg_transform: Option<String>,
     },
 }
 
@@ -110,6 +111,7 @@ pub trait EventTokenizer<T: Label> {
 struct State {
     auto_svg: Option<f64>,
     svg: bool,
+    link_in_svg: bool,
 }
 
 pub struct Tokenizer<'a, 'b, T: Label> {
@@ -126,6 +128,7 @@ impl<'a, 'b, T: Label> Tokenizer<'a, 'b, T> {
             state: State {
                 auto_svg: None,
                 svg: false,
+                link_in_svg: false,
             },
         }
     }
@@ -310,7 +313,10 @@ fn emit_body_next(
                         .expect("id")
                         .context("Expected attribute name on anchor")?
                         .to_string();
-                    BodyTag::AnchorGoto { id }
+                    BodyTag::AnchorGoto {
+                        id,
+                        svg_transform: None,
+                    }
                 }
                 ANCHOR_DEF_KEY => {
                     let attrs = Attributes::new(start_tag.attributes);
@@ -318,7 +324,10 @@ fn emit_body_next(
                         .expect("id")
                         .context("Expected attribute name on anchor")?
                         .to_string();
-                    BodyTag::AnchorDef { id }
+                    BodyTag::AnchorDef {
+                        id,
+                        svg_transform: None,
+                    }
                 }
                 _ => {
                     return emit_other_start(
@@ -360,28 +369,35 @@ fn emit_body_next(
 
 const SVG_ANCHOR_PREFIX: &str = "#anchor:";
 const SVG_GOTO_PREFIX: &str = "#goto:";
+const SVG_FOOTNOTE_REF_PREFIX: &str = "#footnote-ref:";
+const SVG_LINK: &str = "svg-link";
 const CLASS_KEY: &[u8] = b"class";
 const AUTO_SVG_KEY: &[u8] = b"auto-svg"; // will be removed 10 versions later
 const AUTO_SIZED_SVG_KEY: &[u8] = b"auto-sized-svg";
 const SCALE_KEY: &[u8] = b"scale";
-const TYPST_DOC_KEY: &[u8] = b"typst-doc";
+const TYPST_DOC_KEY: &[u8] = b"typst-frame";
+const STYLE_KEY: &[u8] = b"style";
 const WIDTH_KEY: &[u8] = b"width";
 const HEIGHT_KEY: &[u8] = b"height";
-const VIEW_BOX_KEY: LazyCell<HtmlString> = LazyCell::new(|| b"viewbox".to_vec().into());
+
+// const VIEW_BOX_KEY: LazyCell<HtmlString> = LazyCell::new(|| b"viewbox".to_vec().into());
 const SVG_HREF_KEY: LazyCell<HtmlString> = LazyCell::new(|| b"href".to_vec().into());
+const SVG_TRANSFORM_KEY: LazyCell<HtmlString> = LazyCell::new(|| b"transform".to_vec().into());
 const PT_OVER_PX: f64 = 3.0 / 4.0;
+
+const FRACTION_TO_PX: f64 = 11.0 / 9.0;
 
 fn scale(attrs: &mut BTreeMap<HtmlString, HtmlString>, key: &[u8], ratio: f64) -> Result<()> {
     let origin = attrs
         .get(key)
         .with_context(|| format!("Expect an attribute of {key:#?} in auto-svg tag"))?;
     let origin = html_as_str(origin).to_string();
-    if !origin.ends_with("pt") {
-        return Err(anyhow!("Cannot pass {key:#?} using units other than pt"));
+    if !origin.ends_with("em") {
+        return Err(anyhow!("Cannot pass {key:#?} using units other than em"));
     }
     let origin = origin[0..origin.len() - 2].parse::<f64>()?;
-    let result = origin * ratio * PT_OVER_PX;
-    let result = format!("{result}pt");
+    let result = origin * ratio * PT_OVER_PX * FRACTION_TO_PX;
+    let result = format!("{result}em");
     attrs.insert(key.to_vec().into(), result.as_bytes().to_vec().into());
     Ok(())
 }
@@ -409,40 +425,104 @@ fn emit_other_start(
             if state.auto_svg.is_some()
                 && matches!(start_tag.attributes.get(CLASS_KEY),Some(class) if class == &TYPST_DOC_KEY) =>
         {
+            let svg = &mut start_tag.attributes;
             if let Some(ratio) = state.auto_svg {
-                let svg = &mut start_tag.attributes;
-                svg.remove(VIEW_BOX_KEY.as_ref());
-                scale(svg, WIDTH_KEY, ratio)?;
-                scale(svg, HEIGHT_KEY, ratio)?;
+                let mut svg_style = svg
+                    .get(STYLE_KEY)
+                    .ok_or(anyhow!("Unsupport typst version, 0.14.1 required."))
+                    .and_then(|it| from_css_style(html_as_str(it).as_str()))?;
+                // svg.remove(VIEW_BOX_KEY.as_ref());
+                scale(&mut svg_style, WIDTH_KEY, ratio)?;
+                scale(&mut svg_style, HEIGHT_KEY, ratio)?;
+                svg.insert(
+                    STYLE_KEY.to_vec().into(),
+                    to_css_style(&svg_style).into_bytes().into(),
+                );
                 state.auto_svg = None;
             }
         }
         "a" if state.svg => {
             let url = start_tag
                 .attributes
-                .get(SVG_HREF_KEY.as_ref())
-                .with_context(|| {
-                    format!("Expect an attribute of {SVG_HREF_KEY:?} in svg <a> tag")
-                })?;
-            let url = html_as_str(url);
+                .get((*SVG_HREF_KEY).as_ref())
+                .ok_or(anyhow!(
+                    "Expect an attribute of {:?} in svg <a> tag",
+                    *SVG_HREF_KEY
+                ))
+                .map(|v| html_as_str(v))?;
+            let transform = start_tag
+                .attributes
+                .get((*SVG_TRANSFORM_KEY).as_ref())
+                .ok_or(anyhow!(
+                    "Expect an attribute of {:?} in svg <a> tag",
+                    *SVG_TRANSFORM_KEY
+                ))
+                .map(|v| html_as_str(v).to_string())?;
             let url = url.as_str();
             let tag = if url.starts_with(SVG_ANCHOR_PREFIX) {
                 let url = url.strip_prefix(SVG_ANCHOR_PREFIX).unwrap();
                 BodyTag::AnchorDef {
                     id: url.to_string(),
+                    svg_transform: Some(transform),
                 }
             } else if url.starts_with(SVG_GOTO_PREFIX) {
+                state.link_in_svg = true;
                 let url = url.strip_prefix(SVG_GOTO_PREFIX).unwrap();
                 BodyTag::AnchorGoto {
                     id: url.to_string(),
+                    svg_transform: Some(transform),
+                }
+            } else if url.starts_with(SVG_FOOTNOTE_REF_PREFIX) {
+                state.link_in_svg = true;
+                let footnote = url.strip_prefix(SVG_FOOTNOTE_REF_PREFIX).unwrap();
+                BodyTag::Rewrite {
+                    tag: "footnote-ref-svg".to_string(),
+                    attrs: {
+                        let mut attrs = BTreeMap::new();
+                        attrs.insert(
+                            HtmlString("name".as_bytes().to_vec()),
+                            footnote.as_bytes().to_vec().into(),
+                        );
+                        attrs.insert(
+                            HtmlString("transform".as_bytes().to_vec()),
+                            transform.as_bytes().to_vec().into(),
+                        );
+                        Attributes::new(attrs)
+                    },
                 }
             } else {
+                state.link_in_svg = true;
+                if !start_tag.self_closing {
+                    backtrace.push(BodyTag::AnchorGoto {
+                        id: url.to_string(),
+                        svg_transform: Some(transform),
+                    });
+                }
                 return Ok(Some(Event::Other(Token::StartTag(start_tag))));
             };
             if !start_tag.self_closing {
                 backtrace.push(tag.clone());
             }
             return Ok(Some(Event::Start(tag)));
+        }
+
+        "rect" if state.link_in_svg => {
+            let rect = &mut start_tag.attributes;
+            let class_val = if let Some(class) = rect.get(CLASS_KEY) {
+                let class = html_as_str(class);
+                let class = class.as_str();
+                if class.is_empty() {
+                    SVG_LINK.to_string()
+                } else {
+                    format!("{class} {}", SVG_LINK)
+                }
+            } else {
+                SVG_LINK.to_string()
+            };
+            rect.insert(
+                CLASS_KEY.to_vec().into(),
+                class_val.as_bytes().to_vec().into(),
+            );
         }
         _ => {}
     }
@@ -461,6 +541,7 @@ fn emit_other_end(
         }
         "a" if state.svg => {
             if let Some(start_tag) = backtrace.pop() {
+                state.link_in_svg = false;
                 return Ok(Some(Event::End(start_tag)));
             }
         }

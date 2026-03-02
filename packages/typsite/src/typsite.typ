@@ -31,7 +31,7 @@
 /// During the Page generation, some articles are embeded into a single page,
 /// and they may have the same HTML head elements,
 /// this function ensures that each element is unique.
-/// 
+///
 // `~>` means that will be processed by typsite
 ///
 /// - content (content):
@@ -319,6 +319,9 @@
 /// - scale (ratio):
 ///     The scale factor for the SVG, which determines how the SVG content is scaled.
 ///     i.e., if scale is 100%, the SVG will be displayed at its original size.
+/// - fit-font (bool):
+///     A boolean indicating whether the SVG should fit the context font size.
+///     if not, `font-size` of the SVG will be `100%`
 /// - content (content):
 ///     The content to be placed inside the auto-sized SVG element.
 /// -> auto-sized-svg style(if with svg in its content) ~> HTML svg
@@ -326,15 +329,26 @@
 ///         - viewBox: none
 ///         - width: _ * scale
 ///         - height: _ * scale
-#let auto-sized-svg(scale, content) = html.span(
-  class: "auto-sized-svg",
-  style: "display: inline-block; width: fit-content; height: fit-content; vertical-align: middle;",
-  scale: to-str([#scale]),
-  content,
-)
+#let auto-sized-svg(scale, fit-font, content) = {
+  let _svg_style = "display: inline-block; width: fit-content; height: fit-content; vertical-align: middle;"
+  let style = if fit-font == true {
+    _svg_style
+  } else if fit-font ==  false {
+    _svg_style + " font-size: 1rem;"
+  } else {
+    _svg_style + " font-size: " + to-str(fit-font.em) + "em;"
+  }
+  html.span(
+    class: "auto-sized-svg",
+    style: style,
+    scale: to-str([#scale]),
+    content,
+  )
+}
 
 
 #let inline-content = state("inline-content", false)
+
 
 /// Creates an inline-scaled content in HTML.
 ///   This is used to inline the content as svg, with a scale factor.
@@ -347,26 +361,32 @@
 /// - content (content):
 ///     The content to be placed inside the inline-scaled element.
 /// -> inline-scaled content ~> HTML svg (auto-sized)
-#let inline(fit-font: false, scale: 100%, content) = context {
+#let inline(fit-font: 1em, scale: 100%, content, footnotes) = context {
   let size = measure(content)
   let scale = scale
-  if fit-font {
+  if fit-font == true {
     let width-ratio = text.size / (size.width) * 100%
     let height-ratio = text.size / (size.height) * 100%
-    scale = calc.max(width-ratio, height-ratio) * 1.85 * scale
+    scale = calc.max(width-ratio, height-ratio) * scale
   }
-  let content = if size.width == 0 or size.height == 0 {
-    content
-  } else {
-    std.scale(scale, origin: left + top, content)
+  // [#size \* #scale => (#{float(size.width.pt() * scale * 4 / 3)}px, #{float(size.height.pt() * scale  * 4 / 3)}px) \ ]
+  if size.width == 0 or size.height == 0 {
+    panic("CONTENT WITH ZERO SIZE")
   }
-
+  
   if target() != "html" {
     return content
   }
   let content = [
     #inline-content.update(true)
-    #auto-sized-svg(scale, html.frame(content))
+    #auto-sized-svg(scale, fit-font, html.frame(context {
+    import "svg-rule.typ": *
+    show: rule-rewrite-link
+    show: rule-rewrite-label
+    show: rule-footnote(footnotes)
+    show: rule-ref-footnote(footnotes)
+    content
+  }))
     #inline-content.update(false)
   ]
   content

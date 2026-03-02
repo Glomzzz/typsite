@@ -6,7 +6,10 @@
 <img src="./resources/root/icon.svg" width="37.5%"/>
 </div>
 <div style="text-align: center;">
-<a href="https://typ.rowlib.com/en/migrate-to-116" title="Migrating to Typsite 1.1.6 [https://typ.rowlib.com/en/migrate-to-116]">Migrating to Typsite <span style="color: #22d3ee;">1.1.6</span></a>
+<a href="https://typ.rowlib.com/en/migrate-to-017" title="Migrating to Typsite 0.1.7 [https://typ.rowlib.com/en/migrate-to-017]">Migrating to Typsite <span style="color: #22d3ee;">0.1.7</span></a>
+</div>
+<div style="text-align: center;">
+<a href="https://typ.rowlib.com/en/migrate-to-016" title="Migrating to Typsite 0.1.6 [https://typ.rowlib.com/en/migrate-to-016]">Migrating to Typsite <span style="color: #22d3ee;">0.1.6</span></a>
 </div>
 
 ## 1. Introduction
@@ -20,7 +23,8 @@ Typsite is a static site generator (SSG) that uses pure `Typst` for content crea
 -   Rich Text: Paragraphs, sections, quotes, code blocks, math formulas, footnotes, page embeds
 -   Typst math -> Mathml （auto detected math-font)
 -   Support for modern web technologies: HTML5, CSS3, and JavaScript (ES6+)
--   Automatically typst-packages install & sync (in watch-mode) 
+-   Automatically typst-packages install & sync (in watch-mode)
+-   Links, Footnotes in SVG (0.1.7+)
 -   Incremental compilation and real-time preview
 
 

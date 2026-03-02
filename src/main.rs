@@ -1,6 +1,4 @@
 #![feature(str_as_str)]
-#![feature(let_chains)]
-#![feature(path_add_extension)]
 #![feature(future_join)]
 
 use crate::cli::cli;
