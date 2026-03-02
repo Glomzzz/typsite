@@ -25,7 +25,7 @@ pub struct Monitor<'a> {
     non_typst_hash_cache: HashMap<PathBuf, Hash>,
     html_hash_cache: HashMap<PathBuf, Hash>,
     config_hash_cache: HashMap<PathBuf, Hash>,
-    packages_hash_cache: HashMap<PathBuf,Hash>
+    packages_hash_cache: HashMap<PathBuf, Hash>,
 }
 
 impl<'a> Monitor<'a> {
@@ -34,7 +34,7 @@ impl<'a> Monitor<'a> {
         config_path: &'a Path,
         typst_path: &'a Path,
         html_cache_path: &'a Path,
-        packages_path: Option<&Path>
+        packages_path: Option<&Path>,
     ) -> Monitor<'a> {
         let hash_path = cache_path.join("hash");
         let retry_path = hash_path.join("retry");
@@ -42,7 +42,7 @@ impl<'a> Monitor<'a> {
         let non_typst_hash_cache = load_hashes(&hash_path, &hash_path.join(typst_path), "[!.typ]");
         let html_hash_cache = load_hashes(&hash_path, &hash_path.join(html_cache_path), "");
         let config_hash_cache = load_hashes(&hash_path, &hash_path.join(config_path), "");
-        let package_hash_cache =  if let Some(packages_path) = packages_path {
+        let package_hash_cache = if let Some(packages_path) = packages_path {
             load_hashes(&hash_path, &hash_path.join(packages_path), "")
         } else {
             HashMap::default()
@@ -57,7 +57,7 @@ impl<'a> Monitor<'a> {
             non_typst_hash_cache,
             html_hash_cache,
             config_hash_cache,
-            packages_hash_cache: package_hash_cache
+            packages_hash_cache: package_hash_cache,
         }
     }
     pub fn refresh_html(
@@ -113,25 +113,28 @@ impl<'a> Monitor<'a> {
     pub fn refresh_packages(&mut self, packages_path: &Path) -> Result<(PathBufs, PathBufs)> {
         let pattern = format!("{}/**/*", packages_path.display());
         let hash_new = hash_pattern(&pattern).into_iter().collect();
-        refresh(&self.hash_path, None, &mut self.packages_hash_cache, hash_new)
+        refresh(
+            &self.hash_path,
+            None,
+            &mut self.packages_hash_cache,
+            hash_new,
+        )
     }
 
     // Remember those (failed) (typ/html) files, an attempt will be made to load them next time
     pub fn retry_next_time(&self, path: &Path) {
-        let mut hash_path = path.to_path_buf();
-        hash_path.add_extension("hash");
+        let hash_path = PathBuf::from(format!("{}.hash", path.display()));
         let retry_path = self.retry_path.join(&hash_path);
         let hash_path = self.hash_path.join(&hash_path);
         copy_file(hash_path, retry_path).unwrap_or_else(|err| eprintln!("{err}"));
     }
 
     pub fn remove_retry_hash(&self, path: &Path) {
-        let mut path = self.retry_path.join(path);
-        path.add_extension("hash");
+        let path = PathBuf::from(format!("{}.hash", path.display()));
+        let path = self.retry_path.join(path);
         remove_file_ignore(path);
     }
 
-    
     pub fn retry_typsts(&self) -> PathBufs {
         self.retry("typ")
     }
@@ -139,7 +142,7 @@ impl<'a> Monitor<'a> {
     pub fn retry_htmls(&self) -> PathBufs {
         self.retry("html")
     }
-    fn retry(&self,ext:&str) -> PathBufs {
+    fn retry(&self, ext: &str) -> PathBufs {
         walk_glob!("{}/**/*.{ext}.hash", self.retry_path.display())
             .par_bridge()
             .map(|path| -> Result<PathBuf> {
@@ -240,8 +243,7 @@ fn write_cache(
         .par_iter()
         .map(|(path, hash)| {
             let content = hash.to_hex().to_string();
-            let mut path = path.clone();
-            path.add_extension("hash");
+            let path = PathBuf::from(format!("{}.hash", path.display()));
             let hash_path = hash_path.join(&path);
             if let Some(retry_path) = retry_path {
                 let retry_hash_path = retry_path.join(&path);
@@ -253,8 +255,7 @@ fn write_cache(
     deleted
         .par_iter()
         .map(|path| {
-            let mut path = path.clone();
-            path.add_extension("hash");
+            let path = PathBuf::from(format!("{}.hash", path.display()));
             let hash_path = hash_path.join(&path);
             if let Some(retry_path) = retry_path {
                 let retry_hash_path = retry_path.join(&path);
