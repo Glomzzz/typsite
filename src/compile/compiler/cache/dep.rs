@@ -1,8 +1,8 @@
 use crate::compile::compiler::PathBufs;
 use crate::compile::registry::{Key, KeyRegistry};
 use crate::config::TypsiteConfig;
-use crate::ir::article::Article;
 use crate::ir::article::dep::UpdatedIndex;
+use crate::ir::article::Article;
 use crate::util::error::{log_err, log_err_or_ok};
 use crate::util::fs::{remove_file_ignore, write_into_file};
 use crate::util::path::relative_path;
@@ -31,8 +31,7 @@ impl<'a> RevDeps {
         let deps_path = cache_path.join("deps");
         // Remove deleted dep files
         deleted.iter().for_each(|path| {
-            let mut path = path.clone();
-            path.add_extension("dep");
+            let path = PathBuf::from(format!("{}.dep", path.display()));
             remove_file_ignore(path);
         });
 
@@ -123,8 +122,10 @@ impl<'a> RevDeps {
                     .map(|slug| slug.to_string())
                     .collect::<HashSet<String>>();
                 let content = serde_json::to_string(&dep).context("Failed to serialize dep")?;
-                let mut dep_path = self.deps_path.join(path.as_ref());
-                dep_path.add_extension("dep");
+                let dep_path = PathBuf::from(format!(
+                    "{}.dep",
+                    self.deps_path.join(path.as_ref()).display()
+                ));
                 write_into_file(dep_path, &content, "dependency")
             })
             .for_each(log_err);
