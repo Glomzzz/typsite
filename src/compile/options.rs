@@ -17,6 +17,8 @@ pub struct ProjOptions {
     #[serde(deserialize_with = "lib_paths::deserialize_lib_paths")]
     pub typst_lib: TypstLib,
     pub code_fallback_style: CodeFallbackStyle,
+    #[serde(default)]
+    pub site: SiteOptions,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,6 +44,46 @@ impl ProjOptions {
 pub struct CodeFallbackStyle {
     pub dark: String,
     pub light: String,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct SiteOptions {
+    #[serde(default = "default_site_base_url")]
+    pub base_url: String,
+    #[serde(default = "default_site_title")]
+    pub title: String,
+    #[serde(default = "default_site_description")]
+    pub description: String,
+    #[serde(default = "default_rss_path")]
+    pub rss_path: String,
+    #[serde(default = "default_sitemap_path")]
+    pub sitemap_path: String,
+    #[serde(default = "default_rss_limit")]
+    pub rss_limit: usize,
+}
+
+fn default_site_base_url() -> String {
+    String::new()
+}
+
+fn default_site_title() -> String {
+    String::new()
+}
+
+fn default_site_description() -> String {
+    String::new()
+}
+
+fn default_rss_path() -> String {
+    "/rss.xml".to_string()
+}
+
+fn default_sitemap_path() -> String {
+    "/sitemap.xml".to_string()
+}
+
+fn default_rss_limit() -> usize {
+    20
 }
 pub mod metadata {
     use crate::{

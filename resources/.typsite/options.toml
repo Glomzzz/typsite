@@ -21,3 +21,11 @@ paths = [ "lib/" ]
 dark = "#d3c6aa"
 light = "#5c6a72"
 
+[site]
+# base_url is required to generate sitemap and RSS
+base_url = ""
+title = ""
+description = ""
+rss_path = "/rss.xml"
+sitemap_path = "/sitemap.xml"
+rss_limit = 20
