@@ -83,3 +83,4 @@ We welcome your contributions to Typsite!
 ## Acknowledgements
 
 - [kokic](https://github.com/kokic) : [kodama](https://github.com/kokic/kodama) for **Markdown + Typst + LaTeX SSG**
+- [tola-rs](https://github.com/tola-rs) : [tola-ssg](https://github.com/tola-rs/tola-ssg) for **Typst-based SSG, focus on content**
