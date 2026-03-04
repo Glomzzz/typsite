@@ -10,6 +10,7 @@ use anyhow::*;
 use html_pass::pass_html;
 use initializer::{Input, initialize};
 use output_sync::{Output, sync_files_to_output};
+use site_output::generate_site_outputs;
 use page_composer::{PageData, compose_pages};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -25,6 +26,7 @@ mod html_pass;
 mod initializer;
 mod output_sync;
 mod page_composer;
+mod site_output;
 mod typst_pass;
 
 mod cache {
@@ -225,6 +227,8 @@ impl Compiler {
         )?;
 
         let updated = !loaded_articles.is_empty();
+        let generated_site = generate_site_outputs(&loaded_articles)?;
+
         // 6. Update cache
         article_cache.refresh(&mut registry, loaded_articles);
         article_cache.write_cache(cache)?;
@@ -248,6 +252,8 @@ impl Compiler {
             output_path: &self.output_path,
             updated_pages,
             deleted_pages,
+            generated_files: generated_site.files,
+            generated_removed: generated_site.removed,
             proj_options_errors,
             error_articles,
             changed_non_typst,

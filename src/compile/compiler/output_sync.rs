@@ -1,4 +1,5 @@
 use super::cache::monitor::Monitor;
+use super::site_output::GeneratedFile;
 use super::{ErrorArticles, PathBufs, UpdatedPages};
 use crate::util::error::log_err;
 use crate::util::fs::{remove_file, write_into_file};
@@ -6,7 +7,10 @@ use crate::util::path::relative_path;
 use anyhow::{Ok, *};
 use rayon::prelude::*;
 use std::fs;
-use std::{fs::create_dir_all, path::Path};
+use std::{
+    fs::create_dir_all,
+    path::{Path, PathBuf},
+};
 
 pub struct Output<'a> {
     pub monitor: Monitor<'a>,
@@ -16,6 +20,8 @@ pub struct Output<'a> {
     pub output_path: &'a Path,
     pub updated_pages: UpdatedPages<'a>,
     pub deleted_pages: PathBufs,
+    pub generated_files: Vec<GeneratedFile>,
+    pub generated_removed: Vec<PathBuf>,
     pub proj_options_errors: Vec<String>,
     pub error_articles: ErrorArticles,
     pub changed_non_typst: PathBufs,
@@ -27,6 +33,8 @@ impl<'a> Output<'a> {
     fn unchanged(&self) -> bool {
         self.updated_pages.is_empty()
             && self.deleted_pages.is_empty()
+            && self.generated_files.is_empty()
+            && self.generated_removed.is_empty()
             && self.error_articles.is_empty()
             && self.changed_non_typst.is_empty()
             && self.deleted_non_typst.is_empty()
@@ -46,6 +54,8 @@ pub fn sync_files_to_output<'a>(output: Output<'a>) {
         output_path,
         updated_pages,
         deleted_pages,
+        generated_files,
+        generated_removed,
         proj_options_errors,
         error_articles,
         changed_non_typst,
@@ -72,6 +82,8 @@ pub fn sync_files_to_output<'a>(output: Output<'a>) {
     sync_files(assets_path, output_path, changed_assets, deleted_assets);
     write_pages(&monitor, typst_path, output_path, updated_pages);
     remove_pages(typst_path, output_path, deleted_pages);
+    write_generated(output_path, generated_files);
+    remove_generated(output_path, generated_removed);
     remove_errors(
         monitor,
         error_articles,
@@ -106,6 +118,38 @@ fn remove_pages(typst_path: &Path, output_path: &Path, deleted_pages: PathBufs) 
         .for_each(log_err);
 }
 
+fn write_generated(output_path: &Path, generated_files: Vec<GeneratedFile>) {
+    generated_files
+        .into_iter()
+        .map(|file| {
+            let output_path = output_path.join(&file.path);
+            let exists = output_path.exists();
+            let result = write_into_file(&output_path, &file.content, "generated file");
+            if exists {
+                println!("  ∓ {output_path:#?}");
+            } else {
+                println!("  + {output_path:#?}");
+            }
+            result
+        })
+        .for_each(log_err);
+}
+
+fn remove_generated(output_path: &Path, generated_removed: Vec<PathBuf>) {
+    generated_removed
+        .into_iter()
+        .map(|path| {
+            let output = output_path.join(&path);
+            if !output.exists() {
+                return Ok(());
+            }
+            let result = remove_file(&output, "generated file");
+            println!("  - {output:#?}");
+            result
+        })
+        .for_each(log_err);
+}
+
 fn sync_files(from: &Path, to: &Path, updated: PathBufs, deleted: PathBufs) {
     updated
         .into_par_iter()
@@ -122,12 +166,13 @@ fn copy_to_output(parent: &Path, file: &Path, output_path: &Path) -> Result<()> 
     let file_path = relative_path(parent, file)?;
     let output_path = output_path.join(&file_path);
     if let Some(parent) = output_path.parent() {
-        create_dir_all(parent).with_context(|| format!(
-            "Create directory failed while creating file: {output_path:#?}"
-        ))?;
+        create_dir_all(parent).with_context(|| {
+            format!("Create directory failed while creating file: {output_path:#?}")
+        })?;
     }
     let exists = output_path.exists();
-    fs::copy(file, &output_path).with_context(|| format!("Copy {file:#?} to {output_path:#?}  failed."))?;
+    fs::copy(file, &output_path)
+        .with_context(|| format!("Copy {file:#?} to {output_path:#?}  failed."))?;
     if exists {
         println!("  ∓ {output_path:#?}");
     } else {

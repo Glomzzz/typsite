@@ -85,3 +85,4 @@ nix build .
 
 ## 鸣谢
 - [kokic](https://github.com/kokic) : [kodama](https://github.com/kokic/kodama) for **Markdown + Typst + LaTeX SSG**
+- [tola-rs](https://github.com/tola-rs) : [tola-ssg](https://github.com/tola-rs/tola-ssg) for **面向 Typst 的 SSG，专注内容**
