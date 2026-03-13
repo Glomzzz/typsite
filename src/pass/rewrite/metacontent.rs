@@ -27,7 +27,7 @@ impl TagRewritePass for MetaContentPass {
         let slug = if slug == "$self" {
             pass.slug.clone()
         } else {
-            pass.resolve_slug(slug.as_str(), "Metacontent-Get")?
+            pass.resolve_slug(slug.as_ref(), "Metacontent-Get")?
         };
         Ok([
             ("key".to_string(), meta_key.to_string()),
@@ -43,10 +43,12 @@ impl TagRewritePass for MetaContentPass {
         pass: &PurePass<'a, '_>,
     ) -> Result<HashSet<Source>> {
         let slug = attrs.get("from").unwrap();
-        if slug == pass.slug.as_str() {
+        if slug == pass.slug.as_ref() {
             return Ok(HashSet::default());
         }
-        let slug = pass.registry.know(slug.to_string(),"Metacontent-Get",&pass.slug)?;
+        let slug = pass
+            .registry
+            .know(slug.to_string(), "Metacontent-Get", &pass.slug)?;
         Ok([Source::Article(slug)].into_iter().collect())
     }
 

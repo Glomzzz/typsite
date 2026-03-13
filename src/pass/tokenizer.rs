@@ -6,7 +6,7 @@ use std::result::Result::Ok;
 use std::iter::Peekable;
 
 use crate::ir::embed::EmbedVariables;
-use crate::util::html::{Attributes, from_css_style, html_as_str, to_css_style};
+use crate::util::html::{from_css_style, html_as_str, to_css_style, Attributes};
 use html5gum::{EndTag, HtmlString, StartTag, StringReader, Token};
 
 pub trait Label {
@@ -430,7 +430,7 @@ fn emit_other_start(
                 let mut svg_style = svg
                     .get(STYLE_KEY)
                     .ok_or(anyhow!("Unsupport typst version, 0.14.1 required."))
-                    .and_then(|it| from_css_style(html_as_str(it).as_str()))?;
+                    .and_then(|it| from_css_style(html_as_str(it).as_ref()))?;
                 // svg.remove(VIEW_BOX_KEY.as_ref());
                 scale(&mut svg_style, WIDTH_KEY, ratio)?;
                 scale(&mut svg_style, HEIGHT_KEY, ratio)?;
@@ -458,7 +458,7 @@ fn emit_other_start(
                     *SVG_TRANSFORM_KEY
                 ))
                 .map(|v| html_as_str(v).to_string())?;
-            let url = url.as_str();
+            let url = url.as_ref();
             let tag = if url.starts_with(SVG_ANCHOR_PREFIX) {
                 let url = url.strip_prefix(SVG_ANCHOR_PREFIX).unwrap();
                 BodyTag::AnchorDef {
@@ -510,7 +510,7 @@ fn emit_other_start(
             let rect = &mut start_tag.attributes;
             let class_val = if let Some(class) = rect.get(CLASS_KEY) {
                 let class = html_as_str(class);
-                let class = class.as_str();
+                let class = class.as_ref();
                 if class.is_empty() {
                     SVG_LINK.to_string()
                 } else {

@@ -26,26 +26,26 @@ impl MetaNode {
         let mut err = TypError::new(slug.clone());
         let parent = pure
             .parent
-            .and_then(|parent| err.ok(registry.know(parent, "Parent", slug.as_str())));
+            .and_then(|parent| err.ok(registry.know(parent, "Parent", slug.as_ref())));
         let parents = pure
             .parents
             .into_iter()
-            .map(|p| err.ok(registry.know(p, "Parent", slug.as_str())))
+            .map(|p| err.ok(registry.know(p, "Parent", slug.as_ref())))
             .collect::<Vec<Option<_>>>();
         let backlinks = pure
             .backlinks
             .into_iter()
-            .map(|p| err.ok(registry.know(p, "Backlinks", slug.as_str())))
+            .map(|p| err.ok(registry.know(p, "Backlinks", slug.as_ref())))
             .collect::<Vec<Option<_>>>();
         let references = pure
             .cited
             .into_iter()
-            .map(|p| err.ok(registry.know(p, "References", slug.as_str())))
+            .map(|p| err.ok(registry.know(p, "References", slug.as_ref())))
             .collect::<Vec<Option<_>>>();
         let children = pure
             .children
             .into_iter()
-            .map(|p| err.ok(registry.know(p, "Children", slug.as_str())))
+            .map(|p| err.ok(registry.know(p, "Children", slug.as_ref())))
             .collect::<Vec<Option<_>>>();
         err.err_or(|| MetaNode {
             slug,

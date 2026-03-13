@@ -45,7 +45,7 @@ pub(super) fn apply_parents_and_backlinks<'b, 'a: 'b>(
     backlinks: Relation,
 ) {
     parents.into_iter().for_each(|(child, parent_slug)| {
-        if let Some(child) = articles.get_mut(child.as_str()) {
+        if let Some(child) = articles.get_mut(child.as_ref()) {
             if child.get_meta_node().parent.is_none() {
                 child.get_mut_meta_node().parent = parent_slug.iter().next().cloned();
             }

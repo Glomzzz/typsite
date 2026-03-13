@@ -104,9 +104,9 @@ impl<'b, 'a: 'b> MetaContents<'a> {
                 self.slug
                     .split('/')
                     .next_back()
-                    .unwrap_or(self.slug.as_str())
+                    .unwrap_or(self.slug.as_ref())
             } else {
-                self.slug.as_str()
+                self.slug.as_ref()
             };
 
             map.insert(
@@ -188,14 +188,13 @@ impl<'b, 'a: 'b> MetaContents<'a> {
                 })
         });
 
-        let self_metadata = global_data.metadata(self.slug.as_str()).unwrap();
-
+        let self_metadata = global_data.metadata(self.slug.as_ref()).unwrap();
 
         let parent = self.parent.get_or_init(|| {
             self_metadata.node.parent.is_some()
                 || default_parent_slug
                     .as_ref()
-                    .map(|default| default.as_str() != self.slug.as_str())
+                    .map(|default| default.as_ref() != self.slug.as_ref())
                     .unwrap_or(false)
         });
         if !parent {
@@ -216,7 +215,7 @@ impl<'b, 'a: 'b> MetaContents<'a> {
                 .as_ref()
                 .and_then(|parent| {
                     global_data
-                        .metadata(parent.as_str())
+                        .metadata(parent.as_ref())
                         .map(|parent_metadata| {
                             parent_metadata.contents.init_parent(global_data);
                             parent_metadata

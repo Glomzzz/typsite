@@ -22,7 +22,7 @@ impl Dependency {
             .dependency
             .into_iter()
             .map(|(source, indexes)| {
-                err.ok(Source::from(self_slug.as_str(), source, config, registry))
+                err.ok(Source::from(self_slug.as_ref(), source, config, registry))
                     .map(|source| (source, indexes))
             })
             .collect::<Vec<Option<_>>>();
@@ -35,7 +35,7 @@ impl Dependency {
             .clone()
             .into_iter()
             .filter_map(|(source, indexes)| match source {
-                Source::Article(slug) => registry.path(slug.as_str()).map(|a| (a, indexes)),
+                Source::Article(slug) => registry.path(slug.as_ref()).map(|a| (a, indexes)),
                 Source::Path(path) => Some((path.clone(), indexes)),
             })
             .collect()

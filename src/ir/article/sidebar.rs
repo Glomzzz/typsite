@@ -1,12 +1,11 @@
-use crate::ir::metadata::Metadata;
 use crate::ir::metadata::content::TITLE_KEY;
+use crate::ir::metadata::Metadata;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 pub type Pos = Vec<usize>;
 pub type SidebarPos = (Pos, usize);
 pub type SidebarIndexes = HashSet<usize>;
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sidebar {
@@ -16,7 +15,7 @@ pub struct Sidebar {
     #[serde(with = "pos_to_sidebar_index_serde")]
     numberings: HashMap<Pos, SidebarIndexes>,
     #[serde(with = "pos_to_sidebar_index_serde")]
-    anchors: HashMap<Pos, SidebarIndexes>
+    anchors: HashMap<Pos, SidebarIndexes>,
 }
 impl Sidebar {
     pub fn new(
@@ -24,14 +23,14 @@ impl Sidebar {
         title_indexes: SidebarIndexes,
         show_children: SidebarIndexes,
         numbering: HashMap<Pos, SidebarIndexes>,
-        anchor: HashMap<Pos, SidebarIndexes>
+        anchor: HashMap<Pos, SidebarIndexes>,
     ) -> Self {
         Self {
             contents,
             title_indexes,
             show_children,
             numberings: numbering,
-            anchors: anchor
+            anchors: anchor,
         }
     }
 
@@ -189,8 +188,8 @@ mod test_serde_pos_to_sidebar_index {
         test.insert(vec![], vec![3].into_iter().collect());
         let test = WrapperPosToSidebarIndex { map: test };
 
-        let str =
-            serde_json::to_string(&test).context("Failed to deserialize HashMap<Pos,SidebarIndex>!")?;
+        let str = serde_json::to_string(&test)
+            .context("Failed to deserialize HashMap<Pos,SidebarIndex>!")?;
         let test_read = serde_json::from_str::<WrapperPosToSidebarIndex>(&str)
             .context("Failed to serialize HashMap<Pos,SidebarIndex>!")?;
         assert_eq!(test, test_read);

@@ -6,11 +6,11 @@ use crate::ir::article::{Article, PureArticle};
 use crate::util::error::{log_err, log_err_or_ok};
 use crate::util::fs::{remove_file_ignore, remove_file_log_err, write_into_file};
 use crate::walk_glob;
-use anyhow::{Context, anyhow};
+use anyhow::{anyhow, Context};
 use glob::glob;
 use rayon::prelude::*;
-use std::collections::HashMap;
 use std::collections::hash_map::Drain;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -32,9 +32,7 @@ impl<'a> ArticleCache<'a> {
     }
 
     fn typ_to_html_path(&self, path: &Path) -> PathBuf {
-        self.cache_html_path
-            .join(path)
-            .with_extension("html")
+        self.cache_html_path.join(path).with_extension("html")
     }
     fn typ_to_json_path(&self, path: &Path) -> PathBuf {
         self.cache_article_path
@@ -145,7 +143,7 @@ impl<'a> ArticleCache<'a> {
         slugs
             .into_iter()
             .map(|(slug, cache)| {
-                let article = self.cache.remove(slug.as_str()).expect("Article not found");
+                let article = self.cache.remove(slug.as_ref()).expect("Article not found");
                 let path = self
                     .cache_article_path
                     .join(format!("{}.json", article.path.display()));

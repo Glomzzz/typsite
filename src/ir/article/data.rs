@@ -4,8 +4,8 @@ use crate::compile::compile_options;
 use crate::compile::error::{TypError, TypResult};
 use crate::compile::registry::Key;
 use crate::compile::watch::WATCH_AUTO_RELOAD_SCRIPT;
-use crate::config::TypsiteConfig;
 use crate::config::schema::{BACKLINK_KEY, REFERENCE_KEY};
+use crate::config::TypsiteConfig;
 use crate::ir::metadata::Metadata;
 use crate::ir::pending::Pending;
 use crate::pass::{pass_embed, pass_rewriter_body, pass_schema};
@@ -13,8 +13,8 @@ use crate::util::html::{OutputHead, OutputHtml};
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use super::Article;
 use super::dep::Indexes;
+use super::Article;
 
 pub struct GlobalData<'a, 'b, 'c> {
     pub config: &'a TypsiteConfig<'a>,
@@ -54,7 +54,7 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
     ) -> (Vec<String>, Vec<String>, Vec<String>) {
         let rewriter_indexes = self
             .global_body_rewrite_indexes
-            .get(article.slug.as_str())
+            .get(article.slug.as_ref())
             .unwrap();
         let metadata = &article.metadata;
         let mut body = article.body.clone();
@@ -73,12 +73,12 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
 
     pub(super) fn get_pending_or_init(&'c self, article: &'b Article<'a>) -> &'c Pending<'c> {
         self.pendings
-            .get(article.slug.as_str())
+            .get(article.slug.as_ref())
             .map(|pending| {
                 pending.get_or_init(|| {
                     let embed_indexes = self
                         .global_body_embed_indexes
-                        .get(article.slug.as_str())
+                        .get(article.slug.as_ref())
                         .unwrap();
                     let content = article.get_content_or_init(self);
                     pass_embed(
@@ -106,14 +106,7 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
                 err.add(anyhow!("Shchema {schema_id} not found"));
                 Err(err)
             }
-            Ok(schema) => pass_schema(
-                self.config,
-                schema,
-                article,
-                content.as_str(),
-                sidebar.as_str(),
-                self,
-            ),
+            Ok(schema) => pass_schema(self.config, schema, article, content, sidebar, self),
         }
     }
 
@@ -217,7 +210,7 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
                 .for_each(|article| self.init_component_head(article, &mut head));
 
             if compile_options().unwrap().watch {
-                head.push(WATCH_AUTO_RELOAD_SCRIPT.as_str());
+                head.push(WATCH_AUTO_RELOAD_SCRIPT);
             }
 
             self.init_rewrite_head(article, &mut head);

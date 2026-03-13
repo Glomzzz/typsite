@@ -17,7 +17,7 @@ impl TagRewritePass for CitePass {
             return Err(anyhow!("CiteRule: expect slug attribute"));
         }
         let slug = slug.unwrap();
-        let slug = pass.resolve_slug(slug.as_str(), "Cite")?;
+        let slug = pass.resolve_slug(slug.as_ref(), "Cite")?;
         pass.metadata.add_cite(slug.clone());
         let anchor = attrs
             .get("anchor")

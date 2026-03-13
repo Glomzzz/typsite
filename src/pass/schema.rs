@@ -1,12 +1,12 @@
 use crate::compile::error::{TypError, TypResult};
-use crate::config::TypsiteConfig;
 use crate::config::footer::{BACKLINKS_KEY, REFERENCES_KEY};
-use crate::config::schema::{BACKLINK_KEY, REFERENCE_KEY, Schema};
-use crate::ir::article::Article;
+use crate::config::schema::{Schema, BACKLINK_KEY, REFERENCE_KEY};
+use crate::config::TypsiteConfig;
 use crate::ir::article::data::GlobalData;
+use crate::ir::article::Article;
 use crate::util::error::TypsiteError;
+use crate::util::html::{write_token, OutputHead};
 use crate::util::html::{Attributes, OutputHtml};
-use crate::util::html::{OutputHead, write_token};
 use crate::util::str::ac_replace;
 use crate::write_into;
 use anyhow::Context;
@@ -140,7 +140,7 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
                         .context("Expect Metadata tag with attr `get`");
                     let meta_key = err.ok(meta_key);
                     let from = attrs.get("from").unwrap_or(Cow::Borrowed("$self"));
-                    let metadata = match from.as_str() {
+                    let metadata = match from.as_ref() {
                         "$self" => Some(metadata),
                         from => {
                             let from = self
@@ -150,7 +150,7 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
                                 .with_context(|| {
                                     format!("Article {from} not found in metadata's attr `from`")
                                 })
-                                .map(|it| it.slug.as_str())
+                                .map(|it| it.slug.as_ref())
                                 .and_then(|from| {
                                     self.global_data
                                         .metadata(from)
