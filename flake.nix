@@ -1,5 +1,5 @@
 {
-  description = "Static site generator for typst";
+  description = "Build and development environment for Typsite";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
@@ -38,10 +38,11 @@
             overlays = [ rust-overlay.overlays.default ];
           };
 
-          cargoToml = fromTOML (builtins.readFile ./Cargo.toml);
+          cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
           packageName = cargoToml.package.name;
           packageVersion = cargoToml.package.version;
-          packageDescription = cargoToml.package.description;
+          packageDescription = cargoToml.package.description or "Static site generator for Typst";
+          rustFlags = [ "--cfg" "tokio_unstable" ];
           commonNativeBuildInputs = [
             pkgs.nasm
             pkgs.perl
@@ -51,7 +52,7 @@
           nativeBuildInputs = commonNativeBuildInputs ++ darwinBuildInputs;
           libPath = lib.optionalString pkgs.stdenv.isDarwin (lib.makeLibraryPath [ pkgs.libiconvReal ]);
 
-          mkTolaPackage =
+          mkTypsitePackage =
             targetPkgs:
             targetPkgs.rustPlatform.buildRustPackage {
               pname = packageName;
@@ -63,6 +64,7 @@
               inherit nativeBuildInputs;
               buildInputs = [ targetPkgs.openssl ];
               LIBRARY_PATH = libPath;
+              RUSTFLAGS = lib.concatStringsSep " " rustFlags;
 
               doCheck = false;
               enableParallelBuilding = true;
@@ -84,14 +86,16 @@
             aarch64-linux-static = pkgs.pkgsCross.aarch64-multiplatform.pkgsStatic;
 
             x86_64-windows = pkgs.pkgsCross.mingwW64;
+          }
+          // lib.optionalAttrs pkgs.stdenv.isDarwin {
             aarch64-darwin = pkgs.pkgsCross.aarch64-darwin;
           };
 
           packages = {
-            default = mkTolaPackage pkgs;
-            static = mkTolaPackage pkgs.pkgsStatic;
+            default = mkTypsitePackage pkgs;
+            static = mkTypsitePackage pkgs.pkgsStatic;
           }
-          // lib.mapAttrs (_: targetPkgs: mkTolaPackage targetPkgs) crossTargets;
+          // lib.mapAttrs (_: targetPkgs: mkTypsitePackage targetPkgs) crossTargets;
         in
         {
           inherit packages;
@@ -99,6 +103,7 @@
           apps.default = {
             type = "app";
             program = "${self'.packages.default}/bin/typsite";
+            meta.description = packageDescription;
           };
 
           checks.default = packages.default;
