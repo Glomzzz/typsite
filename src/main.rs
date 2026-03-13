@@ -1,6 +1,3 @@
-#![feature(str_as_str)]
-#![feature(future_join)]
-
 use crate::cli::cli;
 
 pub(crate) mod cli;

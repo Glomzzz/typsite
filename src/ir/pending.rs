@@ -1,11 +1,11 @@
 use crate::compile::registry::Key;
-use crate::config::TypsiteConfig;
 use crate::config::anchor::AnchorConfig;
 use crate::config::heading_numbering::HeadingNumberingConfig;
+use crate::config::TypsiteConfig;
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::sidebar::{HeadingNumberingStyle, Pos, SidebarIndexes, SidebarType};
 use crate::ir::embed::SectionType;
-use crate::util::str::{SectionElem, ac_replace};
+use crate::util::str::{ac_replace, SectionElem};
 use crate::util::{pos_base_on, pos_slug};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -104,7 +104,13 @@ impl SidebarNumberingData {
         style: HeadingNumberingStyle,
         sidebar: &mut [String],
     ) {
-        let numbering = config.get_with_pos_anchor(style, base_anchor,base_numbering, &self.pos, self.anchor.as_str());
+        let numbering = config.get_with_pos_anchor(
+            style,
+            base_anchor,
+            base_numbering,
+            &self.pos,
+            self.anchor.as_str(),
+        );
         for &index in &self.sidebar_indexes {
             sidebar[index] = numbering.clone();
         }
@@ -123,11 +129,7 @@ impl SidebarAnchorData {
             sidebar_indexes,
         }
     }
-    fn based_on(
-        &self,
-        base_anchor: Option<&Pos>,
-        sidebar: &mut [String],
-    ) {
+    fn based_on(&self, base_anchor: Option<&Pos>, sidebar: &mut [String]) {
         let pos_anchor = pos_base_on(base_anchor, Some(&self.pos));
         let anchor = pos_slug(&pos_anchor, &self.anchor);
         for &index in &self.sidebar_indexes {
@@ -211,7 +213,7 @@ impl<'c> EmbedData<'c> {
         sidebar_type: SidebarType,
     ) {
         let pos = &self.pos;
-        let metadata = global_data.metadata(self.slug.as_str()).unwrap();
+        let metadata = global_data.metadata(self.slug.as_ref()).unwrap();
         let numbering = config.heading_numbering.get_with_pos_anchor(
             parent_style,
             base_anchor,
@@ -297,8 +299,8 @@ pub enum AnchorKind {
     Define,
     GotoHead,
     GotoTail,
-    DefineSvg{transform: String},
-    GotoHeadSvg{transform: String},
+    DefineSvg { transform: String },
+    GotoHeadSvg { transform: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -309,7 +311,7 @@ pub struct AnchorData {
 }
 
 impl AnchorData {
-    pub fn new(anchor: String, kind: AnchorKind,  body_indexes: HashSet<usize>) -> Self {
+    pub fn new(anchor: String, kind: AnchorKind, body_indexes: HashSet<usize>) -> Self {
         Self {
             anchor,
             kind,

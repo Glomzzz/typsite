@@ -1,6 +1,6 @@
-use crate::ir::article::sidebar::{HeadingNumberingStyle, Pos, SidebarIndexes, SidebarPos};
 use crate::compile::registry::Key;
 use crate::config::sidebar::SidebarConfig;
+use crate::ir::article::sidebar::{HeadingNumberingStyle, Pos, SidebarIndexes, SidebarPos};
 use crate::util::pos_slug;
 use crate::util::str::SidebarElem;
 use std::cmp::{Ordering, PartialEq};
@@ -62,7 +62,7 @@ impl<'a> SidebarData<'a> {
             .insert(self.contents.len());
         self.push(HeadingNumberingStyle::Bullet.display(&pos));
     }
-    fn push_anchor(&mut self, pos: Pos,anchor:String) {
+    fn push_anchor(&mut self, pos: Pos, anchor: String) {
         self.anchors
             .entry(pos.clone())
             .or_default()
@@ -70,8 +70,7 @@ impl<'a> SidebarData<'a> {
         self.push(anchor);
     }
     fn push_show_children(&mut self) {
-        self.show_children
-            .insert(self.contents.len());
+        self.show_children.insert(self.contents.len());
         self.push(String::new());
     }
 
@@ -85,8 +84,12 @@ impl<'a> SidebarData<'a> {
                 for elem in &self.config.each.body {
                     match elem {
                         SidebarElem::Plain(s) => self.push(s.to_string()),
-                        SidebarElem::Anchor => self.push_anchor(self.pos.clone(), section.anchor.clone()),
-                        SidebarElem::HeadingNumbering => self.push_heading_numbering(self.pos.clone()),
+                        SidebarElem::Anchor => {
+                            self.push_anchor(self.pos.clone(), section.anchor.clone())
+                        }
+                        SidebarElem::HeadingNumbering => {
+                            self.push_heading_numbering(self.pos.clone())
+                        }
                         SidebarElem::ShowChildren => self.push_show_children(),
                         SidebarElem::Title => {
                             for (index, title) in title.clone().into_iter().enumerate() {
@@ -150,7 +153,7 @@ impl SidebarBuilder {
     }
 
     fn new(slug: Key) -> Self {
-        let anchor = slug.as_str()[1..].to_string();
+        let anchor = slug.as_ref()[1..].to_string();
         Self {
             slug,
             pos: vec![],
@@ -241,7 +244,7 @@ impl SidebarBuilder {
 
     fn add_section(&mut self, level: usize, title: Vec<String>) {
         let mut pos = self.pos.clone();
-        let section = Section::new(level, pos_slug(&pos, self.slug.as_str()), title);
+        let section = Section::new(level, pos_slug(&pos, self.slug.as_ref()), title);
         pos.pop();
         let parent = Self::get_section_mut(&mut self.sections, &pos).unwrap();
         match &mut parent.data {
@@ -262,7 +265,7 @@ impl SidebarBuilder {
         let parent = Self::get_section_mut(&mut self.sections, &parent_pos).unwrap();
         match &mut parent.data {
             SectionData::Inner { children, .. } => {
-                let anchor_str = pos_slug(&self.pos, self.slug.as_str());
+                let anchor_str = pos_slug(&self.pos, self.slug.as_ref());
                 children.push(Section::new_embed(anchor_str));
             }
 

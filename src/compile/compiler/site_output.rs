@@ -79,7 +79,7 @@ fn collect_entries(
     articles
         .values()
         .map(|article| {
-            let slug = article.slug.as_str();
+            let slug = article.slug.as_ref();
             let path = if pretty_url {
                 slug.to_string()
             } else {

@@ -1,7 +1,7 @@
 use crate::compile::error::{TypError, TypResult};
 use crate::compile::registry::{Key, KeyRegistry, SlugPath};
-use crate::config::TypsiteConfig;
 use crate::config::schema::Schema;
+use crate::config::TypsiteConfig;
 use crate::ir::article::sidebar::Sidebar;
 use crate::ir::embed::{Embed, PureEmbed};
 use crate::ir::metadata::content::MetaContents;
@@ -83,7 +83,7 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
         let embeds = pure
             .embeds
             .into_iter()
-            .map(|embed| err.ok(Embed::from(self_slug.as_str(), embed, registry)))
+            .map(|embed| err.ok(Embed::from(self_slug.as_ref(), embed, registry)))
             .collect::<Vec<Option<_>>>();
         let dependency = Dependency::from(self_slug.clone(), pure.dependency, config, registry);
         let dependency = err.ok_typ(dependency);
@@ -204,12 +204,11 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
         &mut self.metadata.node
     }
 
-
     pub fn all_used_rules(&self, global_data: &'c GlobalData<'a, 'b, 'c>) -> &HashSet<&'a str> {
         self.cache.all_used_rules.get_or_init(|| {
             let mut all_used_rules = self.used_rules.clone();
             self.metadata.node.children.iter().for_each(|child| {
-                if let Some(child) = global_data.article(child.as_str()) {
+                if let Some(child) = global_data.article(child.as_ref()) {
                     all_used_rules.extend(child.all_used_rules(global_data));
                 } else {
                     eprintln!(

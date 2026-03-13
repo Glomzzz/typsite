@@ -2,10 +2,10 @@ use super::cache::dep::RevDeps;
 use crate::compile::error::TypResult;
 use crate::compile::registry::Key;
 use crate::config::TypsiteConfig;
-use crate::ir::article::Article;
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::{Indexes, UpdatedIndex};
 use crate::ir::article::sidebar::SidebarType;
+use crate::ir::article::Article;
 use crate::ir::embed::SectionType;
 use crate::pass::pass_schema;
 use anyhow::*;
@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::result::Result::Ok;
 use std::sync::{Arc, OnceLock};
 
-use super::{ErrorArticles, PathBufs, UpdatedPages, analyse_slugs_to_update_and_load};
+use super::{analyse_slugs_to_update_and_load, ErrorArticles, PathBufs, UpdatedPages};
 
 pub type PageCache = HashMap<Key, (Vec<String>, Vec<String>, Vec<String>)>;
 
@@ -75,7 +75,7 @@ pub fn compose_pages<'c, 'b: 'c, 'a: 'b>(
         .iter()
         .map(|slug| {
             let article = global_data.article(slug).unwrap();
-            let meta_rewriter_indexes = global_meta_indexes.remove(article.slug.as_str()).unwrap();
+            let meta_rewriter_indexes = global_meta_indexes.remove(article.slug.as_ref()).unwrap();
             let meta_contents = article.get_meta_contents();
             (meta_contents, meta_rewriter_indexes)
         })
@@ -220,7 +220,7 @@ where
         let mut meta_rewriter_indexes: HashMap<String, Indexes> = HashMap::new();
         let mut body_rewriter_indexes = Indexes::All;
         let mut embed_indexes = Indexes::All;
-        if let Some(indexes) = global_indexes.remove(article.slug.as_str()) {
+        if let Some(indexes) = global_indexes.remove(article.slug.as_ref()) {
             for index in indexes {
                 match index {
                     UpdatedIndex::MetaRewriter(meta_key, index) => {

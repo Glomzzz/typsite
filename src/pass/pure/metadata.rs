@@ -1,10 +1,10 @@
 use crate::compile::proj_options;
 use crate::compile::registry::Key;
 use crate::ir::article::sidebar::{HeadingNumberingStyle, SidebarType};
-use crate::ir::metadata::Metadata;
 use crate::ir::metadata::content::{MetaContent, MetaContents};
 use crate::ir::metadata::graph::MetaNode;
 use crate::ir::metadata::options::MetaOptions;
+use crate::ir::metadata::Metadata;
 use crate::ir::rewriter::MetaRewriter;
 use crate::pass::pure::rewriter::RewriterBuilder;
 use std::collections::{HashMap, HashSet};
@@ -57,7 +57,7 @@ impl<'a> MetadataBuilder<'a> {
     }
 
     pub fn intake_meta_graph(&mut self, kind: &str, slug: Key) {
-        if self.slug.as_str() == slug.as_str() {
+        if self.slug.as_ref() == slug.as_ref() {
             eprintln!(
                 "[WARN] MetadataBuilder: An article's parent cannot be itself! {}",
                 self.slug

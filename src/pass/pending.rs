@@ -93,11 +93,11 @@ impl<'c, 'b: 'c, 'a: 'b> PendingPass<'a, 'b, 'c> {
 
     fn emit_embed(&self, embed: &Embed) -> Option<EmbedData<'c>> {
         let slug = embed.slug.clone();
-        let child = self.global_data.article(slug.as_str());
+        let child = self.global_data.article(slug.as_ref());
         if child.is_none() {
             eprintln!(
                 "[WARN] (emit_embed) Embed `{}` not found in {}",
-                slug.as_str(),
+                slug.as_ref(),
                 self.slug
             );
             return None;
@@ -136,7 +136,7 @@ impl<'c, 'b: 'c, 'a: 'b> PendingPass<'a, 'b, 'c> {
         embeds: Vec<&Embed>,
         content: &'c (Vec<String>, Vec<String>, Vec<String>),
     ) -> Pending<'c> {
-        let article = self.global_data.article(self.slug.as_str()).unwrap();
+        let article = self.global_data.article(self.slug.as_ref()).unwrap();
         let style = article.get_meta_options().heading_numbering_style;
         let body_numberings = self.emit_body_numberings(&article.get_body().numberings);
         let full_sidebar = article.get_full_sidebar();

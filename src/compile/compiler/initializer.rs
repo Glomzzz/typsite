@@ -1,4 +1,4 @@
-use super::{PathBufs, cache::monitor::Monitor};
+use super::{cache::monitor::Monitor, PathBufs};
 use crate::{
     compile::{compile_options, init_proj_options, options::ProjOptions, proj_options},
     resource::package::install_packages,
@@ -99,7 +99,7 @@ pub fn initialize<'a>(
         .filter_map(|path| path.strip_prefix(typst_path).ok())
         .any(|path| {
             let path = path.to_string_lossy();
-            lib_files.contains(path.as_str())
+            lib_files.contains(path.as_ref())
                 || lib_dirs.iter().any(|prefix| path.starts_with(prefix))
         });
 
@@ -145,8 +145,6 @@ pub fn initialize<'a>(
         .filter(|path| path.starts_with(assets_path) && file_ext(path) != Some("html".to_string()))
         .cloned()
         .collect();
-
-
 
     let input = Input {
         monitor,
