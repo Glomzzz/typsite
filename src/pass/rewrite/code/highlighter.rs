@@ -1,6 +1,5 @@
-
 use syntect::highlighting::{HighlightIterator, HighlightState, Highlighter, Theme};
-use syntect::html::{IncludeBackground, append_highlighted_html_for_styled_line};
+use syntect::html::{append_highlighted_html_for_styled_line, IncludeBackground};
 use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
@@ -43,12 +42,18 @@ pub fn highlight(
                 IncludeBackground::No,
                 &mut output,
             )
-            .unwrap();
+            .expect("writing highlighted HTML into a String should be infallible");
         }
     }
     output
 }
 
 fn apply_fallback_style(color: &str, text: &str) -> String {
-    format!("<span style='color:{color};'>{text}</span>")
+    let escaped = text
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;");
+    format!("<span style='color:{color};'>{escaped}</span>")
 }
