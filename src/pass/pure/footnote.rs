@@ -19,15 +19,18 @@ impl FootNotesData {
         }
     }
 
-    pub fn add_footnote(&mut self, name: String) -> (String,usize) {
+    pub fn add_footnote(&mut self, name: String) -> (String, usize) {
         let index = self.footnotes.len() + 1;
         let name = if name == NUMBERING_NAME {
             numbering_name(index)
         } else {
             name
         };
-        self.footnotes.push(FootNote { index, name:name.clone() });
-        (name,index)
+        self.footnotes.push(FootNote {
+            index,
+            name: name.clone(),
+        });
+        (name, index)
     }
 
     pub fn get_numbering(&self, name: &str) -> Option<usize> {

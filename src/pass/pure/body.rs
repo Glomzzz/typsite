@@ -1,10 +1,10 @@
 use crate::compile::error::TypError;
+use crate::ir::article::sidebar::{SidebarIndexes, SidebarPos};
 use crate::ir::embed::Embed;
 use crate::ir::rewriter::BodyRewriter;
-use crate::ir::article::sidebar::{SidebarIndexes, SidebarPos};
-use crate::pass::pure::PurePassData;
 use crate::pass::pure::embed::EmbedBuilder;
 use crate::pass::pure::rewriter::RewriterBuilder;
+use crate::pass::pure::PurePassData;
 
 #[derive(Default)]
 pub struct BodyBuilder<'a> {
@@ -48,7 +48,7 @@ impl<'a> BodyBuilder<'a> {
         self.body.len()
     }
 
-    pub fn build_rewriter_attrs(&mut self, data: &PurePassData, error: &mut TypError)  {
+    pub fn build_rewriter_attrs(&mut self, data: &PurePassData, error: &mut TypError) {
         for rewriter in self.rewriters.iter_mut() {
             error.result(rewriter.build_attr(data));
         }

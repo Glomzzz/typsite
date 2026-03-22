@@ -1,11 +1,11 @@
 use crate::compile::registry::{Key, KeyRegistry, SlugPath};
-use crate::config::TypsiteConfig;
 use crate::config::rewrite::TagRewriteRule;
 use crate::config::schema::Schema;
-use crate::ir::article::Article;
+use crate::config::TypsiteConfig;
 use crate::ir::article::body::Body;
 use crate::ir::article::dep::{Dependency, Source, UpdatedIndex};
-use crate::ir::article::sidebar::{Pos, Sidebar, SidebarPos};
+use crate::ir::article::sidebar::{Pos, Sidebar, SidebarIndexes, SidebarPos};
+use crate::ir::article::Article;
 use crate::ir::embed::{EmbedVariables, SectionType};
 use crate::ir::pending::{AnchorData, AnchorKind};
 use crate::ir::rewriter::RewriterType;
@@ -16,7 +16,7 @@ use crate::pass::pure::metadata::MetadataBuilder;
 use crate::pass::pure::rewriter::RewriterBuilder;
 use crate::pass::pure::sidebar::PureSidebarBuilder;
 use crate::util::html::write_token;
-use crate::util::html::{Attributes, expect_start};
+use crate::util::html::{expect_start, Attributes};
 use crate::util::path::resolve_path;
 use crate::util::str::SectionElem;
 use anyhow::*;
@@ -120,6 +120,22 @@ impl<'a, 'k> PurePassData<'a> {
 }
 
 const TITLE_POS: SidebarPos = (vec![], 0);
+
+fn take_sidebar_title_indexes(
+    kind: &str,
+    pos: SidebarPos,
+    titles: &mut HashMap<SidebarPos, SidebarIndexes>,
+    missing: &mut Vec<(String, SidebarPos)>,
+) -> SidebarIndexes {
+    match titles.remove(&pos) {
+        Some(indexes) => indexes,
+        None => {
+            missing.push((kind.to_string(), pos));
+            SidebarIndexes::default()
+        }
+    }
+}
+
 impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
     fn result(&mut self, result: Result<()>) {
         self.error.result(result);
@@ -153,10 +169,42 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
             cache.as_ref().map(|it| it.get_meta_contents()),
         )?;
         let (mut full_sidebar, mut embed_sidebar) = data.sidebar.build(&data.config.sidebar);
-        let (body_content, body_rewriters, embeds) = body.build(
-            &mut |pos| full_sidebar.titles.remove(&pos).unwrap(),
-            &mut |pos| embed_sidebar.titles.remove(&pos).unwrap(),
-        );
+        let mut missing_full_sidebar_titles = Vec::new();
+        let mut missing_embed_sidebar_titles = Vec::new();
+        let (body_content, body_rewriters, embeds) = {
+            body.build(
+                &mut |pos| {
+                    take_sidebar_title_indexes(
+                        "full",
+                        pos,
+                        &mut full_sidebar.titles,
+                        &mut missing_full_sidebar_titles,
+                    )
+                },
+                &mut |pos| {
+                    take_sidebar_title_indexes(
+                        "embed",
+                        pos,
+                        &mut embed_sidebar.titles,
+                        &mut missing_embed_sidebar_titles,
+                    )
+                },
+            )
+        };
+        for (kind, pos) in missing_full_sidebar_titles {
+            error.add(anyhow!(
+                "Missing {kind} sidebar title slot for {} at {:?}",
+                slug,
+                pos
+            ));
+        }
+        for (kind, pos) in missing_embed_sidebar_titles {
+            error.add(anyhow!(
+                "Missing {kind} sidebar title slot for {} at {:?}",
+                slug,
+                pos
+            ));
+        }
         let body_numberings = data.numberings;
         let full_sidebar_show_children = full_sidebar.show_children;
         let full_sidebar_numberings = full_sidebar.numberings;
@@ -167,16 +215,44 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
         let dependency = Dependency::new(data.dependency);
         let used_rules = data.used_rules;
         let body = Body::new(body_content, body_rewriters, body_numberings);
+        let mut missing_full_sidebar_title = Vec::new();
+        let full_sidebar_title = take_sidebar_title_indexes(
+            "full",
+            TITLE_POS,
+            &mut full_sidebar.titles,
+            &mut missing_full_sidebar_title,
+        );
+        for (kind, pos) in missing_full_sidebar_title {
+            error.add(anyhow!(
+                "Missing {kind} sidebar title slot for {} at {:?}",
+                slug,
+                pos
+            ));
+        }
         let full_sidebar = Sidebar::new(
             full_sidebar.contents,
-            full_sidebar.titles.remove(&TITLE_POS).unwrap_or_default(),
+            full_sidebar_title,
             full_sidebar_show_children,
             full_sidebar_numberings,
             full_sidebar_anchors,
         );
+        let mut missing_embed_sidebar_title = Vec::new();
+        let embed_sidebar_title = take_sidebar_title_indexes(
+            "embed",
+            TITLE_POS,
+            &mut embed_sidebar.titles,
+            &mut missing_embed_sidebar_title,
+        );
+        for (kind, pos) in missing_embed_sidebar_title {
+            error.add(anyhow!(
+                "Missing {kind} sidebar title slot for {} at {:?}",
+                slug,
+                pos
+            ));
+        }
         let embed_sidebar = Sidebar::new(
             embed_sidebar.contents,
-            embed_sidebar.titles.remove(&TITLE_POS).unwrap_or_default(),
+            embed_sidebar_title,
             embed_show_children,
             embed_sidebar_numberings,
             embed_sidebar_anchors,
@@ -225,7 +301,7 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
             Self::push_body_buffer,
         )?;
         while let Some(level) = self.heading_level_backtrace.pop() {
-            self.push_section_end(level);
+            self.push_section_end(level)?;
         }
         Ok(())
     }
@@ -365,7 +441,11 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
                     .rules
                     .get(tag.as_str())
                     .with_context(|| format!("No rewrite rule named {tag}"))?;
-                let tag_name = self.config.rules.rule_name(&tag).unwrap();
+                let tag_name = self
+                    .config
+                    .rules
+                    .rule_name(&tag)
+                    .with_context(|| format!("No rewrite rule named {tag}"))?;
                 self.used_rules.insert(tag_name);
 
                 self.push_rewriter_start(tag_name, rule, attrs)?;
@@ -388,14 +468,25 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
             }
             BodyTag::MetaContentGet { attrs } => {
                 if let Some(meta_key) = &self.metadata.meta_key {
-                    let inner = attrs.get("get").unwrap();
+                    let inner = attrs
+                        .get("get")
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "<missing>".to_string());
                     return Err(anyhow!(
                         "[WARN] {}: Metadata CANNOT be embed in other Meta Content: {inner} in {meta_key}, skip",
                         self.slug
                     ));
                 } else {
-                    let rule = self.config.rules.get("metacontent").unwrap();
-                    let tag_name = self.config.rules.rule_name("metacontent").unwrap();
+                    let rule = self
+                        .config
+                        .rules
+                        .get("metacontent")
+                        .context("Built-in metacontent rewrite rule is missing")?;
+                    let tag_name = self
+                        .config
+                        .rules
+                        .rule_name("metacontent")
+                        .context("Built-in metacontent rewrite rule name is missing")?;
                     self.used_rules.insert(tag_name);
                     self.push_rewriter_start("metacontent", rule, attrs)?;
                 }
@@ -408,7 +499,7 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
                 sidebar,
                 heading_level,
             } => {
-                self.push_section_ends_if_needed(heading_level);
+                self.push_section_ends_if_needed(heading_level)?;
                 self.push_embed(slug, open, variables, sidebar, heading_level)?;
             }
 
@@ -428,10 +519,10 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
             }
 
             BodyTag::Section { heading_level } => {
-                self.push_section_ends_if_needed(heading_level);
+                self.push_section_ends_if_needed(heading_level)?;
                 let pos = self.sidebar.intake_heading(heading_level);
                 let before_title = self.config.section.before_title();
-                self.push_section(heading_level, before_title);
+                self.push_section(heading_level, before_title)?;
                 self.sidebar_pos = Some((pos, 0));
             }
         }
@@ -446,7 +537,11 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
                     .rules
                     .get(tag.as_str())
                     .with_context(|| format!("No rewrite rule named {tag}"))?;
-                let tag_name = self.config.rules.rule_name(tag.as_str()).unwrap();
+                let tag_name = self
+                    .config
+                    .rules
+                    .rule_name(tag.as_str())
+                    .with_context(|| format!("No rewrite rule named {tag}"))?;
                 self.push_rewriter_end(tag_name, rule)?;
             }
             BodyTag::MetaContentSet { .. } if self.metadata.meta_key.is_some() => {
@@ -458,9 +553,9 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
             }
             BodyTag::Section { heading_level } => {
                 self.sidebar_pos = None;
-                self.push_section_start(heading_level);
+                self.push_section_start(heading_level)?;
                 let buffer = std::mem::take(&mut self.content_buffer);
-                self.sidebar.add_heading_section(heading_level, buffer);
+                self.sidebar.add_heading_section(heading_level, buffer)?;
             }
             _ => {}
         }
@@ -468,28 +563,30 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
         Ok(())
     }
 
-    fn push_section_start(&mut self, level: usize) {
+    fn push_section_start(&mut self, level: usize) -> Result<()> {
         let before_title = self.config.section.before_content();
-        self.push_section(level, before_title);
+        self.push_section(level, before_title)?;
         self.heading_level_backtrace.push(level);
+        Ok(())
     }
-    fn push_section_end(&mut self, level: usize) {
+    fn push_section_end(&mut self, level: usize) -> Result<()> {
         let after_content = self.config.section.after_content();
-        self.push_section(level, after_content);
+        self.push_section(level, after_content)
     }
 
-    fn push_section_ends_if_needed(&mut self, current_level: usize) {
+    fn push_section_ends_if_needed(&mut self, current_level: usize) -> Result<()> {
         while let Some(&last_level) = self.heading_level_backtrace.last() {
             if current_level <= last_level {
                 self.heading_level_backtrace.pop();
-                self.push_section_end(last_level);
+                self.push_section_end(last_level)?;
             } else {
                 break;
             }
         }
+        Ok(())
     }
 
-    pub fn push_section(&mut self, level: usize, elems: &[SectionElem]) {
+    pub fn push_section(&mut self, level: usize, elems: &[SectionElem]) -> Result<()> {
         let pos = self.sidebar.current_full_pos();
         for elem in elems {
             match elem {
@@ -497,14 +594,22 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
                 SectionElem::HeadingNumbering => self.push_heading_numbering(pos.clone()),
                 SectionElem::Level => self.push_plain(level.to_string()),
                 SectionElem::Content | SectionElem::Title => {
-                    panic!("Unexpected title/content in before_title in section.html")
+                    return Err(anyhow!(
+                        "Unexpected section placeholder found outside content/title slot in {}",
+                        self.slug
+                    ));
                 }
             }
         }
+        Ok(())
     }
 
     pub fn resolve_slug(&self, slug_path: &str, tag: &str) -> Result<Key> {
-        let path = resolve_path(self.root, self.path.parent().unwrap(), slug_path)?;
+        let parent = self
+            .path
+            .parent()
+            .context("article source path should always have a parent directory")?;
+        let path = resolve_path(self.root, parent, slug_path)?;
         let slug = self.config.path_to_slug(path.as_path())?;
 
         self.registry.slug(slug.as_str()).with_context(|| {
@@ -617,7 +722,10 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
     }
 
     fn push_rewriter_end(&mut self, rule_id: &'a str, rule: &'a TagRewriteRule) -> Result<()> {
-        let attrs = self.rewriter_backtrace.pop().unwrap();
+        let attrs = self
+            .rewriter_backtrace
+            .pop()
+            .context("rewrite end tag encountered without matching start tag")?;
         let attrs = match attrs {
             Some(attrs) => attrs,
             None => return Ok(()),
@@ -655,7 +763,8 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
         let body_index = self.body.len();
         let section_type = SectionType::from(sidebar);
 
-        let (full_sidebar_pos, embed_sidebar_pos) = self.sidebar.add_embed_section(heading_level);
+        let (full_sidebar_pos, embed_sidebar_pos) =
+            self.sidebar.add_embed_section(heading_level)?;
 
         let full_sidebar_pos = (full_sidebar_pos, 0);
         let embed_sidebar_pos = (embed_sidebar_pos, 0);
@@ -709,5 +818,115 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
             .entry(Source::Article(slug))
             .or_default()
             .insert(UpdatedIndex::Embed(index));
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::metadata::MetadataBuilder;
+    use super::sidebar::{Section, SidebarBuilder};
+    use super::{take_sidebar_title_indexes, TITLE_POS};
+    use crate::compile::error::TypError;
+    use crate::compile::{init_proj_options, options::ProjOptions, registry::Key};
+    use anyhow::anyhow;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_root(label: &str) -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("test timestamp should be available")
+            .as_nanos();
+        std::env::temp_dir().join(format!("typsite-{label}-{unique}"))
+    }
+
+    pub(crate) fn run_sidebar_builder_reports_invalid_parent_section() {
+        let mut builder = SidebarBuilder::new(Key::from("/article"));
+        builder.sections = Section::new_embed("article".to_string());
+        builder.pos = vec![0];
+
+        let err = builder
+            .add_section(1, vec!["Heading".to_string()])
+            .expect_err("invalid parent section should return a contextual error");
+
+        assert!(err.to_string().contains("under embed section"));
+    }
+
+    pub(crate) fn run_pure_pass_reports_missing_sidebar_title_slot() {
+        let slug = Key::from("/article");
+        let mut error = TypError::new(slug.clone());
+        let mut missing = Vec::new();
+        let indexes =
+            take_sidebar_title_indexes("full", TITLE_POS, &mut HashMap::new(), &mut missing);
+
+        for (kind, pos) in missing {
+            error.add(anyhow!(
+                "Missing {kind} sidebar title slot for {} at {:?}",
+                slug,
+                pos
+            ));
+        }
+
+        assert!(indexes.is_empty());
+        assert!(error.has_error());
+        assert!(format!("{error}").contains("Missing full sidebar title slot"));
+    }
+
+    pub(crate) fn run_metadata_builder_reports_unbalanced_metacontent_state() {
+        let root = unique_root("metadata-builder-state");
+        fs::create_dir_all(&root).expect("root dir");
+        fs::write(
+            root.join("options.toml"),
+            r#"
+[default_metadata.content]
+title = "Fallback Title"
+
+[default_metadata.options]
+heading_numbering = "Bullet"
+sidebar_type = "All"
+
+[default_metadata.graph]
+parent = "/"
+
+[typst_lib]
+paths = []
+
+[code_fallback_style]
+dark = "dark"
+light = "light"
+"#,
+        )
+        .expect("options file");
+        let proj = ProjOptions::load(&root).expect("project options should load");
+        init_proj_options(proj).expect("project options should initialize");
+
+        let mut builder = MetadataBuilder::new(Key::from("/article"));
+        builder.emit_metacontent_end(vec!["orphan".to_string()]);
+        let err = builder
+            .build(Key::from("/article"), None)
+            .expect_err("closing metacontent without an open key should return an error");
+
+        assert!(err.to_string().contains("Unbalanced metacontent close"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sidebar_builder_reports_invalid_parent_section() {
+        let _guard = crate::test_lock();
+        run_sidebar_builder_reports_invalid_parent_section();
+    }
+
+    #[test]
+    fn pure_pass_reports_missing_sidebar_title_slot() {
+        let _guard = crate::test_lock();
+        run_pure_pass_reports_missing_sidebar_title_slot();
+    }
+
+    #[test]
+    fn metadata_builder_reports_unbalanced_metacontent_state() {
+        let _guard = crate::test_lock();
+        run_metadata_builder_reports_unbalanced_metacontent_state();
     }
 }

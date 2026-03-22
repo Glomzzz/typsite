@@ -1,6 +1,7 @@
-use crate::ir::rewriter::{BodyRewriter, MetaRewriter, RewriterType};
 use crate::ir::article::sidebar::{SidebarIndexes, SidebarPos};
+use crate::ir::rewriter::{BodyRewriter, MetaRewriter, RewriterType};
 use crate::pass::pure::PurePassData;
+use anyhow::Context;
 use std::collections::HashMap;
 use std::mem;
 
@@ -39,7 +40,12 @@ impl<'a> RewriterBuilder<'a> {
     }
 
     pub fn build_attr(&mut self, data: &PurePassData) -> anyhow::Result<()> {
-        let rule = data.config.rules.get(self.id).unwrap();
+        let rule = data.config.rules.get(self.id).with_context(|| {
+            format!(
+                "No rewrite rule named {} while building attributes",
+                self.id
+            )
+        })?;
         let attribute = mem::take(&mut self.attributes);
         self.attributes = rule.pass.build_attr(attribute, data)?;
         Ok(())
