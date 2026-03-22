@@ -3,15 +3,21 @@ use std::iter::Peekable;
 use std::mem;
 use std::str::Chars;
 
-fn ac_replacement(patterns: Vec<&str>) -> AhoCorasick {
+fn ac_replacement(patterns: &[&str]) -> Option<AhoCorasick> {
+    if patterns.is_empty() {
+        return None;
+    }
+
     AhoCorasick::builder()
         .match_kind(MatchKind::LeftmostLongest)
         .build(patterns)
-        .unwrap()
+        .ok()
 }
 
 pub fn ac_replace_map(text: &str, (patterns, values): (Vec<&str>, Vec<&str>)) -> String {
-    ac_replacement(patterns).replace_all(text, &values)
+    ac_replacement(&patterns)
+        .map(|matcher| matcher.replace_all(text, &values))
+        .unwrap_or_else(|| text.to_string())
 }
 
 pub fn ac_replace(text: &str, replacements: &[(&str, &str)]) -> String {
@@ -54,7 +60,7 @@ pub enum SidebarElem {
     Anchor,
     Title,
     HeadingNumbering,
-    ShowChildren
+    ShowChildren,
 }
 
 impl Elem for SidebarElem {
@@ -138,7 +144,13 @@ impl<E: Elem> ElemTokenizerTrait<E> for ElemTokenizer<'_> {
                     let elem = self.parse_braced_content();
                     return Some(elem);
                 }
-                Some(_) => self.buffer.push(self.chars.next().unwrap()),
+                Some(_) => {
+                    if let Some(next) = self.chars.next() {
+                        self.buffer.push(next);
+                    } else {
+                        break;
+                    }
+                }
                 None => break,
             }
         }
@@ -156,7 +168,7 @@ impl<E: Elem> ElemTokenizerTrait<E> for ElemTokenizer<'_> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -222,5 +234,14 @@ mod tests {
 
         let only_braces = ElemTokenizer::from::<SidebarElem>("{{}}").collect();
         assert_eq!(only_braces, vec![SidebarElem::Plain("{{}}".into())]);
+    }
+
+    pub(crate) fn run_ac_replacement_handles_empty_patterns_without_unwrap() {
+        assert_eq!(ac_replace("unchanged", &[]), "unchanged");
+    }
+
+    #[test]
+    fn ac_replacement_handles_empty_patterns_without_unwrap() {
+        run_ac_replacement_handles_empty_patterns_without_unwrap();
     }
 }

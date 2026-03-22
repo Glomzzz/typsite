@@ -1,5 +1,5 @@
 use crate::util::error::TypsiteError;
-use anyhow::{Context, anyhow};
+use anyhow::{anyhow, Context};
 use std::fs;
 use std::path::Path;
 
@@ -149,8 +149,12 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> anyhow::Result<()> {
 #[macro_export]
 macro_rules! walk_glob {
     ($($arg:tt)*) => {
-        glob(&format!($($arg)*))
-            .expect("Invalid pattern")
-            .filter_map(Result::ok)
+        {
+            let pattern = format!($($arg)*);
+            let paths = glob(&pattern)
+                .expect(&format!("glob patterns should be valid internal invariants: {pattern}"));
+            Box::new(paths.filter_map(std::result::Result::ok))
+                as Box<dyn Iterator<Item = std::path::PathBuf> + Send>
+        }
     }
 }
