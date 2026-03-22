@@ -36,7 +36,7 @@ pub fn pass_html<'b, 'a: 'b>(
                     .with_context(|| format!("Read file {html_path:?} failed."))
                     .map(|html| {
                         let cache = cache.get(&slug);
-                        pass_pure(config, registry, typst_path, slug.clone(),cache, &html)
+                        pass_pure(config, registry, typst_path, slug.clone(), cache, &html)
                     });
                 (i, result)
             }
@@ -56,7 +56,12 @@ pub fn pass_html<'b, 'a: 'b>(
             registry.remove_slug(slug);
             error_indexes.push((index, format!("{err}")))
         }
-        _ => unreachable!(),
+        Ok(Ok(_)) => {
+            error_indexes.push((
+                index,
+                "Unexpected success entry reached error partition".into(),
+            ));
+        }
     });
     // Remove error indexes
     error_indexes.sort_by_key(|(index, _)| *index);
@@ -70,7 +75,10 @@ pub fn pass_html<'b, 'a: 'b>(
     // Return only successful results
     let articles = success
         .into_iter()
-        .filter_map(|(_, res)| res.ok().unwrap().ok())
+        .filter_map(|(_, res)| match res {
+            Ok(Ok(article)) => Some(article),
+            _ => None,
+        })
         .collect();
     (articles, error_articles)
 }
