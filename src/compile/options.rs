@@ -40,7 +40,7 @@ impl ProjOptions {
         Ok(options)
     }
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CodeFallbackStyle {
     pub dark: String,
     pub light: String,

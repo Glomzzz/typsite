@@ -84,7 +84,9 @@ pub fn initialize<'a>(
     };
     if packages_changed {
         println!("Packages changed");
-        install_packages(packages_path.unwrap()).with_context(|| "Packages installing failed")?;
+        let packages_path =
+            packages_path.context("Packages changed but package root is unavailable")?;
+        install_packages(packages_path).with_context(|| "Packages installing failed")?;
         println!("Packages changed, reloading...");
     }
 
@@ -125,7 +127,10 @@ pub fn initialize<'a>(
         lib_dirs: &HashSet<String>,
     ) {
         paths.retain(|path| {
-            let path = path.strip_prefix(typst_path).unwrap();
+            let path = match path.strip_prefix(typst_path) {
+                std::result::Result::Ok(path) => path,
+                Err(_) => return true,
+            };
             !(lib_files.contains(path.to_string_lossy().as_ref())
                 || lib_dirs.iter().any(|prefix| path.starts_with(prefix)))
         });
@@ -165,6 +170,9 @@ pub fn initialize<'a>(
 
 impl<'a> Input<'a> {
     pub fn unchanged(&self) -> bool {
+        let watch_mode = compile_options()
+            .expect("compile options should be initialized before Input::unchanged checks")
+            .watch;
         self.changed_typst_paths.is_empty()
             && self.deleted_typst_paths.is_empty()
             && self.changed_config_paths.is_empty()
@@ -172,7 +180,8 @@ impl<'a> Input<'a> {
             && self.changed_non_typst.is_empty()
             && self.deleted_non_typst.is_empty()
             // In watch mode, ignore `retry_html_paths` when determining if a file is `unchanged`
-            && ( compile_options().unwrap().watch || (self.retry_html_paths.is_empty() && self.retry_typst_paths.is_empty()) )
+            && (watch_mode
+                || (self.retry_html_paths.is_empty() && self.retry_typst_paths.is_empty()))
     }
 }
 
