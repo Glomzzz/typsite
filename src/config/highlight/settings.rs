@@ -1,4 +1,3 @@
-
 /// Code based on <https://github.com/defuz/sublimate/blob/master/src/core/settings.rs>
 /// released under the MIT license by @defuz
 use plist::Error as PlistError;

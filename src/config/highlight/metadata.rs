@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, fs::File, io::BufReader, path::PathBuf};
 
+use super::settings::*;
 use serde::{Deserialize, Serialize};
 use syntect::parsing::{Metadata, MetadataSet};
-use super::settings::*;
 
 type Dict = serde_json::Map<String, Settings>;
 
@@ -10,8 +10,6 @@ type Dict = serde_json::Map<String, Settings>;
 ///
 /// [`ScopeSelectors`]: ../../highlighting/struct.ScopeSelectors.html
 type SelectorString = String;
-
-
 
 /// From `syntect`
 /// A type that can be deserialized from a `.tmPreferences` file.
@@ -32,7 +30,13 @@ impl RawMetadataEntry {
         // we stash the path because we use it to determine parse order
         // when generating the final metadata object; to_string_lossy
         // is adequate for this purpose.
-        contents.as_object_mut().and_then(|obj| obj.insert("path".into(), path.to_string_lossy().into()));
+        let object = contents.as_object_mut().ok_or_else(|| {
+            anyhow::anyhow!(
+                "tmPreferences {} did not parse into an object",
+                path.display()
+            )
+        })?;
+        object.insert("path".into(), path.to_string_lossy().into());
         Ok(serde_json::from_value(contents)?)
     }
 }
@@ -42,7 +46,6 @@ impl RawMetadataEntry {
 pub(crate) struct LoadMetadata {
     loaded: Vec<RawMetadataEntry>,
 }
-
 
 // all of these are optional, but we don't want to deserialize if
 // we don't have at least _one_ of them present
@@ -63,13 +66,20 @@ impl From<LoadMetadata> for Metadata {
 
         let mut scoped_metadata: BTreeMap<SelectorString, Dict> = BTreeMap::new();
 
-        for RawMetadataEntry { scope, settings, path } in loaded {
-            let scoped_settings = scoped_metadata.entry(scope.clone())
-                .or_insert_with(|| {
-                    let mut d = Dict::new();
-                    d.insert("source_file_path".to_string(), path.to_string_lossy().into());
-                    d
-                });
+        for RawMetadataEntry {
+            scope,
+            settings,
+            path,
+        } in loaded
+        {
+            let scoped_settings = scoped_metadata.entry(scope.clone()).or_insert_with(|| {
+                let mut d = Dict::new();
+                d.insert(
+                    "source_file_path".to_string(),
+                    path.to_string_lossy().into(),
+                );
+                d
+            });
 
             for (key, value) in settings {
                 if !KEYS_WE_USE.contains(&key.as_str()) {
@@ -77,39 +87,49 @@ impl From<LoadMetadata> for Metadata {
                 }
 
                 if key.as_str() == "shellVariables" {
-                    append_vars(scoped_settings, value, &scope);
+                    if let Err(err) = append_vars(scoped_settings, value, &scope) {
+                        eprintln!(
+                            "failed to merge tmPreferences shellVariables for scope {scope} from {}: {err}",
+                            path.display()
+                        );
+                    }
                 } else {
                     scoped_settings.insert(key, value);
                 }
             }
         }
 
-        let scoped_metadata = scoped_metadata.into_iter()
-            .flat_map(|r|
-                 MetadataSet::from_raw(r)
-                     .map_err(|e| eprintln!("{e}")))
+        let scoped_metadata = scoped_metadata
+            .into_iter()
+            .flat_map(|r| MetadataSet::from_raw(r).map_err(|e| eprintln!("{e}")))
             .collect();
         Metadata { scoped_metadata }
     }
 }
 
-fn append_vars(obj: &mut Dict, vars: Settings, scope: &str) {
+fn append_vars(obj: &mut Dict, vars: Settings, scope: &str) -> anyhow::Result<()> {
     #[derive(Deserialize)]
-    struct KeyPair { name: String, value: Settings }
+    struct KeyPair {
+        name: String,
+        value: Settings,
+    }
     #[derive(Deserialize)]
     struct ShellVars(Vec<KeyPair>);
 
-    let shell_vars = obj.entry(String::from("shellVariables"))
-        .or_insert_with(|| Dict::new().into())
-        .as_object_mut().unwrap();
-    match serde_json::from_value::<ShellVars>(vars) {
-	Ok(vars) => {
-	    for KeyPair { name, value } in vars.0 {
-		shell_vars.insert(name, value);
-	    }
-	}
-	Err(e) => eprintln!("malformed shell variables for scope {scope}, {e:}"),
+    let vars = serde_json::from_value::<ShellVars>(vars)
+        .map_err(|err| anyhow::anyhow!("malformed shell variables for scope {scope}: {err}"))?;
+    let shell_vars = obj
+        .entry(String::from("shellVariables"))
+        .or_insert_with(|| Dict::new().into());
+    let shell_vars = shell_vars.as_object_mut().ok_or_else(|| {
+        anyhow::anyhow!(
+            "malformed shellVariables container for scope {scope}: expected object while merging tmPreferences metadata"
+        )
+    })?;
+    for KeyPair { name, value } in vars.0 {
+        shell_vars.insert(name, value);
     }
+    Ok(())
 }
 
 impl LoadMetadata {
@@ -123,5 +143,4 @@ impl LoadMetadata {
     pub fn add_raw(&mut self, raw: RawMetadataEntry) {
         self.loaded.push(raw);
     }
-
 }
