@@ -45,10 +45,18 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
     }
 
     pub fn run(mut self) -> TypResult<OutputHtml<'a>> {
-        let metadata = self
+        let mut err = TypError::new_schema(self.article.slug.clone(), self.schema.id.as_str());
+        let metadata = err.ok(self
             .global_data
             .metadata(self.article.slug.as_ref())
-            .unwrap();
+            .with_context(|| format!("Metadata of {} not found", self.article.slug)));
+        if err.has_error() {
+            return Err(err);
+        }
+        let Some(metadata) = metadata else {
+            let err = anyhow::anyhow!("Metadata unexpectedly missing for {}", self.article.slug);
+            return Err(TypError::new_with(self.article.slug.clone(), vec![err]));
+        };
 
         let footer_schema = matches!(self.schema.id.as_str(), REFERENCE_KEY | BACKLINK_KEY);
 
@@ -137,7 +145,7 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
                     let attrs = Attributes::new(tag.attributes);
                     let meta_key = attrs
                         .expect("get")
-                        .context("Expect Metadata tag with attr `get`");
+                        .context("Expected <metadata> tag with required attr `get`");
                     let meta_key = err.ok(meta_key);
                     let from = attrs.get("from").unwrap_or(Cow::Borrowed("$self"));
                     let metadata = match from.as_ref() {
@@ -195,5 +203,207 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
         }
         let html = OutputHtml::<'a>::new(head, self.body);
         Ok(html)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::compile::{
+        init_compile_options, init_proj_options,
+        options::{CompileOptions, ProjOptions},
+    };
+    use crate::config::TypsiteConfig;
+    use crate::ir::article::body::Body;
+    use crate::ir::article::data::GlobalData;
+    use crate::ir::article::dep::{Dependency, Indexes};
+    use crate::ir::article::{sidebar::Sidebar, Article};
+    use crate::ir::metadata::content::MetaContents;
+    use crate::ir::metadata::graph::MetaNode;
+    use crate::ir::metadata::options::MetaOptions;
+    use crate::ir::metadata::Metadata;
+    use std::collections::{HashMap, HashSet};
+    use std::fs;
+    use std::sync::OnceLock;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn write_test_config(root: &std::path::Path) {
+        fs::create_dir_all(root.join("components/footer")).expect("footer dir");
+        fs::create_dir_all(root.join("rewrite")).expect("rewrite dir");
+        fs::create_dir_all(root.join("schemas")).expect("schema dir");
+        fs::create_dir_all(root.join("syntaxes")).expect("syntaxes dir");
+        fs::create_dir_all(root.join("themes")).expect("themes dir");
+
+        fs::write(
+            root.join("options.toml"),
+            include_str!("../../resources/.typsite/options.toml"),
+        )
+        .expect("options file");
+        fs::write(
+            root.join("components/section.html"),
+            include_str!("../../resources/.typsite/components/section.html"),
+        )
+        .expect("section");
+        fs::write(
+            root.join("components/heading-numbering.html"),
+            "<html><body>{numbering}</body></html>",
+        )
+        .expect("heading numbering");
+        fs::write(
+            root.join("components/footer.html"),
+            "<html><body><footer>{references}{backlinks}</footer></body></html>",
+        )
+        .expect("footer");
+        fs::write(
+            root.join("components/footer/backlinks.html"),
+            "<html><body>{backlinks}</body></html>",
+        )
+        .expect("backlinks");
+        fs::write(
+            root.join("components/footer/references.html"),
+            "<html><body>{references}</body></html>",
+        )
+        .expect("references");
+        fs::write(
+            root.join("components/anchor_def.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor def");
+        fs::write(
+            root.join("components/anchor_def_svg.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor def svg");
+        fs::write(
+            root.join("components/anchor_goto.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor goto");
+        fs::write(
+            root.join("components/anchor_goto_svg.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor goto svg");
+        fs::write(
+            root.join("components/sidebar.html"),
+            "<html><body>{children}</body></html>",
+        )
+        .expect("sidebar");
+        fs::write(
+            root.join("components/sidebar_each.html"),
+            "<html><body>{title}</body></html>",
+        )
+        .expect("sidebar each");
+        fs::write(
+            root.join("components/embed.html"),
+            "<html><body>{content}</body></html>",
+        )
+        .expect("embed");
+        fs::write(
+            root.join("components/embed_title.html"),
+            "<html><body>{title}</body></html>",
+        )
+        .expect("embed title");
+        fs::write(
+            root.join("schemas/main.html"),
+            "<head></head><body><metadata></metadata></body>",
+        )
+        .expect("schema");
+    }
+
+    pub(crate) fn run_schema_pass_reports_missing_metadata_tag_attr() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("test timestamp should be available")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("typsite-schema-pass-{unique}"));
+        let typst = root.join("typst");
+        let html = root.join("html");
+        write_test_config(&root);
+        fs::create_dir_all(&typst).expect("typst dir");
+        fs::create_dir_all(&html).expect("html dir");
+
+        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
+        let proj = ProjOptions::load(&root).expect("project options should load");
+        init_proj_options(proj).expect("project options should initialize");
+        init_compile_options(CompileOptions {
+            watch: false,
+            short_slug: false,
+            pretty_url: true,
+        })
+        .expect("compile options should initialize");
+
+        let slug: crate::compile::registry::Key = std::sync::Arc::from("/article");
+        let metadata = Metadata {
+            contents: MetaContents::new(slug.clone(), HashMap::new(), false),
+            options: MetaOptions {
+                heading_numbering_style: crate::ir::article::sidebar::HeadingNumberingStyle::Bullet,
+                sidebar_type: crate::ir::article::sidebar::SidebarType::All,
+            },
+            node: MetaNode {
+                slug: slug.clone(),
+                parent: None,
+                parents: HashSet::new(),
+                backlinks: HashSet::new(),
+                references: HashSet::new(),
+                children: HashSet::new(),
+            },
+        };
+        let article = Article::new(
+            slug.clone(),
+            std::sync::Arc::from(std::path::Path::new("article.typ")),
+            metadata,
+            config.schemas.get("main").expect("schema should exist"),
+            Vec::new(),
+            Body::new(Vec::new(), Vec::new(), HashMap::new()),
+            Sidebar::new(
+                Vec::new(),
+                HashSet::new(),
+                HashSet::new(),
+                HashMap::new(),
+                HashMap::new(),
+            ),
+            Sidebar::new(
+                Vec::new(),
+                HashSet::new(),
+                HashSet::new(),
+                HashMap::new(),
+                HashMap::new(),
+            ),
+            Vec::new(),
+            Dependency::new(HashMap::new()),
+            HashSet::new(),
+            Vec::new(),
+        );
+        let articles = HashMap::from([(slug.clone(), article)]);
+        let global_data = GlobalData::new(
+            &config,
+            &articles,
+            HashMap::<_, OnceLock<_>>::new(),
+            HashMap::from([(slug.clone(), Indexes::All)]),
+            HashMap::from([(slug.clone(), Indexes::All)]),
+        );
+
+        let err = SchemaPass::new(
+            &config,
+            config.schemas.get("main").expect("schema should exist"),
+            articles.get(&slug).expect("article should exist"),
+            "",
+            "",
+            &global_data,
+        )
+        .run()
+        .expect_err("missing metadata get attr should not panic");
+        let err = err.to_string();
+
+        assert!(err.contains("required attr `get`"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn schema_pass_reports_missing_metadata_tag_attr() {
+        let _guard = crate::test_lock();
+        run_schema_pass_reports_missing_metadata_tag_attr();
     }
 }
