@@ -3,6 +3,7 @@ use crate::config::sidebar::SidebarConfig;
 use crate::ir::article::sidebar::{HeadingNumberingStyle, Pos, SidebarIndexes, SidebarPos};
 use crate::util::pos_slug;
 use crate::util::str::SidebarElem;
+use anyhow::{anyhow, Result};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 
@@ -141,10 +142,10 @@ impl<'a> SidebarData<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct SidebarBuilder {
+pub(crate) struct SidebarBuilder {
     slug: Key,
-    pos: Pos,
-    sections: Section,
+    pub(crate) pos: Pos,
+    pub(crate) sections: Section,
 }
 
 impl SidebarBuilder {
@@ -152,8 +153,12 @@ impl SidebarBuilder {
         SidebarData::build(config, self.sections)
     }
 
-    fn new(slug: Key) -> Self {
-        let anchor = slug.as_ref()[1..].to_string();
+    pub(crate) fn new(slug: Key) -> Self {
+        let anchor = slug
+            .as_ref()
+            .strip_prefix('/')
+            .expect("article slugs should always be normalized with a leading slash")
+            .to_string();
         Self {
             slug,
             pos: vec![],
@@ -181,12 +186,9 @@ impl SidebarBuilder {
     fn get_section_mut<'a>(sections: &'a mut Section, pos: &[usize]) -> Option<&'a mut Section> {
         let mut current = sections;
         for &index in pos {
-            current = match &current.data {
-                SectionData::Inner { .. } => match &mut current.data {
-                    SectionData::Inner { children, .. } => children.get_mut(index).unwrap(),
-                    _ => panic!(),
-                },
-                SectionData::Embed => panic!(),
+            current = match &mut current.data {
+                SectionData::Inner { children, .. } => children.get_mut(index)?,
+                SectionData::Embed => return None,
             };
         }
         Some(current)
@@ -223,16 +225,23 @@ impl SidebarBuilder {
             Ordering::Greater => {
                 self.pos.push(0);
             }
-            Ordering::Equal => *self.pos.last_mut().unwrap() += 1,
+            Ordering::Equal => {
+                if let Some(last) = self.pos.last_mut() {
+                    *last += 1;
+                }
+            }
             Ordering::Less => {
-                let mut last_pos: usize = *pos.last().unwrap();
+                let mut last_pos: usize = pos.last().copied().unwrap_or_default();
                 while !pos.is_empty() {
                     if self.get_level(&pos) < level {
                         pos.append(&mut vec![last_pos + 1]);
                         self.pos = pos.clone();
                         break;
                     }
-                    last_pos = pos.pop().unwrap();
+                    let Some(next_last_pos) = pos.pop() else {
+                        break;
+                    };
+                    last_pos = next_last_pos;
                 }
                 if pos.is_empty() {
                     self.pos = vec![last_pos + 1];
@@ -242,36 +251,57 @@ impl SidebarBuilder {
         self.pos.clone()
     }
 
-    fn add_section(&mut self, level: usize, title: Vec<String>) {
+    pub(crate) fn add_section(&mut self, level: usize, title: Vec<String>) -> Result<()> {
         let mut pos = self.pos.clone();
         let section = Section::new(level, pos_slug(&pos, self.slug.as_ref()), title);
         pos.pop();
-        let parent = Self::get_section_mut(&mut self.sections, &pos).unwrap();
+        let parent = Self::get_section_mut(&mut self.sections, &pos).ok_or_else(|| {
+            anyhow!(
+                "Failed to find sidebar parent section while adding heading level {level} for {} at {:?}",
+                self.slug,
+                self.pos
+            )
+        })?;
         match &mut parent.data {
             SectionData::Inner { children, .. } => {
                 children.push(section);
+                Ok(())
             }
-            SectionData::Embed => panic!("Parent section is an embed section"),
+            SectionData::Embed => Err(anyhow!(
+                "Failed to add sidebar heading level {level} under embed section for {} at {:?}",
+                self.slug,
+                self.pos
+            )),
         }
     }
 
-    fn add_embed_section(&mut self, level: usize) -> Pos {
+    fn add_embed_section(&mut self, level: usize) -> Result<Pos> {
         self.intake(level);
         let parent_pos = {
             let mut pos = self.pos.clone();
             pos.pop();
             pos
         };
-        let parent = Self::get_section_mut(&mut self.sections, &parent_pos).unwrap();
+        let parent = Self::get_section_mut(&mut self.sections, &parent_pos).ok_or_else(|| {
+            anyhow!(
+                "Failed to find sidebar parent section while adding embed level {level} for {} at {:?}",
+                self.slug,
+                self.pos
+            )
+        })?;
         match &mut parent.data {
             SectionData::Inner { children, .. } => {
                 let anchor_str = pos_slug(&self.pos, self.slug.as_ref());
                 children.push(Section::new_embed(anchor_str));
+                Ok(self.pos.clone())
             }
 
-            SectionData::Embed => panic!("Parent section is an embed section"),
+            SectionData::Embed => Err(anyhow!(
+                "Failed to add embed sidebar section under embed section for {} at {:?}",
+                self.slug,
+                self.pos
+            )),
         }
-        self.pos.clone()
     }
 }
 
@@ -292,17 +322,17 @@ impl PureSidebarBuilder {
         self.full_sidebar.intake(level)
     }
 
-    pub fn add_heading_section(&mut self, level: usize, title: Vec<String>) {
-        self.full_sidebar.add_section(level, title);
+    pub fn add_heading_section(&mut self, level: usize, title: Vec<String>) -> Result<()> {
+        self.full_sidebar.add_section(level, title)
     }
     pub fn current_full_pos(&self) -> Pos {
         self.full_sidebar.pos.clone()
     }
 
-    pub fn add_embed_section(&mut self, level: usize) -> (Pos, Pos) {
-        let full_sidebar_index = self.full_sidebar.add_embed_section(level);
-        let only_embed_index = self.only_embed_sidebar.add_embed_section(level);
-        (full_sidebar_index, only_embed_index)
+    pub fn add_embed_section(&mut self, level: usize) -> Result<(Pos, Pos)> {
+        let full_sidebar_index = self.full_sidebar.add_embed_section(level)?;
+        let only_embed_index = self.only_embed_sidebar.add_embed_section(level)?;
+        Ok((full_sidebar_index, only_embed_index))
     }
 
     pub fn build(self, config: &SidebarConfig) -> (SidebarData<'_>, SidebarData<'_>) {
