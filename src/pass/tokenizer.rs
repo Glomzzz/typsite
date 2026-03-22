@@ -248,8 +248,8 @@ fn emit_body_next(
                 "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                     let heading_level = name[1..].parse::<usize>()?;
                     let peek = tokenizer.tokenizer.peek();
-                    if peek.is_some() {
-                        let peek = peek.unwrap().clone()?;
+                    if let Some(peek) = peek {
+                        let peek = peek.clone()?;
                         match peek {
                             Token::StartTag(peek) if html_as_str(&peek.name) == EMBED_KEY => {
                                 let _ = tokenizer.tokenizer.next();
@@ -460,21 +460,27 @@ fn emit_other_start(
                 .map(|v| html_as_str(v).to_string())?;
             let url = url.as_ref();
             let tag = if url.starts_with(SVG_ANCHOR_PREFIX) {
-                let url = url.strip_prefix(SVG_ANCHOR_PREFIX).unwrap();
+                let Some(url) = url.strip_prefix(SVG_ANCHOR_PREFIX) else {
+                    return Err(anyhow!("Missing svg anchor prefix after validation"));
+                };
                 BodyTag::AnchorDef {
                     id: url.to_string(),
                     svg_transform: Some(transform),
                 }
             } else if url.starts_with(SVG_GOTO_PREFIX) {
                 state.link_in_svg = true;
-                let url = url.strip_prefix(SVG_GOTO_PREFIX).unwrap();
+                let Some(url) = url.strip_prefix(SVG_GOTO_PREFIX) else {
+                    return Err(anyhow!("Missing svg goto prefix after validation"));
+                };
                 BodyTag::AnchorGoto {
                     id: url.to_string(),
                     svg_transform: Some(transform),
                 }
             } else if url.starts_with(SVG_FOOTNOTE_REF_PREFIX) {
                 state.link_in_svg = true;
-                let footnote = url.strip_prefix(SVG_FOOTNOTE_REF_PREFIX).unwrap();
+                let Some(footnote) = url.strip_prefix(SVG_FOOTNOTE_REF_PREFIX) else {
+                    return Err(anyhow!("Missing svg footnote prefix after validation"));
+                };
                 BodyTag::Rewrite {
                     tag: "footnote-ref-svg".to_string(),
                     attrs: {
@@ -549,4 +555,34 @@ fn emit_other_end(
         _ => {}
     }
     Ok(Some(Event::Other(Token::EndTag(end_tag))))
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::{BodyTag, Event, EventTokenizer, Tokenizer};
+
+    pub(crate) fn run_tokenizer_parses_svg_anchor_without_strip_prefix_panic() {
+        let html = r##"<body><svg><a href="#anchor:svg-target" transform="translate(1 2)"></a></svg></body>"##;
+        let mut raw = html5gum::Tokenizer::new(html).peekable();
+        let mut tokenizer = Tokenizer::<BodyTag>::new(&mut raw);
+
+        loop {
+            match tokenizer.next() {
+                Some(Ok(Event::Start(BodyTag::AnchorDef { id, svg_transform }))) => {
+                    assert_eq!(id, "svg-target");
+                    assert_eq!(svg_transform.as_deref(), Some("translate(1 2)"));
+                    break;
+                }
+                Some(Ok(Event::Eof)) => panic!("svg anchor should produce an AnchorDef event"),
+                Some(Ok(_)) => {}
+                Some(Err(err)) => panic!("svg anchor should parse without error: {err}"),
+                None => panic!("svg anchor should produce an AnchorDef event"),
+            }
+        }
+    }
+
+    #[test]
+    fn tokenizer_parses_svg_anchor_without_strip_prefix_panic() {
+        run_tokenizer_parses_svg_anchor_without_strip_prefix_panic();
+    }
 }

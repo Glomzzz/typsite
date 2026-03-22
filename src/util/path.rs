@@ -15,7 +15,7 @@ pub fn format_path(path: PathBuf) -> PathBuf {
         .unwrap_or(path)
 }
 
-pub fn verify_if_relative_path<P:AsRef<Path>>(cwd: &Path, path: P) -> Result<PathBuf> {
+pub fn verify_if_relative_path<P: AsRef<Path>>(cwd: &Path, path: P) -> Result<PathBuf> {
     let path = path.as_ref();
     if path.starts_with("/") {
         
@@ -31,9 +31,7 @@ pub fn relative_path(base: &Path, path: &Path) -> Result<PathBuf> {
     path.strip_prefix(base)
         .map(|p| p.to_path_buf())
         .map_err(TypsiteError::PathConversion)
-        .with_context(|| format!(
-            "Failed to convert path {path:?} to relative path of {base:?}"
-        ))
+        .with_context(|| format!("Failed to convert path {path:?} to relative path of {base:?}"))
 }
 
 pub fn dir_name(path: &Path) -> Option<&str> {
