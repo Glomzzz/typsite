@@ -1,7 +1,7 @@
 use crate::pass::tokenizer::PeekableTokenizer;
 use crate::util::error::TypsiteError;
 use crate::util::str::ElemTokenizerTrait;
-use crate::util::str::{Elem, ElemTokenizer, ac_replace};
+use crate::util::str::{ac_replace, Elem, ElemTokenizer};
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::*;
@@ -15,7 +15,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::fmt::Write;
 use std::fs::File;
-use std::io::{BufReader, read_to_string};
+use std::io::{read_to_string, BufReader};
 use std::path::Path;
 use std::result::Result::Ok;
 
@@ -132,7 +132,7 @@ impl<'ce> Deserialize<'ce> for Attributes {
     }
 }
 
-pub fn from_css_style(str: &str) -> Result<BTreeMap<HtmlString,HtmlString>> {
+pub fn from_css_style(str: &str) -> Result<BTreeMap<HtmlString, HtmlString>> {
     let mut attrs = BTreeMap::new();
     for decl in str.split(';') {
         let decl = decl.trim();
@@ -584,7 +584,7 @@ mod tests {
                     HtmlString::from("0".as_bytes().to_vec()),
                 ),
             ]
-            .into_iter()
+            .into_iter(),
         );
         // Should serialize to a single CSS string
         assert_eq!(
@@ -609,13 +609,16 @@ mod tests {
                     HtmlString::from("0".as_bytes().to_vec()),
                 ),
             ]
-            .into_iter()
+            .into_iter(),
         );
         let serialized = to_css_style(&attrs);
-        assert_eq!(serialized, to_css_style(&from_css_style(&serialized).unwrap()));
+        assert_eq!(
+            serialized,
+            to_css_style(&from_css_style(&serialized).unwrap())
+        );
 
         let raw = "color: red; font-size: 16px; margin: 0;";
-        let de2  = from_css_style(raw).unwrap();
+        let de2 = from_css_style(raw).unwrap();
         assert_eq!(de2, attrs);
     }
 }

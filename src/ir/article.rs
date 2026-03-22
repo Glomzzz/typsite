@@ -68,9 +68,13 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
         config: &'a TypsiteConfig,
         registry: &KeyRegistry,
     ) -> TypResult<Article<'a>> {
-        let self_slug = registry.know(pure.slug, "Article", "").unwrap();
-        let path = registry.path(self_slug.as_ref()).unwrap();
+        let self_slug = registry
+            .slug(pure.slug.as_str())
+            .unwrap_or_else(|| Arc::from(pure.slug.as_str()));
         let mut err = TypError::new(self_slug.clone());
+        let path = err.ok(registry
+            .path(self_slug.as_ref())
+            .with_context(|| format!("Article path not found for {}", self_slug)));
         let schema = config.schemas.get(&pure.schema);
         let schema = err.ok(schema);
         let metadata = Metadata::from(self_slug.clone(), pure.metadata, config, registry);
@@ -101,11 +105,37 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
         if err.has_error() {
             return Err(err);
         }
-        let metadata = metadata.unwrap();
-        let schema = schema.unwrap();
-        let body = body.unwrap();
+        let path = path.ok_or_else(|| {
+            TypError::new_with(
+                self_slug.clone(),
+                vec![anyhow::anyhow!("Article path missing after validation")],
+            )
+        })?;
+        let metadata = metadata.ok_or_else(|| {
+            TypError::new_with(
+                self_slug.clone(),
+                vec![anyhow::anyhow!("Metadata missing after validation")],
+            )
+        })?;
+        let schema = schema.ok_or_else(|| {
+            TypError::new_with(
+                self_slug.clone(),
+                vec![anyhow::anyhow!("Schema missing after validation")],
+            )
+        })?;
+        let body = body.ok_or_else(|| {
+            TypError::new_with(
+                self_slug.clone(),
+                vec![anyhow::anyhow!("Body missing after validation")],
+            )
+        })?;
         let embeds = embeds.into_iter().flatten().collect();
-        let dependency = dependency.unwrap();
+        let dependency = dependency.ok_or_else(|| {
+            TypError::new_with(
+                self_slug.clone(),
+                vec![anyhow::anyhow!("Dependency missing after validation")],
+            )
+        })?;
         let used_rules = used_rules.into_iter().flatten().collect();
         let article = Article {
             slug: self_slug,
@@ -251,6 +281,197 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
 
     pub fn get_anchors(&'b self) -> &'b Vec<AnchorData> {
         &self.anchors
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::compile::{
+        init_compile_options, init_proj_options,
+        options::{CompileOptions, ProjOptions},
+    };
+    use crate::config::TypsiteConfig;
+    use crate::ir::article::body::Body;
+    use crate::ir::article::dep::Dependency;
+    use crate::ir::metadata::options::MetaOptions;
+    use crate::ir::metadata::{Metadata, PureMetadata};
+    use std::fs;
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn write_test_config(root: &std::path::Path) {
+        fs::create_dir_all(root.join("components/footer")).expect("footer dir");
+        fs::create_dir_all(root.join("rewrite")).expect("rewrite dir");
+        fs::create_dir_all(root.join("schemas")).expect("schema dir");
+        fs::create_dir_all(root.join("syntaxes")).expect("syntaxes dir");
+        fs::create_dir_all(root.join("themes")).expect("themes dir");
+
+        fs::write(
+            root.join("options.toml"),
+            include_str!("../../resources/.typsite/options.toml"),
+        )
+        .expect("options file");
+        fs::write(
+            root.join("components/section.html"),
+            include_str!("../../resources/.typsite/components/section.html"),
+        )
+        .expect("section");
+        fs::write(
+            root.join("components/heading-numbering.html"),
+            "<html><body>{numbering}</body></html>",
+        )
+        .expect("heading numbering");
+        fs::write(
+            root.join("components/footer.html"),
+            "<html><body><footer>{references}{backlinks}</footer></body></html>",
+        )
+        .expect("footer");
+        fs::write(
+            root.join("components/footer/backlinks.html"),
+            "<html><body>{backlinks}</body></html>",
+        )
+        .expect("backlinks");
+        fs::write(
+            root.join("components/footer/references.html"),
+            "<html><body>{references}</body></html>",
+        )
+        .expect("references");
+        fs::write(
+            root.join("components/anchor_def.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor def");
+        fs::write(
+            root.join("components/anchor_def_svg.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor def svg");
+        fs::write(
+            root.join("components/anchor_goto.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor goto");
+        fs::write(
+            root.join("components/anchor_goto_svg.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor goto svg");
+        fs::write(
+            root.join("components/sidebar.html"),
+            "<html><body>{children}</body></html>",
+        )
+        .expect("sidebar");
+        fs::write(
+            root.join("components/sidebar_each.html"),
+            "<html><body>{title}</body></html>",
+        )
+        .expect("sidebar each");
+        fs::write(
+            root.join("components/embed.html"),
+            "<html><body>{content}</body></html>",
+        )
+        .expect("embed");
+        fs::write(
+            root.join("components/embed_title.html"),
+            "<html><body>{title}</body></html>",
+        )
+        .expect("embed title");
+        fs::write(
+            root.join("schemas/reference.html"),
+            "<html><body><content></content></body></html>",
+        )
+        .expect("reference schema");
+    }
+
+    pub(crate) fn run_article_from_collects_registry_and_schema_errors() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("test timestamp should be available")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("typsite-article-from-{unique}"));
+        let typst = root.join("typst");
+        let html = root.join("html");
+        write_test_config(&root);
+        fs::create_dir_all(&typst).expect("typst dir");
+        fs::create_dir_all(&html).expect("html dir");
+
+        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
+        let proj = ProjOptions::load(&root).expect("project options should load");
+        init_proj_options(proj).expect("project options should initialize");
+        init_compile_options(CompileOptions {
+            watch: false,
+            short_slug: false,
+            pretty_url: true,
+        })
+        .expect("compile options should initialize");
+
+        let pure = PureArticle {
+            path: std::path::PathBuf::from("missing.typ"),
+            slug: "/missing".to_string(),
+            schema: "missing-schema".to_string(),
+            metadata: PureMetadata::from(Metadata {
+                contents: crate::ir::metadata::content::MetaContents::new(
+                    Arc::from("/missing"),
+                    HashMap::new(),
+                    false,
+                ),
+                options: MetaOptions {
+                    heading_numbering_style:
+                        crate::ir::article::sidebar::HeadingNumberingStyle::Bullet,
+                    sidebar_type: crate::ir::article::sidebar::SidebarType::All,
+                },
+                node: crate::ir::metadata::graph::MetaNode {
+                    slug: Arc::from("/missing"),
+                    parent: Some(Arc::from("/missing-parent")),
+                    parents: HashSet::new(),
+                    backlinks: HashSet::new(),
+                    references: HashSet::new(),
+                    children: HashSet::new(),
+                },
+            }),
+            head: Vec::new(),
+            body: body::PureBody::from(Body::new(Vec::new(), Vec::new(), HashMap::new())),
+            full_sidebar: Sidebar::new(
+                Vec::new(),
+                HashSet::new(),
+                HashSet::new(),
+                HashMap::new(),
+                HashMap::new(),
+            ),
+            embed_sidebar: Sidebar::new(
+                Vec::new(),
+                HashSet::new(),
+                HashSet::new(),
+                HashMap::new(),
+                HashMap::new(),
+            ),
+            embeds: Vec::new(),
+            dependency: crate::ir::article::dep::PureDependency::from(Dependency::new(
+                HashMap::new(),
+            )),
+            used_rules: HashSet::new(),
+            anchors: Vec::new(),
+        };
+        let registry = KeyRegistry::new();
+
+        let err = match Article::from(pure, &config, &registry) {
+            Ok(_) => panic!("missing registry path and schema should be aggregated"),
+            Err(err) => err,
+        };
+        let err = err.to_string();
+
+        assert!(err.contains("Article path not found for /missing"));
+        assert!(err.contains("No schema named missing-schema"));
+        assert!(err.contains("Parent not found: /missing-parent in /missing"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn article_from_collects_registry_and_schema_errors() {
+        let _guard = crate::test_lock();
+        run_article_from_collects_registry_and_schema_errors();
     }
 }
 

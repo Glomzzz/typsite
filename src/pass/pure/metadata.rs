@@ -7,6 +7,7 @@ use crate::ir::metadata::options::MetaOptions;
 use crate::ir::metadata::Metadata;
 use crate::ir::rewriter::MetaRewriter;
 use crate::pass::pure::rewriter::RewriterBuilder;
+use anyhow::anyhow;
 use std::collections::{HashMap, HashSet};
 
 pub struct MetadataBuilder<'a> {
@@ -21,11 +22,13 @@ pub struct MetadataBuilder<'a> {
     parent: Option<Key>,
     cited: HashSet<Key>,
     children: HashSet<Key>,
+    errors: Vec<anyhow::Error>,
 }
 
 impl<'a> MetadataBuilder<'a> {
     pub fn new(self_slug: Key) -> Self {
-        let options = proj_options().unwrap();
+        let options = proj_options()
+            .expect("project options should be initialized before parsing article metadata");
 
         let heading_numbering_style = options.default_metadata.options.heading_numbering;
         let sidebar_type = options.default_metadata.options.sidebar_type;
@@ -53,6 +56,7 @@ impl<'a> MetadataBuilder<'a> {
             parent,
             cited: HashSet::new(),
             children: HashSet::new(),
+            errors: Vec::new(),
         }
     }
 
@@ -99,9 +103,16 @@ impl<'a> MetadataBuilder<'a> {
     }
 
     pub fn emit_metacontent_end(&mut self, content: Vec<String>) {
+        let Some(metadata_key) = self.meta_key.take() else {
+            self.errors.push(anyhow!(
+                "Unbalanced metacontent close for {}: closing a metadata content block without an open key",
+                self.slug
+            ));
+            self.meta_rewriter_buffer.clear();
+            return;
+        };
         let atom_buffer = std::mem::take(&mut self.meta_rewriter_buffer);
         let content = MetaContent::new(content, atom_buffer);
-        let metadata_key = self.meta_key.take().unwrap();
         self.contents.insert(metadata_key, content);
     }
 
@@ -114,10 +125,19 @@ impl<'a> MetadataBuilder<'a> {
     }
 
     pub(crate) fn build(
-        self,
+        mut self,
         slug: Key,
         cache: Option<&MetaContents<'a>>,
     ) -> anyhow::Result<Metadata<'a>> {
+        if !self.errors.is_empty() {
+            let details = self
+                .errors
+                .drain(..)
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(anyhow!(details));
+        }
         let updated = cache
             .as_ref()
             .map(|cache| !cache.same_contents(&self.contents))

@@ -12,6 +12,21 @@ use std::collections::HashSet;
 
 use super::embed::EmbedVariables;
 
+fn write_slot(slots: &mut [String], index: usize, value: String, target: &str) {
+    if let Some(slot) = slots.get_mut(index) {
+        *slot = value;
+        return;
+    }
+
+    let message = format!(
+        "[ERROR] Missing {target} write target at index {index} while applying pending data"
+    );
+    eprintln!("{message}");
+    if let Some(slot) = slots.last_mut() {
+        *slot = message;
+    }
+}
+
 pub struct BodyNumberingData {
     pos: Pos,
     anchor: String,
@@ -41,7 +56,7 @@ impl BodyNumberingData {
             &self.pos,
             self.anchor.as_str(),
         );
-        body[self.body_index] = numbering.clone();
+        write_slot(body, self.body_index, numbering, "body numbering");
     }
 }
 
@@ -112,7 +127,7 @@ impl SidebarNumberingData {
             self.anchor.as_str(),
         );
         for &index in &self.sidebar_indexes {
-            sidebar[index] = numbering.clone();
+            write_slot(sidebar, index, numbering.clone(), "sidebar numbering");
         }
     }
 }
@@ -133,7 +148,7 @@ impl SidebarAnchorData {
         let pos_anchor = pos_base_on(base_anchor, Some(&self.pos));
         let anchor = pos_slug(&pos_anchor, &self.anchor);
         for &index in &self.sidebar_indexes {
-            sidebar[index] = anchor.clone();
+            write_slot(sidebar, index, anchor.clone(), "sidebar anchor");
         }
     }
 }
@@ -150,7 +165,7 @@ impl SidebarIndexesData {
             _ => "block",
         };
         for &index in &self.sidebar_indexes {
-            sidebar[index] = if_show.to_string();
+            write_slot(sidebar, index, if_show.to_string(), "sidebar visibility");
         }
     }
 }
@@ -213,7 +228,9 @@ impl<'c> EmbedData<'c> {
         sidebar_type: SidebarType,
     ) {
         let pos = &self.pos;
-        let metadata = global_data.metadata(self.slug.as_ref()).unwrap();
+        let Some(metadata) = global_data.metadata(self.slug.as_ref()) else {
+            return;
+        };
         let numbering = config.heading_numbering.get_with_pos_anchor(
             parent_style,
             base_anchor,
@@ -250,14 +267,24 @@ impl<'c> EmbedData<'c> {
                 SectionType::None => {}
                 _ => {
                     for &title_index in &self.full_sidebar_title_indexes {
-                        full_sidebar_vec[title_index] = self.title.clone();
+                        write_slot(
+                            &mut full_sidebar_vec,
+                            title_index,
+                            self.title.clone(),
+                            "full sidebar title",
+                        );
                     }
                     embed_article_sidebar = full_sidebar_vec.join("");
                 }
             }
         } else {
             for &title_index in &self.embed_sidebar_title_indexes {
-                embed_sidebar_vec[title_index] = self.title.clone();
+                write_slot(
+                    &mut embed_sidebar_vec,
+                    title_index,
+                    self.title.clone(),
+                    "embed sidebar title",
+                );
             }
             embed_article_sidebar = embed_sidebar_vec.join("")
         };
@@ -282,14 +309,19 @@ impl<'c> EmbedData<'c> {
         let embed_body = embed_article_body.join("");
         let embed_body = ac_replace(&embed_body, &replacements);
         let embed_body = metadata.inline(&embed_body);
-        body[self.body_index] = embed_body;
+        write_slot(body, self.body_index, embed_body, "embed body");
         let indexes = if sidebar_type == SidebarType::All {
             &self.full_sidebar_indexes
         } else {
             &self.embed_sidebar_indexes
         };
         for &index in indexes {
-            sidebar[index] = embed_article_sidebar.clone();
+            write_slot(
+                sidebar,
+                index,
+                embed_article_sidebar.clone(),
+                "embed sidebar",
+            );
         }
     }
 }
@@ -321,7 +353,7 @@ impl AnchorData {
     fn based_on(&self, config: &AnchorConfig, base: Option<&Pos>, body: &mut [String]) {
         let text = config.get(&self.kind, base, &self.anchor);
         for &index in &self.body_indexes {
-            body[index] = text.clone();
+            write_slot(body, index, text.clone(), "anchor body");
         }
     }
 }

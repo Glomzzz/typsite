@@ -30,7 +30,7 @@ pub fn generate_site_outputs(articles: &HashMap<Key, Article<'_>>) -> Result<Gen
     let sitemap_path = normalize_output_path(&site.sitemap_path);
     let base_url = normalize_base_url(&site.base_url);
 
-    if base_url.is_none() {
+    let Some(base_url) = base_url else {
         let mut removed = Vec::new();
         if let Some(path) = rss_path {
             removed.push(path);
@@ -42,9 +42,7 @@ pub fn generate_site_outputs(articles: &HashMap<Key, Article<'_>>) -> Result<Gen
             files: Vec::new(),
             removed,
         });
-    }
-
-    let base_url = base_url.unwrap();
+    };
     let pretty_url = compile_options()?.pretty_url;
     let mut entries = collect_entries(articles, &base_url, pretty_url);
 

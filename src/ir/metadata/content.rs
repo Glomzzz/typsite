@@ -78,7 +78,7 @@ impl<'b, 'a: 'b> MetaContents<'a> {
         let content = self.contents.get(key).map(|c| c.get());
         content.or_else(|| {
             proj_options()
-                .unwrap()
+                .expect("project options should be initialized before reading metadata defaults")
                 .default_metadata
                 .content
                 .default
@@ -98,12 +98,14 @@ impl<'b, 'a: 'b> MetaContents<'a> {
                 .iter()
                 .map(|(k, v)| (format!("{{{k}}}"), v.get().to_string()))
                 .collect::<HashMap<_, _>>();
-            let compile_options = compile_options().unwrap();
+            let compile_options = compile_options()
+                .expect("compile options should be initialized before metadata replacements");
+            let (short_slug, pretty_url) = (compile_options.short_slug, compile_options.pretty_url);
             // Short slug
-            let slug_display = if compile_options.short_slug {
+            let slug_display = if short_slug {
                 self.slug
-                    .split('/')
-                    .next_back()
+                    .rsplit('/')
+                    .find(|segment| !segment.is_empty())
                     .unwrap_or(self.slug.as_ref())
             } else {
                 self.slug.as_ref()
@@ -118,7 +120,7 @@ impl<'b, 'a: 'b> MetaContents<'a> {
                 slug_display.to_string(),
             );
 
-            let slug = if !compile_options.pretty_url {
+            let slug = if !pretty_url {
                 format!("{}.html", self.slug)
             } else {
                 self.slug.to_string()
@@ -126,15 +128,18 @@ impl<'b, 'a: 'b> MetaContents<'a> {
 
             map.insert(SLUG_REPLACEMENT.to_string(), slug.to_string());
 
-            map.insert(SLUG_ANCHOR_REPLACEMENT.to_string(), slug[1..].to_string());
+            let slug_anchor = slug
+                .strip_prefix('/')
+                .expect("metadata slug anchors should only be built from normalized slugs with a leading '/'");
+            map.insert(SLUG_ANCHOR_REPLACEMENT.to_string(), slug_anchor.to_string());
 
-            let parent = self.parent.get().cloned().unwrap_or(false);
+            let parent = *self.parent.get_or_init(|| false);
             map.insert(HAS_PARENT_REPLACEMENT.to_string(), parent.to_string());
             map.insert(HAS_PARENT_REPLACEMENT_.to_string(), parent.to_string());
 
             // Add default meta contents
             proj_options()
-                .unwrap()
+                .expect("project options should be initialized before metadata replacements")
                 .default_metadata
                 .content
                 .default
@@ -179,58 +184,46 @@ impl<'b, 'a: 'b> MetaContents<'a> {
     }
 
     pub fn init_parent<'c>(&self, global_data: &'c GlobalData<'a, 'b, 'c>) {
-        let default_parent_slug = proj_options().ok().and_then(|options| {
-            options
-                .default_metadata
-                .graph
-                .default_parent_slug(global_data.config, |slug| {
-                    global_data.article(&slug).map(|it| it.slug.clone())
-                })
-        });
+        let default_parent_slug = proj_options()
+            .expect("project options should be initialized before metadata parent replacements")
+            .default_metadata
+            .graph
+            .default_parent_slug(global_data.config, |slug| {
+                global_data.article(&slug).map(|it| it.slug.clone())
+            });
 
-        let self_metadata = global_data.metadata(self.slug.as_ref()).unwrap();
+        let self_metadata = global_data.metadata(self.slug.as_ref()).expect(
+            "metadata parent replacements should only initialize for slugs present in GlobalData",
+        );
 
-        let parent = self.parent.get_or_init(|| {
-            self_metadata.node.parent.is_some()
-                || default_parent_slug
-                    .as_ref()
-                    .map(|default| default.as_ref() != self.slug.as_ref())
-                    .unwrap_or(false)
+        let resolved_parent_slug = self_metadata.node.parent.clone().or_else(|| {
+            default_parent_slug
+                .clone()
+                .filter(|default| default.as_ref() != self.slug.as_ref())
         });
+        let parent = self.parent.get_or_init(|| resolved_parent_slug.is_some());
         if !parent {
             return;
         }
         self.parent_replacement.get_or_init(|| {
-            self_metadata
-                .node
-                .parent
+            let parent = resolved_parent_slug
                 .clone()
-                .or_else(|| {
-                    if self.parent.get().cloned().unwrap_or(false) {
-                        default_parent_slug
-                    } else {
-                        None
-                    }
+                .expect("metadata parent replacements should resolve a concrete parent slug when `has-parent` is true");
+
+            let parent_metadata = global_data
+                .metadata(parent.as_ref())
+                .expect("metadata parent replacements should only reference parent slugs present in GlobalData");
+            parent_metadata.contents.init_parent(global_data);
+            parent_metadata
+                .contents
+                .init_replacement()
+                .iter()
+                .map(|(k, v)| {
+                    let key = &k[0..k.len() - 1];
+                    let key = format!("{key}@parent}}");
+                    (key, v.to_string())
                 })
-                .as_ref()
-                .and_then(|parent| {
-                    global_data
-                        .metadata(parent.as_ref())
-                        .map(|parent_metadata| {
-                            parent_metadata.contents.init_parent(global_data);
-                            parent_metadata
-                                .contents
-                                .init_replacement()
-                                .iter()
-                                .map(|(k, v)| {
-                                    let key = &k[0..k.len() - 1];
-                                    let key = format!("{key}@parent}}");
-                                    (key, v.to_string())
-                                })
-                                .collect::<HashMap<_, _>>()
-                        })
-                })
-                .unwrap_or_default()
+                .collect::<HashMap<_, _>>()
         });
     }
 
@@ -392,11 +385,27 @@ impl<'ce> Deserialize<'ce> for PureMetaContent {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::compile::{
+        init_compile_options, init_proj_options,
+        options::{CompileOptions, ProjOptions},
+    };
+    use crate::config::TypsiteConfig;
+    use crate::ir::article::body::Body;
+    use crate::ir::article::data::GlobalData;
+    use crate::ir::article::dep::{Dependency, Indexes};
+    use crate::ir::article::{sidebar::Sidebar, Article};
     use crate::ir::metadata::content::PureMetaContent;
+    use crate::ir::metadata::graph::MetaNode;
+    use crate::ir::metadata::options::MetaOptions;
+    use crate::ir::metadata::Metadata;
     use crate::ir::rewriter::{PureRewriter, RewriterType};
     use std::collections::HashMap;
+    use std::collections::HashSet;
+    use std::fs;
+    use std::sync::{Arc, OnceLock};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn cont_serialize_and_de() {
@@ -437,5 +446,202 @@ mod tests {
         let json = serde_json::to_string(&content).unwrap();
         let metadata_de = serde_json::from_str(&json).unwrap();
         assert_eq!(content, metadata_de)
+    }
+
+    fn write_test_config(root: &std::path::Path, options: &str) {
+        fs::create_dir_all(root.join("components/footer")).expect("footer dir");
+        fs::create_dir_all(root.join("rewrite")).expect("rewrite dir");
+        fs::create_dir_all(root.join("schemas")).expect("schema dir");
+        fs::create_dir_all(root.join("syntaxes")).expect("syntaxes dir");
+        fs::create_dir_all(root.join("themes")).expect("themes dir");
+        fs::write(root.join("options.toml"), options).expect("options file");
+        fs::write(
+            root.join("components/section.html"),
+            include_str!("../../../resources/.typsite/components/section.html"),
+        )
+        .expect("section");
+        fs::write(
+            root.join("components/heading-numbering.html"),
+            "<html><body>{numbering}</body></html>",
+        )
+        .expect("heading numbering");
+        fs::write(
+            root.join("components/footer.html"),
+            "<html><body><footer>{references}{backlinks}</footer></body></html>",
+        )
+        .expect("footer");
+        fs::write(
+            root.join("components/footer/backlinks.html"),
+            "<html><body>{backlinks}</body></html>",
+        )
+        .expect("backlinks");
+        fs::write(
+            root.join("components/footer/references.html"),
+            "<html><body>{references}</body></html>",
+        )
+        .expect("references");
+        fs::write(
+            root.join("components/anchor_def.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor def");
+        fs::write(
+            root.join("components/anchor_def_svg.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor def svg");
+        fs::write(
+            root.join("components/anchor_goto.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor goto");
+        fs::write(
+            root.join("components/anchor_goto_svg.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor goto svg");
+        fs::write(
+            root.join("components/sidebar.html"),
+            "<html><body>{children}</body></html>",
+        )
+        .expect("sidebar");
+        fs::write(
+            root.join("components/sidebar_each.html"),
+            "<html><body>{title}</body></html>",
+        )
+        .expect("sidebar each");
+        fs::write(
+            root.join("components/embed.html"),
+            "<html><body>{content}</body></html>",
+        )
+        .expect("embed");
+        fs::write(
+            root.join("components/embed_title.html"),
+            "<html><body>{title}</body></html>",
+        )
+        .expect("embed title");
+        fs::write(
+            root.join("schemas/main.html"),
+            "<html><body><content></content></body></html>",
+        )
+        .expect("schema");
+    }
+
+    pub(crate) fn run_meta_contents_init_replacement_handles_root_slug_and_parent_defaults() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("test timestamp should be available")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("typsite-meta-contents-{unique}"));
+        let typst = root.join("typst");
+        let html = root.join("html");
+        write_test_config(
+            &root,
+            r#"
+[default_metadata.content]
+title = "Fallback Title"
+
+[default_metadata.options]
+heading_numbering = "Bullet"
+sidebar_type = "All"
+
+[default_metadata.graph]
+parent = "/"
+
+[typst_lib]
+paths = []
+
+[code_fallback_style]
+dark = "dark"
+light = "light"
+"#,
+        );
+        fs::create_dir_all(&typst).expect("typst dir");
+        fs::create_dir_all(&html).expect("html dir");
+
+        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
+        let proj = ProjOptions::load(&root).expect("project options should load");
+        init_proj_options(proj).expect("project options should initialize");
+        init_compile_options(CompileOptions {
+            watch: false,
+            short_slug: true,
+            pretty_url: true,
+        })
+        .expect("compile options should initialize");
+
+        let slug: crate::compile::registry::Key = Arc::from("/");
+        let metadata = Metadata {
+            contents: MetaContents::new(slug.clone(), HashMap::new(), false),
+            options: MetaOptions {
+                heading_numbering_style: crate::ir::article::sidebar::HeadingNumberingStyle::Bullet,
+                sidebar_type: crate::ir::article::sidebar::SidebarType::All,
+            },
+            node: MetaNode {
+                slug: slug.clone(),
+                parent: None,
+                parents: HashSet::new(),
+                backlinks: HashSet::new(),
+                references: HashSet::new(),
+                children: HashSet::new(),
+            },
+        };
+        let article = Article::new(
+            slug.clone(),
+            Arc::from(std::path::Path::new("index.typ")),
+            metadata,
+            config.schemas.get("main").expect("schema should exist"),
+            Vec::new(),
+            Body::new(Vec::new(), Vec::new(), HashMap::new()),
+            Sidebar::new(
+                Vec::new(),
+                HashSet::new(),
+                HashSet::new(),
+                HashMap::new(),
+                HashMap::new(),
+            ),
+            Sidebar::new(
+                Vec::new(),
+                HashSet::new(),
+                HashSet::new(),
+                HashMap::new(),
+                HashMap::new(),
+            ),
+            Vec::new(),
+            Dependency::new(HashMap::new()),
+            HashSet::new(),
+            Vec::new(),
+        );
+        let articles = HashMap::from([(slug.clone(), article)]);
+        let global_data = GlobalData::new(
+            &config,
+            &articles,
+            HashMap::<_, OnceLock<_>>::new(),
+            HashMap::from([(slug.clone(), Indexes::All)]),
+            HashMap::from([(slug.clone(), Indexes::All)]),
+        );
+        let contents = &articles
+            .get(&slug)
+            .expect("article should exist")
+            .get_metadata()
+            .contents;
+
+        contents.init_parent(&global_data);
+        let replaced = contents.inline_with(
+            "slug={slug-display}; anchor={slug@anchor}; parent={has-parent}; title={title}; page={page-title}",
+            &[],
+        );
+
+        assert_eq!(
+            replaced,
+            "slug=/; anchor=; parent=false; title=Fallback Title; page=Fallback Title"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn meta_contents_init_replacement_handles_root_slug_and_parent_defaults() {
+        let _guard = crate::test_lock();
+        run_meta_contents_init_replacement_handles_root_slug_and_parent_defaults();
     }
 }

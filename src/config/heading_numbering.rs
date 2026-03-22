@@ -37,3 +37,31 @@ impl HeadingNumberingConfig {
         )
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    pub(crate) fn run_heading_numbering_roman_overflow_is_reported() {
+        let config = HeadingNumberingConfig {
+            path: std::path::PathBuf::from("heading-numbering.html").into(),
+            head: String::new(),
+            body: "{numbering}|{anchor}".to_string(),
+        };
+
+        let rendered = config.get_with_pos_anchor(
+            HeadingNumberingStyle::Roman,
+            None,
+            None,
+            &vec![20],
+            "/article",
+        );
+
+        assert_eq!(rendered, "?|article-21");
+    }
+
+    #[test]
+    fn heading_numbering_roman_overflow_is_reported() {
+        run_heading_numbering_roman_overflow_is_reported();
+    }
+}

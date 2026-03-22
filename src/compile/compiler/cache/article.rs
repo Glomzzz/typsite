@@ -3,7 +3,7 @@ use crate::compile::error::{TypError, TypResult};
 use crate::compile::registry::{Key, KeyRegistry};
 use crate::config::TypsiteConfig;
 use crate::ir::article::{Article, PureArticle};
-use crate::util::error::{log_err, log_err_or_ok};
+use crate::util::error::log_err_or_ok;
 use crate::util::fs::{remove_file_ignore, remove_file_log_err, write_into_file};
 use crate::walk_glob;
 use anyhow::{anyhow, Context};
@@ -48,7 +48,12 @@ impl<'a> ArticleCache<'a> {
     ) {
         failed.into_iter().for_each(|err| {
             let slug = err.slug.clone();
-            let path = registry.path(&slug).unwrap().to_path_buf();
+            let Some(path) = registry.path(&slug).map(|path| path.to_path_buf()) else {
+                error_articles.insert(slug.clone(), (PathBuf::from(slug.as_ref()), err));
+                registry.remove_slug(&slug);
+                self.cache.remove(&slug);
+                return;
+            };
             registry.remove_slug(&slug);
             self.cache.remove(&slug);
             let cache = self.typ_to_json_path(&path);
@@ -140,24 +145,19 @@ impl<'a> ArticleCache<'a> {
         &mut self,
         slugs: HashMap<Key, (Vec<String>, Vec<String>, Vec<String>)>,
     ) -> anyhow::Result<()> {
-        slugs
-            .into_iter()
-            .map(|(slug, cache)| {
-                let article = self.cache.remove(slug.as_ref()).expect("Article not found");
-                let path = self
-                    .cache_article_path
-                    .join(format!("{}.json", article.path.display()));
-                let pure = PureArticle::from(article, cache);
-                serde_json::to_string::<PureArticle>(&pure)
-                    .context("Failed to serialize pure article")
-                    .map(|json| (path, json))
-            })
-            .filter_map(log_err_or_ok)
-            .collect::<Vec<(PathBuf, String)>>()
-            .into_iter()
-            .par_bridge()
-            .map(|(path, json)| write_into_file(path, &json, "cache article"))
-            .for_each(log_err);
+        for (slug, cache) in slugs {
+            let article = self.cache.remove(slug.as_ref()).ok_or_else(|| {
+                anyhow!("Article cache entry missing while writing cache for {slug}")
+            })?;
+            let path = self
+                .cache_article_path
+                .join(format!("{}.json", article.path.display()));
+            let pure = PureArticle::from(article, cache);
+            let json = serde_json::to_string::<PureArticle>(&pure)
+                .with_context(|| format!("Failed to serialize pure article cache for {slug}"))?;
+            write_into_file(path, &json, "cache article")
+                .with_context(|| format!("Failed to write article cache for {slug}"))?;
+        }
         Ok(())
     }
 

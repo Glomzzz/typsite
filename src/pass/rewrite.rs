@@ -1,8 +1,8 @@
+use crate::compile::registry::Key;
+use crate::config::TypsiteConfig;
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::{Indexes, Source};
 use crate::ir::rewriter::{BodyRewriter, MetaRewriter, RewriterType};
-use crate::compile::registry::Key;
-use crate::config::TypsiteConfig;
 use crate::pass::pure::{PurePass, PurePassData};
 use crate::util::html::Attributes;
 use anyhow::*;
@@ -19,17 +19,24 @@ mod footnote_ref_svg;
 
 pub const METACONTENT_TAG: &str = "metacontent";
 
-    static REWRITE_PASSES: LazyLock<Arc<Mutex<HashMap<String, Arc<dyn TagRewritePass>>>>> =
-        LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
+static REWRITE_PASSES: LazyLock<Arc<Mutex<HashMap<String, Arc<dyn TagRewritePass>>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 pub fn register_rewrite_pass(rewriter: impl TagRewritePass + 'static) {
     let tag = rewriter.id().to_string();
     let arc_instance = Arc::new(rewriter);
-    REWRITE_PASSES.lock().unwrap().insert(tag, arc_instance);
+    REWRITE_PASSES
+        .lock()
+        .expect("rewrite pass registry mutex should not be poisoned")
+        .insert(tag, arc_instance);
 }
 
 pub fn find_rewrite_pass(tag: &str) -> Option<Arc<dyn TagRewritePass>> {
-    REWRITE_PASSES.lock().unwrap().get(tag).map(Arc::clone)
+    REWRITE_PASSES
+        .lock()
+        .expect("rewrite pass registry mutex should not be poisoned")
+        .get(tag)
+        .map(Arc::clone)
 }
 
 pub trait Id {
@@ -54,11 +61,7 @@ pub trait Purity {
 #[allow(unused_variables)]
 pub trait TagRewritePass: Id + Atom + Send + Sync + Purity {
     // Initialize the pass, return the attributes to be passed to the following functions
-    fn init(
-        &self,
-        attrs: Attributes,
-        pass: &mut PurePass,
-    ) -> Result<HashMap<String, String>>;
+    fn init(&self, attrs: Attributes, pass: &mut PurePass) -> Result<HashMap<String, String>>;
 
     // Build the attributes, called when the whole HTML is passed
     fn build_attr(
@@ -193,12 +196,7 @@ impl<'c, 'b: 'c, 'a: 'b> RewritePass<'a, 'b, 'c> {
         }
     }
 
-    pub fn run_meta(
-        self,
-        body: &mut [String],
-        rewriters: &Vec<MetaRewriter>,
-        indexes: &Indexes,
-    ) {
+    pub fn run_meta(self, body: &mut [String], rewriters: &Vec<MetaRewriter>, indexes: &Indexes) {
         match indexes {
             Indexes::All => {
                 for rewriter in rewriters {
@@ -237,7 +235,9 @@ impl<'c, 'b: 'c, 'a: 'b> RewritePass<'a, 'b, 'c> {
         if str.is_none() {
             return;
         }
-        let str = str.unwrap();
+        let Some(str) = str else {
+            return;
+        };
         for index in sidebar_indexes {
             sidebar[*index] = str.clone();
         }
@@ -260,7 +260,35 @@ impl<'c, 'b: 'c, 'a: 'b> RewritePass<'a, 'b, 'c> {
         if str.is_none() {
             return;
         }
-        let str = str.unwrap();
+        let Some(str) = str else {
+            return;
+        };
         contents[*index] = str;
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use crate::pass::tokenizer::{BodyTag, Event, EventTokenizer, Tokenizer};
+
+    pub(crate) fn run_rewrite_pass_reports_missing_required_attr() {
+        let html = "<body><rewrite></rewrite></body>";
+        let mut raw = html5gum::Tokenizer::new(html).peekable();
+        let mut tokenizer = Tokenizer::<BodyTag>::new(&mut raw);
+        let err = loop {
+            match tokenizer.next() {
+                Some(Err(err)) => break err,
+                Some(Ok(Event::Eof)) => panic!("missing rewrite id should have produced an error"),
+                Some(Ok(_)) => {}
+                None => panic!("missing rewrite id should have produced an error"),
+            }
+        };
+
+        assert!(err.to_string().contains("Rewrite: expect id attribute"));
+    }
+
+    #[test]
+    fn rewrite_pass_reports_missing_required_attr() {
+        run_rewrite_pass_reports_missing_required_attr();
     }
 }

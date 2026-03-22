@@ -58,7 +58,15 @@ impl KeyRegistry {
         let slug = config.path_to_slug(path)?;
         let slug: Key = self.register_slug(slug);
         let path = if path.starts_with(config.html_path) {
-            path.strip_prefix(config.html_path).unwrap().with_extension("typ")
+            path.strip_prefix(config.html_path)
+                .with_context(|| {
+                    format!(
+                        "Failed to strip html root {} from {}",
+                        config.html_path.display(),
+                        path.display()
+                    )
+                })?
+                .with_extension("typ")
         } else {
             path.to_path_buf()
         };

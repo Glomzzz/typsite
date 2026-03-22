@@ -29,7 +29,10 @@ pub async fn watch(compiler: Compiler,host:String, port: u16) -> Result<()> {
     if let Err(e) = server_result {
         return Err(anyhow!("{e}"));
     }
-    let server =  server_result.unwrap();
+    let server = match server_result {
+        Ok(server) => server,
+        Err(err) => return Err(anyhow!(err)),
+    };
     let publish_dir = compiler.output_path().to_path_buf();
 
     let server_task = tokio::task::Builder::new()
@@ -70,7 +73,9 @@ fn server_task(server: Server, publish_dir: PathBuf, mut reload_receiver: Receiv
         if raw_path == "_reload" {
             let refresh = reload_receiver.try_recv().is_ok();
             let response = Response::from_string(if refresh { "1" } else { "0" });
-            request.respond(response).unwrap();
+            if let Err(err) = request.respond(response) {
+                eprintln!("[WARN] Failed to respond to reload request: {err}");
+            }
             continue;
         }
 
@@ -97,7 +102,9 @@ fn server_task(server: Server, publish_dir: PathBuf, mut reload_receiver: Receiv
             Ok(file) => {
                 let response = Response::from_file(file);
                 println!("Request: {raw_path_display} -> {full_path_display}");
-                request.respond(response).unwrap();
+                if let Err(err) = request.respond(response) {
+                    eprintln!("[WARN] Failed to respond with file {full_path_display}: {err}");
+                }
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 println!("Request: {raw_path_display} -> 404");
@@ -112,11 +119,47 @@ fn server_task(server: Server, publish_dir: PathBuf, mut reload_receiver: Receiv
 }
 
 fn respond_403(r: tiny_http::Request) {
-    r.respond(Response::empty(403)).unwrap();
+    if let Err(err) = r.respond(Response::empty(403)) {
+        eprintln!("[WARN] Failed to respond with 403: {err}");
+    }
 }
 fn respond_404(r: tiny_http::Request) {
-    r.respond(Response::empty(404)).unwrap();
+    if let Err(err) = r.respond(Response::empty(404)) {
+        eprintln!("[WARN] Failed to respond with 404: {err}");
+    }
 }
 fn respond_500(r: tiny_http::Request) {
-    r.respond(Response::empty(500)).unwrap();
+    if let Err(err) = r.respond(Response::empty(500)) {
+        eprintln!("[WARN] Failed to respond with 500: {err}");
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::net::TcpStream;
+    use std::thread;
+
+    pub(crate) fn run_watch_response_errors_are_logged_not_panicked() {
+        let server = Server::http("127.0.0.1:0").expect("server should bind to a local port");
+        let addr = server.server_addr().to_string();
+        let handle = thread::spawn(move || {
+            let request = server.recv().expect("request should arrive");
+            respond_404(request);
+        });
+
+        let mut stream = TcpStream::connect(&addr).expect("client should connect");
+        stream
+            .write_all(b"GET /missing HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .expect("request should be written");
+        drop(stream);
+
+        handle.join().expect("respond_404 path should not panic");
+    }
+
+    #[test]
+    fn watch_response_errors_are_logged_not_panicked() {
+        run_watch_response_errors_are_logged_not_panicked();
+    }
 }

@@ -39,10 +39,23 @@ impl Sidebar {
     }
 
     pub fn cache(&self, metadata: &Metadata) -> Vec<String> {
-        let title = metadata.contents.get(TITLE_KEY).unwrap();
         let mut contents = self.contents.clone();
+        let Some(title) = metadata.contents.get(TITLE_KEY) else {
+            let message = format!(
+                "[ERROR] Missing `{TITLE_KEY}` metadata required for sidebar title rendering"
+            );
+            eprintln!("{message}");
+            for &title_index in &self.title_indexes {
+                if let Some(slot) = contents.get_mut(title_index) {
+                    *slot = message.clone();
+                }
+            }
+            return contents;
+        };
         for &title_index in &self.title_indexes {
-            contents[title_index] = title.to_string();
+            if let Some(slot) = contents.get_mut(title_index) {
+                *slot = title.to_string();
+            }
         }
         contents
     }
@@ -114,7 +127,7 @@ impl HeadingNumberingStyle {
                 .join("."),
             Self::Roman => pos
                 .iter()
-                .map(|it| ROMANS[*it])
+                .map(|it| ROMANS.get(*it).copied().unwrap_or("?"))
                 .collect::<Vec<&str>>()
                 .join("."),
             Self::Alphabet => pos

@@ -2,20 +2,18 @@ use crate::config::THEMES_DIR;
 use crate::util::error::log_err_or_ok;
 use crate::util::path::file_stem;
 use crate::walk_glob;
-use anyhow::{Result,Context};
+use anyhow::Context;
 use glob::glob;
 use metadata::{LoadMetadata, RawMetadataEntry};
 use rayon::iter::{ParallelBridge, ParallelIterator};
-use syntect::dumps::from_binary;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use std::{collections::BTreeMap, path::PathBuf};
+use syntect::dumps::from_binary;
 use syntect::highlighting::{Theme, ThemeSet};
-use syntect::parsing::{
-    Metadata, SyntaxDefinition, SyntaxReference, SyntaxSet, SyntaxSetBuilder,
-};
+use syntect::parsing::{Metadata, SyntaxDefinition, SyntaxReference, SyntaxSet, SyntaxSetBuilder};
 
 use super::SYNTAXES_DIR;
 
@@ -111,7 +109,11 @@ impl CodeHightlightConfig {
     }
 
     pub fn metadata_paths(&self) -> Vec<Arc<Path>> {
-        self.syntaxes.metadata_paths_by_stem.values().cloned().collect()
+        self.syntaxes
+            .metadata_paths_by_stem
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn is_syntax_by_default(&self, token: &str) -> bool {
@@ -120,24 +122,23 @@ impl CodeHightlightConfig {
     fn syntax_set_by_extension(&self) -> &SyntaxSet {
         &self.syntaxes.syntax_set
     }
-
 }
 
 impl Display for CodeHightlightConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Syntaxes by deffault:")?;
         for syntax in default_syntax_set().syntaxes() {
-            writeln!(f, "    - {}",syntax.name)?;
+            writeln!(f, "    - {}", syntax.name)?;
         }
 
         writeln!(f, "Syntaxes by extension:")?;
         for syntax in self.syntax_set_by_extension().syntaxes() {
-            writeln!(f, "    - {}",syntax.name)?;
+            writeln!(f, "    - {}", syntax.name)?;
         }
 
         writeln!(f, "Themes")?;
         for theme in self.themes.keys() {
-            writeln!(f,"    - {theme}")?;
+            writeln!(f, "    - {theme}")?;
         }
         Ok(())
     }
@@ -182,8 +183,10 @@ impl Syntaxes {
                 syntax_set.add(syntax);
                 let path: Arc<Path> = Arc::from(path);
                 syntax_paths_by_name.insert(name, path.clone());
-                let stem = file_stem(&path).unwrap().to_string();
-                syntax_paths_by_stem.insert(stem, path.clone());
+                let stem = file_stem(&path).expect(
+                    "syntax files matched by *.sublime-syntax should always have a file stem",
+                );
+                syntax_paths_by_stem.insert(stem.to_string(), path.clone());
             });
         let mut syntax_set = syntax_set.build();
         let mut raw_metadata = LoadMetadata::default();
@@ -208,8 +211,10 @@ impl Syntaxes {
             .for_each(|(path, metadata)| {
                 raw_metadata.add_raw(metadata);
                 let path: Arc<Path> = Arc::from(path);
-                let stem = file_stem(&path).unwrap().to_string();
-                metadata_paths_by_stem.insert(stem, path);
+                let stem = file_stem(&path).expect(
+                    "metadata files matched by *.tmPreferences should always have a file stem",
+                );
+                metadata_paths_by_stem.insert(stem.to_string(), path);
             });
         syntax_set.set_metadata(Metadata::from(raw_metadata));
 

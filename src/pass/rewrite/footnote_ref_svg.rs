@@ -28,8 +28,12 @@ impl TagRewritePass for FootnoteRef {
                 attrs
             ));
         }
-        let name = name.unwrap();
-        let transform = transform.unwrap();
+        let Some(name) = name else {
+            return Err(anyhow!("FootnoteRefSvgRule: expect name attribute"));
+        };
+        let Some(transform) = transform else {
+            return Err(anyhow!("FootnoteRefSvgRule: expect transform attribute"));
+        };
         Ok([
             (String::from("name"), name.to_string()),
             (String::from("transform"), transform.to_string()),

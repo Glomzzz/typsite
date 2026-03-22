@@ -2,7 +2,7 @@ use crate::compile::error::TypError;
 use crate::config::TypsiteConfig;
 use rayon::prelude::*;
 use std::sync::Arc;
-use std::{fs::create_dir_all, path::Path, result::Result::Ok};
+use std::{path::Path, result::Result::Ok};
 
 use crate::util::error::TypsiteError;
 use crate::util::fs::create_all_parent_dir;
@@ -76,11 +76,13 @@ pub fn compile_typsts(
             let mut html_path = typ_path.clone();
             html_path.set_extension("html");
             let cache_output = html_cache_path.join(&html_path);
-            create_dir_all(cache_output.parent().unwrap()).unwrap();
+            let prepare_output = create_all_parent_dir(&cache_output);
             (
                 slug,
                 typ_path.clone(),
-                compile_typst(typst, typst_path, config_path, typ_path, &cache_output),
+                prepare_output.and_then(|_| {
+                    compile_typst(typst, typst_path, config_path, typ_path, &cache_output)
+                }),
             )
         })
         .filter_map(|(slug, path, res)| {

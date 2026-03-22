@@ -13,7 +13,9 @@ impl TagRewritePass for FootnoteRef {
         if name.is_none() {
             return Err(anyhow!("FootnoteRefRule: expect name attribute"));
         }
-        let name = name.unwrap();
+        let Some(name) = name else {
+            return Err(anyhow!("FootnoteRefRule: expect name attribute"));
+        };
         Ok([(String::from("name"), name.to_string())]
             .into_iter()
             .collect())
@@ -69,7 +71,9 @@ impl TagRewritePass for FootnoteDef {
         if name.is_none() {
             return Err(anyhow!("FootnoteDefRule: expect name attribute"));
         }
-        let name = name.unwrap();
+        let Some(name) = name else {
+            return Err(anyhow!("FootnoteDefRule: expect name attribute"));
+        };
         let (name, numbering) = pure.add_footnote(name.to_string());
         Ok([
             (String::from("name"), name.to_string()),

@@ -22,8 +22,12 @@ impl TagRewritePass for MetaContentPass {
         if meta_key.is_none() {
             return Err(anyhow!("Metacontent-Get: expect `meta_key` attribute"));
         }
-        let slug = slug.unwrap();
-        let meta_key = meta_key.unwrap();
+        let Some(slug) = slug else {
+            return Err(anyhow!("Metacontent-Get: expect `from` attribute"));
+        };
+        let Some(meta_key) = meta_key else {
+            return Err(anyhow!("Metacontent-Get: expect `meta_key` attribute"));
+        };
         let slug = if slug == "$self" {
             pass.slug.clone()
         } else {
@@ -42,7 +46,9 @@ impl TagRewritePass for MetaContentPass {
         attrs: &HashMap<String, String>,
         pass: &PurePass<'a, '_>,
     ) -> Result<HashSet<Source>> {
-        let slug = attrs.get("from").unwrap();
+        let Some(slug) = attrs.get("from") else {
+            return Ok(HashSet::default());
+        };
         if slug == pass.slug.as_ref() {
             return Ok(HashSet::default());
         }

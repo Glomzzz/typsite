@@ -16,6 +16,10 @@ use std::sync::{Arc, OnceLock};
 
 use super::{analyse_slugs_to_update_and_load, ErrorArticles, PathBufs, UpdatedPages};
 
+fn invariant_err(slug: &Key, message: impl Into<String>) -> crate::compile::error::TypError {
+    crate::compile::error::TypError::new_with(slug.clone(), vec![anyhow!(message.into())])
+}
+
 pub type PageCache = HashMap<Key, (Vec<String>, Vec<String>, Vec<String>)>;
 
 pub struct PageData<'a> {
@@ -73,13 +77,21 @@ pub fn compose_pages<'c, 'b: 'c, 'a: 'b>(
     // update_meta_content_indexes
     slugs_to_update
         .iter()
-        .map(|slug| {
-            let article = global_data.article(slug).unwrap();
-            let meta_rewriter_indexes = global_meta_indexes.remove(article.slug.as_ref()).unwrap();
+        .try_for_each(|slug| -> TypResult<()> {
+            let Some(article) = global_data.article(slug) else {
+                return Ok(());
+            };
+            let mut meta_rewriter_indexes = global_meta_indexes
+                .remove(article.slug.as_ref())
+                .ok_or_else(|| {
+                    invariant_err(
+                        slug,
+                        format!(
+                            "meta index entry for {slug} should be precomputed before composition"
+                        ),
+                    )
+                })?;
             let meta_contents = article.get_meta_contents();
-            (meta_contents, meta_rewriter_indexes)
-        })
-        .map(|(meta_contents, mut meta_rewriter_indexes)| {
             if meta_rewriter_indexes.is_empty() {
                 for meta_key in meta_contents.keys() {
                     meta_rewriter_indexes.insert(meta_key.to_string(), Indexes::All);
@@ -88,9 +100,10 @@ pub fn compose_pages<'c, 'b: 'c, 'a: 'b>(
             for (meta_key, indexes) in meta_rewriter_indexes {
                 meta_contents.pass_content(&meta_key, indexes, &global_data);
             }
-            meta_contents
+            meta_contents.init_parent(&global_data);
+            Ok(())
         })
-        .for_each(|meta_contents| meta_contents.init_parent(&global_data));
+        .map_err(|err| anyhow!(err.to_string()))?;
 
     let empty_pos = vec![];
     let final_cache = slugs_to_update
@@ -102,7 +115,12 @@ pub fn compose_pages<'c, 'b: 'c, 'a: 'b>(
     let (output, failed): (Vec<TypResult<_>>, Vec<TypResult<_>>) = slugs_to_update
         .par_iter()
         .map(|slug| -> TypResult<(&Article, (String, String))> {
-            let article = global_data.article(slug).unwrap(); // Pretty ensure that the article is valid
+            let article = global_data.article(slug).ok_or_else(|| {
+                invariant_err(
+                    slug,
+                    format!("article {slug} should be loaded before composition"),
+                )
+            })?;
             let pending = article.get_pending_or_init(&global_data);
             let (content, full_sidebar, embed_sidebar) = pending.based_on(
                 config,
@@ -120,9 +138,21 @@ pub fn compose_pages<'c, 'b: 'c, 'a: 'b>(
                 embed_sidebar.join("")
             };
 
-            final_cache[slug]
+            final_cache
+                .get(slug)
+                .ok_or_else(|| {
+                    invariant_err(
+                        slug,
+                        format!("page cache slot for {slug} should be preallocated"),
+                    )
+                })?
                 .set((content, full_sidebar, embed_sidebar))
-                .unwrap();
+                .map_err(|_| {
+                    invariant_err(
+                        slug,
+                        format!("page cache slot for {slug} should only be written once"),
+                    )
+                })?;
             let node = &article.get_meta_node();
             if !node.backlinks.is_empty() {
                 // If the article has Backlinks -> it's cited, the citing articles need the reference.
@@ -152,17 +182,30 @@ pub fn compose_pages<'c, 'b: 'c, 'a: 'b>(
             })
         })
         .partition(|res| res.is_ok());
-    let cache: PageCache = final_cache
-        .into_iter()
-        .par_bridge()
-        .map(|(slug, lock)| (slug, lock.into_inner().unwrap()))
-        .collect();
+    let mut cache = PageCache::new();
+    let mut cache_failures = Vec::new();
+    for (slug, lock) in final_cache {
+        match lock.into_inner() {
+            Some(page_cache) => {
+                cache.insert(slug, page_cache);
+            }
+            None if global_data.article(&slug).is_some() => cache_failures.push(invariant_err(
+                &slug,
+                format!("page cache slot for {slug} should be initialized during composition"),
+            )),
+            None => {}
+        }
+    }
     let updated_pages: UpdatedPages = output.into_iter().flatten().collect();
     let error_articles = failed
         .into_iter()
         .filter_map(|it| it.err())
+        .chain(cache_failures)
         .map(|err| {
-            let path = global_data.article(&err.slug).unwrap().path.to_path_buf();
+            let path = global_data
+                .article(&err.slug)
+                .map(|article| article.path.to_path_buf())
+                .unwrap_or_else(|| err.slug.as_ref().into());
             (path, format!("{err}"))
         })
         .collect();
@@ -194,21 +237,24 @@ where
     let mut global_indexes: HashMap<Key, HashSet<UpdatedIndex>> = slugs_to_update
         .iter()
         .map(|slug| {
-            let article = updated_articles.get(slug).unwrap(); // We pretty ensure that the article is valid
-            let changed = changed_typst_paths.contains(article.path.as_ref()); // If the article is updated
-            let indexes = if overall_compile_needed || changed {
-                HashSet::new() // If it's init or updated, we need to update all indexes, which is represented by an empty set
+            let indexes = if let Some(article) = updated_articles.get(slug) {
+                let changed = changed_typst_paths.contains(article.path.as_ref()); // If the article is updated
+                if overall_compile_needed || changed {
+                    HashSet::new() // If it's init or updated, we need to update all indexes, which is represented by an empty set
+                } else {
+                    updated_typst_paths // Changed typst files
+                        .iter()
+                        .chain(changed_config_paths.iter())
+                        .filter_map(
+                            |path| rev_dependency.take_dependency(slug, path),
+                            // Collect all dependencies (with indexes) of the article,
+                            // For each (changed) dependency, collect the indexes of the article
+                        )
+                        .flatten()
+                        .collect::<HashSet<_>>()
+                }
             } else {
-                updated_typst_paths // Changed typst files
-                    .iter()
-                    .chain(changed_config_paths.iter())
-                    .filter_map(
-                        |path| rev_dependency.take_dependency(slug, path),
-                        // Collect all dependencies (with indexes) of the article,
-                        // For each (changed) dependency, collect the indexes of the article
-                    )
-                    .flatten()
-                    .collect::<HashSet<_>>()
+                HashSet::new()
             };
             (slug.clone(), indexes)
         })

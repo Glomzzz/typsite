@@ -280,3 +280,255 @@ fn verify_proj_options(config: &TypsiteConfig<'_>, registry: &KeyRegistry) -> Re
     }
     Ok(errors)
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::compile::compiler::cache::monitor::Monitor;
+    use crate::compile::{
+        init_compile_options, init_proj_options,
+        options::{CompileOptions, ProjOptions},
+    };
+    use crate::config::TypsiteConfig;
+    use std::collections::{HashMap, HashSet};
+    use std::fs;
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_root(label: &str) -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("test timestamp should be available")
+            .as_nanos();
+        std::env::temp_dir().join(format!("typsite-{label}-{unique}"))
+    }
+
+    fn write_test_config(root: &std::path::Path, options: &str) {
+        fs::create_dir_all(root.join("components/footer")).expect("footer dir");
+        fs::create_dir_all(root.join("rewrite")).expect("rewrite dir");
+        fs::create_dir_all(root.join("schemas")).expect("schema dir");
+        fs::create_dir_all(root.join("syntaxes")).expect("syntaxes dir");
+        fs::create_dir_all(root.join("themes")).expect("themes dir");
+        fs::write(root.join("options.toml"), options).expect("options file");
+        fs::write(
+            root.join("components/section.html"),
+            include_str!("../../resources/.typsite/components/section.html"),
+        )
+        .expect("section");
+        fs::write(
+            root.join("components/heading-numbering.html"),
+            "<html><body>{numbering}</body></html>",
+        )
+        .expect("heading numbering");
+        fs::write(
+            root.join("components/footer.html"),
+            "<html><body><footer>{references}{backlinks}</footer></body></html>",
+        )
+        .expect("footer");
+        fs::write(
+            root.join("components/footer/backlinks.html"),
+            "<html><body>{backlinks}</body></html>",
+        )
+        .expect("backlinks");
+        fs::write(
+            root.join("components/footer/references.html"),
+            "<html><body>{references}</body></html>",
+        )
+        .expect("references");
+        fs::write(root.join("components/anchor_def.html"), "<html><body></body></html>")
+            .expect("anchor def");
+        fs::write(root.join("components/anchor_def_svg.html"), "<html><body></body></html>")
+            .expect("anchor def svg");
+        fs::write(root.join("components/anchor_goto.html"), "<html><body></body></html>")
+            .expect("anchor goto");
+        fs::write(root.join("components/anchor_goto_svg.html"), "<html><body></body></html>")
+            .expect("anchor goto svg");
+        fs::write(root.join("components/sidebar.html"), "<html><body>{children}</body></html>")
+            .expect("sidebar");
+        fs::write(root.join("components/sidebar_each.html"), "<html><body>{title}</body></html>")
+            .expect("sidebar each");
+        fs::write(root.join("components/embed.html"), "<html><body>{content}</body></html>")
+            .expect("embed");
+        fs::write(root.join("components/embed_title.html"), "<html><body>{title}</body></html>")
+            .expect("embed title");
+        fs::write(root.join("schemas/main.html"), "<html><body><content></content></body></html>")
+            .expect("schema");
+        fs::write(root.join("schemas/reference.html"), "<html><body><content></content></body></html>")
+            .expect("reference schema");
+    }
+
+    fn init_options(root: &std::path::Path) {
+        let proj = ProjOptions::load(root).expect("project options should load");
+        init_proj_options(proj).expect("project options should initialize");
+        init_compile_options(CompileOptions {
+            watch: false,
+            short_slug: false,
+            pretty_url: true,
+        })
+        .expect("compile options should initialize");
+    }
+
+    pub(crate) fn run_compose_pages_collects_missing_article_as_error() {
+        let root = unique_root("compose-pages-missing-article");
+        let cache = root.join("cache");
+        let typst = root.join("typst");
+        let html = root.join("html");
+        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
+        fs::create_dir_all(&cache).expect("cache dir");
+        fs::create_dir_all(&typst).expect("typst dir");
+        fs::create_dir_all(&html).expect("html dir");
+        init_options(&root);
+
+        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
+        let mut registry = KeyRegistry::new();
+        let rev_dep = cache::dep::RevDeps::load(&config, &cache, &HashSet::new(), &mut registry);
+        let changed = HashSet::from([Arc::from("/missing")]);
+        let page_data = page_composer::compose_pages(
+            &config,
+            changed,
+            HashSet::new(),
+            &HashSet::new(),
+            &HashMap::new(),
+            rev_dep,
+            false,
+        )
+        .expect("compose pages should collect the missing article as an error entry");
+
+        assert_eq!(page_data.error_pages.len(), 1);
+        assert!(page_data.error_pages[0].1.contains("should be loaded before composition"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    pub(crate) fn run_pass_html_collects_registry_errors_without_unreachable_panics() {
+        let root = unique_root("pass-html-registry-errors");
+        let typst = root.join("typst");
+        let html = root.join("html");
+        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
+        fs::create_dir_all(&typst).expect("typst dir");
+        fs::create_dir_all(&html).expect("html dir");
+        init_options(&root);
+
+        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
+        let invalid_html = root.join("outside.html");
+        fs::write(&invalid_html, "<html><body></body></html>").expect("html file");
+        let mut changed_html_paths = vec![invalid_html.clone()];
+        let (articles, errors) = html_pass::pass_html(
+            &config,
+            &cache::article::ArticleCache::new(&root.join("cache")),
+            &mut KeyRegistry::new(),
+            &mut changed_html_paths,
+        );
+
+        assert!(articles.is_empty());
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].0.ends_with("outside.html"));
+        assert!(changed_html_paths.is_empty());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    pub(crate) fn run_compile_typsts_reports_missing_cache_parent_without_panic() {
+        let root = unique_root("compile-typsts-cache-parent");
+        let cache = root.join("cache");
+        let typst = root.join("typst");
+        let html_cache_root = root.join("html-cache-root");
+        let rendered_html = root.join("rendered-html");
+        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
+        fs::create_dir_all(&cache).expect("cache dir");
+        fs::create_dir_all(typst.join("nested")).expect("typst dir");
+        fs::create_dir_all(&rendered_html).expect("rendered html dir");
+        fs::write(typst.join("nested/article.typ"), "= Test").expect("typst file");
+        fs::write(&html_cache_root, "occupied by file").expect("blocking html cache path");
+        init_options(&root);
+
+        let config = TypsiteConfig::load(&root, &typst, &rendered_html).expect("config should load");
+        let mut monitor = Monitor::load(&cache, &root, &typst, &rendered_html, None);
+        let errors = typst_pass::compile_typsts(
+            "typst",
+            &config,
+            &mut monitor,
+            &typst,
+            &root,
+            &html_cache_root,
+            &HashSet::from([typst.join("nested/article.typ")]),
+            HashSet::new(),
+        );
+
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].1.contains("parent") || errors[0].1.contains("Not a directory"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    pub(crate) fn run_initialize_reports_packages_path_and_strip_prefix_failures() {
+        let root = unique_root("initialize-packages-path");
+        let cache = root.join("cache");
+        let typst = root.join("typst");
+        let html = root.join("html");
+        let assets = root.join("assets");
+        let packages_dir = root.join("packages");
+        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
+        fs::create_dir_all(&cache).expect("cache dir");
+        fs::create_dir_all(&typst).expect("typst dir");
+        fs::create_dir_all(&html).expect("html dir");
+        fs::create_dir_all(&assets).expect("assets dir");
+        fs::create_dir_all(packages_dir.join("broken-package")).expect("packages dir");
+        fs::write(packages_dir.join("broken-package/README.txt"), "missing typst manifest")
+            .expect("package marker file");
+
+        let err = match initializer::initialize(&cache, &typst, &html, &root, &assets, Some(&packages_dir)) {
+            Ok(_) => panic!("file packages path should be reported as an error"),
+            Err(err) => err,
+        };
+        let err = err.to_string();
+
+        assert!(err.contains("Packages installing failed") || err.contains("typst.toml"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    pub(crate) fn run_generate_site_outputs_handles_empty_base_url_without_unwrap() {
+        let root = unique_root("generate-site-empty-base-url");
+        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
+        init_options(&root);
+
+        let generated = site_output::generate_site_outputs(&HashMap::new())
+            .expect("empty base url should disable outputs without panicking");
+
+        assert!(generated.files.is_empty());
+        assert_eq!(generated.removed.len(), 2);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn compose_pages_collects_missing_article_as_error() {
+        let _guard = crate::test_lock();
+        run_compose_pages_collects_missing_article_as_error();
+    }
+
+    #[test]
+    fn pass_html_collects_registry_errors_without_unreachable_panics() {
+        let _guard = crate::test_lock();
+        run_pass_html_collects_registry_errors_without_unreachable_panics();
+    }
+
+    #[test]
+    fn compile_typsts_reports_missing_cache_parent_without_panic() {
+        let _guard = crate::test_lock();
+        run_compile_typsts_reports_missing_cache_parent_without_panic();
+    }
+
+    #[test]
+    fn initialize_reports_packages_path_and_strip_prefix_failures() {
+        let _guard = crate::test_lock();
+        run_initialize_reports_packages_path_and_strip_prefix_failures();
+    }
+
+    #[test]
+    fn generate_site_outputs_handles_empty_base_url_without_unwrap() {
+        let _guard = crate::test_lock();
+        run_generate_site_outputs_handles_empty_base_url_without_unwrap();
+    }
+}

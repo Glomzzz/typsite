@@ -84,13 +84,7 @@ pub fn sync_files_to_output<'a>(output: Output<'a>) {
     remove_pages(typst_path, output_path, deleted_pages);
     write_generated(output_path, generated_files);
     remove_generated(output_path, generated_removed);
-    remove_errors(
-        monitor,
-        error_articles,
-        html_cache_path,
-        typst_path,
-        output_path,
-    );
+    remove_errors(monitor, error_articles, html_cache_path, output_path);
 }
 
 fn write_pages(monitor: &Monitor, typst_path: &Path, output_path: &Path, output: UpdatedPages) {
@@ -98,9 +92,8 @@ fn write_pages(monitor: &Monitor, typst_path: &Path, output_path: &Path, output:
         .into_iter()
         .map(|(typ_path, html)| {
             monitor.remove_retry_hash(&typ_path);
-            let html_path = relative_path(typst_path, &typ_path)
-                .map(|it| it.with_extension("html"))
-                .unwrap();
+            let html_path =
+                relative_path(typst_path, &typ_path).map(|it| it.with_extension("html"))?;
             let output_path = output_path.join(html_path);
             if output_path.exists() {
                 println!("  ∓ {output_path:#?}");
@@ -192,11 +185,16 @@ fn remove_output(parent: &Path, file: &Path, output_path: &Path) -> Result<()> {
     remove_file(&output, "output")?;
     println!("  - {output:#?}");
     // check if the dir is empty, if it is, remove the dir
-    let mut parent = output.parent().unwrap();
-    while parent != output {
+    let Some(mut parent) = output.parent() else {
+        return Ok(());
+    };
+    while parent.starts_with(output_path) && parent != output_path {
         if fs::read_dir(parent)?.next().is_none() {
             fs::remove_dir(parent)?;
-            parent = parent.parent().unwrap();
+            let Some(next_parent) = parent.parent() else {
+                break;
+            };
+            parent = next_parent;
         } else {
             break;
         }
@@ -208,7 +206,6 @@ fn remove_errors(
     monitor: Monitor,
     error_articles: ErrorArticles,
     html_cache_path: &Path,
-    typst_path: &Path,
     output_path: &Path,
 ) {
     error_articles
@@ -221,8 +218,7 @@ fn remove_errors(
                 path
             };
             cache_html_path.set_extension("html");
-            let html_path = relative_path(html_cache_path, &cache_html_path).unwrap();
-            let result = remove_output(typst_path, &html_path, output_path);
+            let result = remove_output(html_cache_path, &cache_html_path, output_path);
             eprintln!("{error}");
             result
         })

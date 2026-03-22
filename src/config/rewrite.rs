@@ -1,15 +1,15 @@
-use crate::config::{RULES_DIR, TypsiteConfig};
+use crate::config::{TypsiteConfig, RULES_DIR};
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::Source;
 use crate::pass::pure::PurePass;
 use crate::pass::rewrite::*;
 use crate::util::error::log_err_or_ok;
+use crate::util::html::parse_first_tag;
 use crate::util::html::Attributes;
 use crate::util::html::HtmlWithTail;
-use crate::util::html::parse_first_tag;
 use crate::util::path::file_stem;
 use crate::walk_glob;
-use anyhow::{Context, anyhow};
+use anyhow::{anyhow, Context};
 use glob::glob;
 use html5gum::{Token, Tokenizer};
 use rayon::prelude::*;
@@ -89,11 +89,8 @@ impl<'b, 'a: 'b> TagRewriteRule {
             t => Err(anyhow!("Unexpected token {:?} in rewrite tag", t)),
         })?;
 
-        if tag.is_none() || pass.is_none() {
-            return Err(anyhow!("Tag or pass is empty in {}", path.display()));
-        }
-        let tag = tag.unwrap();
-        let pass = pass.unwrap();
+        let tag = tag.with_context(|| format!("Missing rewrite tag name in {}", path.display()))?;
+        let pass = pass.with_context(|| format!("Missing rewrite pass in {}", path.display()))?;
 
         let (head, body, tail) = HtmlWithTail::load_by_tokenizer(tokenizer, "{body}")
             .map(|HtmlWithTail { head, body, tail }| (head, body, tail))?;
