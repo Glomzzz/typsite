@@ -25,13 +25,17 @@
   if block == auto {
     block = body.block
   }
-  import "@local/typsite:0.1.0": inline
+  import "lib.typ": inline
   if block {
     html.div(class: "math-container")[
-      #html.span(class: "math-block", inline(scale: scale, auto-filter: true, body))
+        #html.span(class: "math-block")[
+            #auto-filter(inline(scale: scale, body))
+        ]
     ]
   } else {
-    html.span(class: "math-inline", inline(scale: scale + 70%, auto-filter: true, body))
+      html.span(class: "math-inline")[
+          #auto-filter(inline(scale: scale + 70%, body))
+      ]
   }
 }
 
