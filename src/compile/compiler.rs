@@ -503,6 +503,152 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn references_footer_uses_its_own_template_and_rebuild_dependency() {
+        let _guard = crate::test_lock();
+        let root = unique_root("references-footer");
+        let typst = root.join("typst");
+        let html = root.join("html");
+        let cache = root.join("cache");
+        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
+        fs::create_dir_all(&typst).expect("typst dir");
+        fs::create_dir_all(&html).expect("html dir");
+        fs::create_dir_all(&cache).expect("cache dir");
+        for (path, template) in [
+            (
+                "components/footer.html",
+                "<head></head><body><footer>{references}{backlinks}</footer></body>",
+            ),
+            (
+                "components/sidebar_each.html",
+                "<head></head><body>{title}</body>",
+            ),
+            (
+                "components/footer/references.html",
+                "<head><style>.REFS-MARKER { color: red; }</style></head><body><div class=\"REFS-MARKER\">{references}</div></body>",
+            ),
+            (
+                "components/footer/backlinks.html",
+                "<head><style>.BACKLINKS-MARKER { color: blue; }</style></head><body><div class=\"BACKLINKS-MARKER\">{backlinks}</div></body>",
+            ),
+            (
+                "schemas/main.html",
+                "<head></head><body><content></content><footer></footer></body>",
+            ),
+            (
+                "schemas/reference.html",
+                "<head></head><body><a href=\"{slug}\">Reference {slug}</a></body>",
+            ),
+            (
+                "schemas/backlink.html",
+                "<head></head><body><a href=\"{slug}\">Backlink {slug}</a></body>",
+            ),
+        ] {
+            fs::write(root.join(path), template).expect("footer test template");
+        }
+        init_options(&root);
+        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
+        let references_path = root.join("components/footer/references.html");
+        let backlinks_path = root.join("components/footer/backlinks.html");
+        assert_eq!(config.footer.references.path.as_ref(), references_path);
+        assert_eq!(config.footer.backlinks.path.as_ref(), backlinks_path);
+        assert!(config.footer.references.head.contains("REFS-MARKER"));
+        assert!(config.footer.backlinks.head.contains("BACKLINKS-MARKER"));
+        assert_eq!(
+            config.path_ref(&references_path).as_deref(),
+            Some(references_path.as_path())
+        );
+        assert_eq!(
+            config.path_ref(&backlinks_path).as_deref(),
+            Some(backlinks_path.as_path())
+        );
+
+        let mut registry = KeyRegistry::new();
+        let paths = [html.join("a.html"), html.join("b.html")];
+        registry.register_paths(&config, &paths);
+        let mut articles = HashMap::new();
+        for (path, body) in paths.iter().zip(["Page A", "Page B"]) {
+            let (slug, path) = registry
+                .register_article_path(&config, path)
+                .expect("article path");
+            let source = format!("<head><schema name=\"main\"></schema></head><body>{body}</body>");
+            let article =
+                crate::pass::pass_pure(&config, &registry, path, slug.clone(), None, &source)
+                    .unwrap_or_else(|err| panic!("footer article should load: {err}"));
+            articles.insert(slug, article);
+        }
+        // Model page A citing page B; the analysis derives B's backlink to A.
+        articles
+            .get_mut("/a")
+            .expect("page A")
+            .get_mut_meta_node()
+            .references
+            .insert(Arc::from("/b"));
+        let (parents, backlinks) = analyse_parents_and_backlinks(articles.values().collect());
+        apply_parents_and_backlinks(&mut articles, parents, backlinks);
+        let components = config
+            .schemas
+            .get("main")
+            .expect("main schema")
+            .component_paths(&config);
+        assert!(components.contains(references_path.as_path()));
+        assert!(components.contains(backlinks_path.as_path()));
+        let mut rev_dep = RevDeps::load(&config, &cache, &HashSet::new(), &mut registry);
+        rev_dep.refresh(&config, &registry, &articles);
+        let slugs: HashSet<_> = articles.keys().cloned().collect();
+        assert_eq!(rev_dep.get(&references_path), Some(&slugs));
+        assert_eq!(rev_dep.get(&backlinks_path), Some(&slugs));
+
+        // A references-template edit alone must select the pages for recomposition.
+        let pages = compose_pages(
+            &config,
+            HashSet::new(),
+            HashSet::new(),
+            &HashSet::from([references_path]),
+            &articles,
+            rev_dep,
+            false,
+        )
+        .expect("footer pages should compose");
+        assert!(pages.error_pages.is_empty(), "{:?}", pages.error_pages);
+        assert_eq!(pages.updated_pages.len(), 2);
+        let page_a = &pages
+            .updated_pages
+            .iter()
+            .find(|(path, _)| path.ends_with("a.typ"))
+            .expect("page A")
+            .1
+            .body;
+        let page_b = &pages
+            .updated_pages
+            .iter()
+            .find(|(path, _)| path.ends_with("b.typ"))
+            .expect("page B")
+            .1
+            .body;
+        assert!(page_a.contains("<div class=\"REFS-MARKER\">"), "{page_a}");
+        assert!(
+            page_a.contains("<a href=\"/b\">Reference /b</a>"),
+            "{page_a}"
+        );
+        assert!(!page_a.contains("BACKLINKS-MARKER"));
+        assert!(
+            page_b.contains("<div class=\"BACKLINKS-MARKER\">"),
+            "{page_b}"
+        );
+        assert!(
+            page_b.contains("<a href=\"/a\">Backlink /a</a>"),
+            "{page_b}"
+        );
+        assert!(!page_b.contains("REFS-MARKER"));
+        for (_, page) in &pages.updated_pages {
+            assert!(!page.body.contains("{references}"));
+            assert!(!page.body.contains("{backlinks}"));
+        }
+
+        fs::remove_dir_all(root).expect("footer test cleanup");
+    }
+
+    #[test]
     fn compose_pages_collects_missing_article_as_error() {
         let _guard = crate::test_lock();
         run_compose_pages_collects_missing_article_as_error();
