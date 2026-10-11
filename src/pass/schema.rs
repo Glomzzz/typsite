@@ -73,9 +73,11 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
             footer.head.push(self.config.footer.footer.head.as_str());
             let footer_body = self.config.footer.footer.body.as_str();
             let node = self.article.get_meta_node();
+            let descendants = self.global_data.descendant_slugs(self.article);
             let references = node
                 .references
                 .iter()
+                .filter(|slug| !descendants.contains(*slug))
                 .filter_map(|slug| self.global_data.article(slug))
                 .filter_map(|article| article.get_reference())
                 .collect::<Vec<_>>();
@@ -83,6 +85,7 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
             let backlinks = node
                 .backlinks
                 .iter()
+                .filter(|slug| !descendants.contains(*slug))
                 .filter_map(|slug| self.global_data.article(slug))
                 .filter_map(|article| article.get_backlink())
                 .collect::<Vec<_>>();

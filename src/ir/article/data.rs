@@ -92,6 +92,23 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
         self.articles.get(id)
     }
 
+    /// Collect all embedded descendants, visiting each slug once even in cyclic graphs.
+    pub fn descendant_slugs(&'c self, article: &'b Article<'a>) -> HashSet<Key> {
+        let mut descendants = HashSet::from([article.slug.clone()]);
+        let mut pending: Vec<_> = article.get_meta_node().children.iter().cloned().collect();
+        while let Some(slug) = pending.pop() {
+            if !descendants.insert(slug.clone()) {
+                continue;
+            }
+            if let Some(child) = self.article(&slug) {
+                pending.extend(child.get_meta_node().children.iter().cloned());
+            }
+        }
+        // The starting article is visited to break cycles, but is not its own descendant.
+        descendants.remove(&article.slug);
+        descendants
+    }
+
     pub fn metadata(&'c self, id: &str) -> Option<&'b Metadata<'a>> {
         let article = self.article(id)?;
         Some(article.get_metadata())
@@ -505,6 +522,206 @@ pub(crate) mod tests {
         assert!(format!("{error}").contains("Missing global body rewrite indexes"));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn assert_footer_excludes_descendants(include_unrelated: bool) {
+        let root = unique_root("footer-descendants");
+        let typst = root.join("typst");
+        let html = root.join("html");
+        write_test_config(&root);
+        fs::create_dir_all(&typst).expect("typst dir");
+        fs::create_dir_all(&html).expect("html dir");
+        for (path, template) in [
+            (
+                "components/footer.html",
+                "<head></head><body><footer>{references}{backlinks}</footer></body>",
+            ),
+            (
+                "schemas/main.html",
+                "<head></head><body><footer></footer></body>",
+            ),
+            (
+                "schemas/reference.html",
+                "<head></head><body><a href=\"{slug}\">Reference {slug}</a></body>",
+            ),
+            (
+                "schemas/backlink.html",
+                "<head></head><body><a href=\"{slug}\">Backlink {slug}</a></body>",
+            ),
+            (
+                "components/footer/references.html",
+                "<head></head><body><section class=\"references\">{references}</section></body>",
+            ),
+            (
+                "components/footer/backlinks.html",
+                "<head></head><body><section class=\"backlinks\">{backlinks}</section></body>",
+            ),
+        ] {
+            fs::write(root.join(path), template).expect("footer test template");
+        }
+        crate::compile::init_proj_options(
+            crate::compile::options::ProjOptions::load(&root).expect("project options should load"),
+        )
+        .expect("project options should initialize");
+        crate::compile::init_compile_options(crate::compile::options::CompileOptions {
+            watch: false,
+            short_slug: false,
+            pretty_url: true,
+        })
+        .expect("compile options should initialize");
+
+        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
+        let descendants = ["/child", "/grandchild", "/great-grandchild"];
+        let unrelated = ["/ancestor", "/sibling", "/external"];
+        let mut articles: HashMap<_, _> = ["/article"]
+            .into_iter()
+            .chain(descendants)
+            .chain(unrelated)
+            .map(|slug| (Key::from(slug), article_with_title(&config, slug)))
+            .collect();
+        for (parent, child) in [
+            ("/ancestor", "/article"),
+            ("/ancestor", "/sibling"),
+            ("/article", "/child"),
+            ("/child", "/bridge"),
+            ("/grandchild", "/great-grandchild"),
+        ] {
+            articles
+                .get_mut(parent)
+                .expect("parent article")
+                .get_mut_meta_node()
+                .children
+                .insert(Key::from(child));
+        }
+        // Traversal must continue through a child that is not itself a footer relation.
+        let mut bridge = article_with_title(&config, "/bridge");
+        bridge
+            .get_mut_meta_node()
+            .children
+            .insert(Key::from("/grandchild"));
+        articles.insert(Key::from("/bridge"), bridge);
+        let node = articles
+            .get_mut("/article")
+            .expect("article")
+            .get_mut_meta_node();
+        node.parent = Some(Key::from("/ancestor"));
+        node.references = descendants.into_iter().map(Key::from).collect();
+        if include_unrelated {
+            node.references.extend(unrelated.into_iter().map(Key::from));
+        }
+        node.backlinks = node.references.clone();
+        let expected_relations = node.references.clone();
+
+        let global_data = GlobalData::new(
+            &config,
+            &articles,
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        for article in articles.values() {
+            global_data
+                .init_reference(article, "", "")
+                .expect("reference should render");
+            global_data
+                .init_backlink(article, "", "")
+                .expect("backlink should render");
+        }
+        let article = articles.get("/article").expect("article");
+        let footer = global_data
+            .schema_html("main", article, "", "")
+            .expect("footer should render")
+            .body;
+        for slug in descendants {
+            assert!(!footer.contains(&format!("href=\"{slug}\"")), "{footer}");
+        }
+        for slug in unrelated {
+            for kind in ["Reference", "Backlink"] {
+                assert_eq!(
+                    footer.contains(&format!("<a href=\"{slug}\">{kind} {slug}</a>")),
+                    include_unrelated,
+                    "{footer}",
+                );
+            }
+        }
+        for class in ["references", "backlinks"] {
+            assert_eq!(
+                footer.contains(&format!("<section class=\"{class}\">")),
+                include_unrelated,
+                "{footer}",
+            );
+        }
+        // Rendering must not discard citation metadata needed by other pages and rebuilds.
+        assert_eq!(article.get_meta_node().references, expected_relations);
+        assert_eq!(article.get_meta_node().backlinks, expected_relations);
+
+        fs::remove_dir_all(root).expect("footer test cleanup");
+    }
+
+    #[test]
+    fn footer_excludes_descendants_but_keeps_other_relations() {
+        let _guard = crate::test_lock();
+        assert_footer_excludes_descendants(true);
+    }
+
+    #[test]
+    fn footer_omits_sections_when_all_relations_are_descendants() {
+        let _guard = crate::test_lock();
+        assert_footer_excludes_descendants(false);
+    }
+
+    #[test]
+    fn descendant_slugs_handles_shared_children_cycles_and_missing_articles() {
+        let _guard = crate::test_lock();
+        let root = unique_root("descendant-slugs");
+        let typst = root.join("typst");
+        let html = root.join("html");
+        write_test_config(&root);
+        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
+        let mut articles: HashMap<_, _> = [
+            "/article",
+            "/left",
+            "/right",
+            "/shared",
+            "/ancestor",
+            "/leaf",
+        ]
+        .into_iter()
+        .map(|slug| (Key::from(slug), article_with_title(&config, slug)))
+        .collect();
+        for (parent, children) in [
+            ("/article", vec!["/left", "/right"]),
+            ("/left", vec!["/shared", "/missing"]),
+            ("/right", vec!["/shared"]),
+            ("/shared", vec!["/article"]),
+            ("/ancestor", vec!["/article"]),
+        ] {
+            articles
+                .get_mut(parent)
+                .expect("parent article")
+                .get_mut_meta_node()
+                .children
+                .extend(children.into_iter().map(Key::from));
+        }
+        let global_data = GlobalData::new(
+            &config,
+            &articles,
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        assert_eq!(
+            global_data.descendant_slugs(articles.get("/article").expect("article")),
+            ["/left", "/right", "/shared", "/missing"]
+                .into_iter()
+                .map(Key::from)
+                .collect(),
+        );
+        assert!(global_data
+            .descendant_slugs(articles.get("/leaf").expect("leaf"))
+            .is_empty());
+
+        fs::remove_dir_all(root).expect("descendant test cleanup");
     }
 
     #[test]
