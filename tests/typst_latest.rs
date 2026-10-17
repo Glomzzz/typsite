@@ -28,6 +28,7 @@ fn bundled_authoring_helpers_export_with_latest_typst() {
 #import "/lib/lib.typ": *
 #show: schema.with("main")
 #title[Latest stable Typst]
+#rss(false)
 #author[Compatibility test]
 = Heading
 A paragraph with *emphasis* and a footnote#footnote[Footnote content].
@@ -62,6 +63,10 @@ fn main() {}
     let html = std::fs::read_to_string(output).unwrap();
     assert!(html.contains("<schema name=\"main\">"), "{html}");
     assert!(
+        html.contains("<metaoption key=\"rss\" value=\"false\">"),
+        "{html}"
+    );
+    assert!(
         html.contains("<svg"),
         "SVG frames must survive latest Typst export"
     );
@@ -90,6 +95,24 @@ fn main() {}
     let repaired = common::successful(&compiler);
     assert_eq!(repaired.exported.len(), 1);
     assert!(packages.join("local/typsite/0.1.0/typst.toml").exists());
+    let source = std::fs::read_to_string(&input).unwrap();
+    for invalid in ["#rss(\"true\")", "#rss(1)"] {
+        project.source("latest.typ", &source.replace("#rss(false)", invalid));
+        let report = compiler.compile().unwrap();
+        assert!(!report.is_success(), "{invalid}");
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("rss expects a bool"))
+        );
+        assert_eq!(
+            std::fs::read_to_string(project.output.join("latest.html")).unwrap(),
+            published
+        );
+    }
+    project.source("latest.typ", &source);
+    common::successful(&compiler);
 }
 
 #[test]
@@ -316,8 +339,20 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
     );
     let feed_path = project.output.join("rss.xml");
     let summary_feed = std::fs::read_to_string(&feed_path).unwrap();
-    assert_eq!(summary_feed.matches("<item>").count(), pages.len());
-    assert!(summary_feed.contains("Migrating to Typsite 0.1.8"));
+    let selected = ["/article", "/typst", "/en/article", "/en/typst"];
+    assert_eq!(summary_feed.matches("<item>").count(), selected.len());
+    for slug in selected {
+        assert!(
+            summary_feed.contains(&format!("<link>https://example.org{slug}</link>")),
+            "missing {slug}"
+        );
+    }
+    for excluded in ["/index", "/en/index", "/migrate-to-018", "/en/example"] {
+        assert!(
+            !summary_feed.contains(&format!("<link>https://example.org{excluded}</link>")),
+            "unexpected {excluded}"
+        );
+    }
     assert!(summary_feed.contains("application/rss+xml"));
     assert!(!summary_feed.contains("<content:encoded>"));
     assert!(summary_feed.contains("+0000</pubDate>"));
@@ -341,8 +376,11 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
     let full = compile();
     assert!(full.contains("0 exported"), "{full}");
     let full_feed = std::fs::read_to_string(&feed_path).unwrap();
-    assert_eq!(full_feed.matches("<content:encoded>").count(), pages.len());
-    assert!(full_feed.contains("&lt;svg"));
+    assert_eq!(
+        full_feed.matches("<content:encoded>").count(),
+        selected.len()
+    );
+    assert!(full_feed.contains("&lt;section"));
     assert!(full_feed.contains("https://example.org/"));
     let mut reader = quick_xml::Reader::from_str(&full_feed);
     while !matches!(reader.read_event().unwrap(), quick_xml::events::Event::Eof) {}
@@ -354,18 +392,20 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
     );
     assert_eq!(published, project.snapshot());
 
-    let source = std::fs::read_to_string(project.input.join("en/example.typ")).unwrap();
+    let source = std::fs::read_to_string(project.input.join("en/typst.typ")).unwrap();
     project.source(
-        "en/example.typ",
-        &source.replace(
-            "This is a regular paragraph of text.",
-            "An incremental demo edit.",
-        ),
+        "en/typst.typ",
+        &format!("{source}\nAn incremental demo edit.\n"),
     );
     let edited = compile();
     assert!(edited.contains("1 exported"), "{edited}");
     assert!(
-        std::fs::read_to_string(project.output.join("en/example.html"))
+        std::fs::read_to_string(project.output.join("en/typst.html"))
+            .unwrap()
+            .contains("An incremental demo edit.")
+    );
+    assert!(
+        std::fs::read_to_string(&feed_path)
             .unwrap()
             .contains("An incremental demo edit.")
     );

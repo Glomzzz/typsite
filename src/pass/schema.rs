@@ -254,6 +254,7 @@ pub(crate) mod tests {
         let metadata = Metadata {
             contents: MetaContents::new(slug.clone(), HashMap::new(), false, &config.options),
             options: MetaOptions {
+                rss: false,
                 heading_numbering_style: crate::ir::article::sidebar::HeadingNumberingStyle::Bullet,
                 sidebar_type: crate::ir::article::sidebar::SidebarType::All,
             },

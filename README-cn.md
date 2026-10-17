@@ -138,6 +138,23 @@ rss_content = "summary" # "summary"（默认）或 "full"
 sitemap_path = "/sitemap.xml"
 ```
 
+通过布尔元数据 `rss` 标记集合页，选择订阅条目：
+
+```typ
+#import "/lib/lib.typ": *
+#show: schema.with("page")
+#title[订阅集合]
+#rss(true)
+= #embed("./first-post.typ")
+= #embed("./second-post.typ")
+```
+
+只有 **`rss: true` 页面的直接嵌入文章**进入 RSS，标记页自身始终排除。
+嵌套嵌入、引用或父级关系不选出独立条目；多个集合的条目合并去重。
+该标记默认是 false，不会继承；没有集合页时，订阅没有条目。
+`#rss(false)` 只取消集合标记，不会排除被其他集合选中的文章。
+站点地图仍包含所有编译文章。
+
 运行 `typsite compile` 后，读者可订阅生成的 `publish/rss.xml`，每个页面也会加入 RSS
 自动发现链接。摘要模式依次取非空的 `description`、`summary`、`abstract` 元数据；
 全文模式还会在 `content:encoded` 中包含组合后的文章 HTML，不含站点导航或页脚。

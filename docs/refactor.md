@@ -166,7 +166,17 @@ and `rss_limit = 0` disables RSS. The new `rss_content` setting accepts
 `"summary"` (default) or `"full"`. Summary mode uses plain text from the first
 nonempty description/summary/abstract metadata. Full mode additionally exports
 composed article bodies, not page schema/navigation/sidebar/footers, using the
-standard `content:encoded` namespace. Ordinary link/image URLs become absolute;
+standard `content:encoded` namespace. Articles are selected only from actual
+**direct embeds** of pages with boolean metadata `rss = true` (`#rss(true)` in
+Typst). Marked containers are always excluded from items, even when another
+container embeds them; the marker defaults to false and is not inherited.
+Multiple containers contribute a deduplicated union, sorted/limited afterward.
+Nested embeds, citations, parent relationships, or graph-only child declarations
+do not select separate items. No containers means an empty enabled feed.
+`#rss(false)` removes a container marker, not another container's item selection.
+Sitemap selection remains independent and includes every compiled article.
+
+Ordinary link/image URLs become absolute;
 SVG-local glyph references are preserved and scripts are omitted. This is not
 a general HTML sanitizer or a replacement for trusted authoring inputs, and
 feed readers' SVG/MathML/CSS/interactive-content support varies.
@@ -199,7 +209,7 @@ cargo test --workspace --doc --locked --offline
 cargo build --release --locked --offline
 ```
 
-The default suite passes **101 unit/integration tests**; the three real-Typst
+The default suite passes **105 unit/integration tests**; the three real-Typst
 tests are ignored by default and pass when explicitly enabled. The fixtures
 compare full incremental/clean output snapshots, include independent compiler
 instances, and never change process cwd, HOME, or normal installed packages.
@@ -219,9 +229,14 @@ The support table now uses real SVG footnote references rather than decorative
 superscripts, so its footnote return links have actual targets. A legacy `.typ`
 link in the English 0.1.7 guide now uses a site citation and resolves to HTML.
 The demo includes both 0.1.8 migration guides and links them from each homepage.
-The full-demo fixture enables RSS, checks all items and discovery links, switches
-from summary to full mode without re-exporting articles, parses the generated
-XML, and includes full-content feeds in its incremental/clean comparison.
+The full-demo fixture enables RSS and checks its four selected items and all
+page discovery links: the two marked homepages select their directly embedded
+article guide and Typst introduction; homepages, migrations, and examples are
+not feed items. It switches from summary to full mode without re-exporting
+articles, parses generated XML, and includes feeds in incremental/clean checks.
+The real-Typst helper fixture checks both the false marker and rejection of
+non-boolean arguments. Portable RSS tests cover deduplication, nested embeds,
+marked-container exclusion, stale selections, metadata validation, and recovery.
 External web fonts and music embeds are browser dependencies, not build inputs.
 
 CI includes strict formatting/Clippy, an MSRV 1.89 compile check, and real-Typst

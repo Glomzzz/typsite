@@ -218,6 +218,12 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
         &self.metadata
     }
 
+    /// Actual embeds in this article, not inferred parents, citations, or the
+    /// broader metadata graph's `child` relationships. Repeats may occur.
+    pub fn direct_embeds(&self) -> impl Iterator<Item = &Key> {
+        self.embeds.iter().map(|embed| &embed.slug)
+    }
+
     pub fn get_meta_options(&self) -> &MetaOptions {
         &self.metadata.options
     }
@@ -328,6 +334,7 @@ pub(crate) mod tests {
                     &config.options,
                 ),
                 options: MetaOptions {
+                    rss: false,
                     heading_numbering_style:
                         crate::ir::article::sidebar::HeadingNumberingStyle::Bullet,
                     sidebar_type: crate::ir::article::sidebar::SidebarType::All,

@@ -132,6 +132,8 @@ typsite compile
 
 RSS 仍需手动开启：把 `[site].base_url` 设为站点公开的 HTTP(S) 地址。默认的 `rss_path = "/rss.xml"` 和 `rss_limit = 20` 不变。新增 `rss_content = "summary"` 保留摘要和链接；选择 `"full"` 时，还会输出组合后的文章 HTML。开启后，每个生成页面都会加入 RSS 自动发现链接。完整示例见 #cite("index.typ")[首页的 RSS 配置章节]。
 
+RSS 不再包含所有编译文章。请在集合页加入 `#rss(true)`，仅选出它直接嵌入的文章，标记页自身始终排除。多个集合的条目合并去重；布尔选项默认是 false，不会继承。嵌套嵌入、引用或父级关系不选出独立条目；没有标记集合页时，已启用的订阅文件为空。请从 `@local/typsite:0.1.0` 导入 `rss`，或合并新版 `root/lib/lib.typ` 的导入列表。`#rss(false)` 取消集合标记，不是条目排除开关。站点地图仍独立包含所有编译页面。
+
 RSS 日期改为符合规范的 RFC 2822，不再使用 ISO 时间戳。纯日期及 `YYYY-MM-DD HH:MM[:SS]` 元数据按 UTC 处理，RFC 3339/RFC 2822 的时区偏移会转换为 UTC。无效日期会被省略；标题和摘要从 Typst 元数据中提取文本，不会直接显示 HTML 标签。非空但无效的站点 URL 现在会导致配置校验失败。
 
 = 预览与失败恢复

@@ -132,6 +132,8 @@ Keep these directories separate from the source, configuration, build cache, and
 
 RSS remains opt-in: set `[site].base_url` to your public HTTP(S) URL. The default `rss_path = "/rss.xml"` and `rss_limit = 20` are unchanged. New `rss_content = "summary"` retains summaries and links; choose `"full"` to include composed article HTML as well. Every generated page receives an RSS autodiscovery link when enabled. See #cite("index.typ")[the RSS configuration section on the homepage] for a complete example.
 
+RSS no longer includes every compiled article. Add `#rss(true)` to a collection page: only its direct embeds become items, and marked containers themselves are always excluded. Multiple containers are deduplicated; the boolean defaults to false and is not inherited. Nested embeds, citations, or parent relationships do not select separate items. Without a marked container, the enabled feed is empty. Import `rss` from `@local/typsite:0.1.0`, or merge the import list from the new `root/lib/lib.typ`. `#rss(false)` removes the container marker; it is not an item opt-out. The sitemap remains independent and includes all compiled pages.
+
 RSS dates now use RFC 2822 rather than ISO timestamps. Date-only and `YYYY-MM-DD HH:MM[:SS]` metadata are treated as UTC; RFC 3339/RFC 2822 offsets are normalized to UTC. Invalid calendar dates are omitted. Titles and summaries are extracted as text from Typst metadata instead of exposing literal HTML tags. Invalid nonempty site URLs now fail configuration validation.
 
 = Preview and failure recovery

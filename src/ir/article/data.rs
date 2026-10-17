@@ -330,6 +330,7 @@ pub(crate) mod tests {
         let metadata = Metadata {
             contents: MetaContents::new(slug.clone(), contents, false, &config.options),
             options: MetaOptions {
+                rss: false,
                 heading_numbering_style: HeadingNumberingStyle::Bullet,
                 sidebar_type: SidebarType::All,
             },

@@ -57,6 +57,7 @@
 )
 
 #title[Typsite 文档]
+#rss(true)
 #date[2025-04-12 02:08]
 #author[Glomzzz]
 
@@ -237,6 +238,28 @@ rss_content = "summary" # 可选 "summary" 或 "full"
 ```
 
 请修改已有的 `[site]`，不要重复添加。把示例地址换成自己的公开地址后，运行 `typsite compile`。文件写入输出目录；每个生成页面的 HTML head 中都会加入 RSS 自动发现链接，读者可订阅 `https://example.org/rss.xml`。
+
+== 通过集合页选择文章
+
+文章元数据新增布尔选项 `rss`，默认是 `false`。在集合页写上 `#rss(true)`，并直接嵌入要订阅的文章：
+
+```typ
+#import "/lib/lib.typ": *
+#show: schema.with("page")
+#title[我的订阅集合]
+#rss(true)
+
+= #embed("./first-post.typ")
+= #embed("./second-post.typ")
+```
+
+只有*直接嵌入的文章*会成为订阅条目。标记为 `rss: true` 的集合页自身不进入 RSS，即使被其他集合页嵌入也不例外。标记不会被嵌入文章继承。嵌套嵌入不会自动成为独立条目，但全文模式仍会保留所选文章里的嵌入内容。引用、父级元数据和仅声明的 child 图关系不参与选择。多个集合页选出的文章合并去重，每篇只出现一次。
+
+`#rss(false)` 将页面恢复为普通文章；如果仍被某个已标记的集合页直接嵌入，它仍可进入 RSS。没有标记集合页或没有可选直接嵌入时，已启用的订阅文件为空。日期排序和 `rss_limit` 在*选出条目之后*应用。站点地图仍包含所有编译文章。
+
+演示站点的两个首页都是集合页，各自直接嵌入文章指南和 Typst 简介，因此 RSS 共*四个条目*，而不是全部页面。旧站点库可从 `@local/typsite:0.1.0` 导入 `rss`，或合并新版 `root/lib/lib.typ` 的导入列表。
+
+== 条目内容与日期
 
 - `summary` 输出纯文本摘要，依次取非空的 `description`、`summary`、`abstract` 元数据。没有这些元数据时，不会自动截取正文。
 - `full` 还会在 `content:encoded` 中包含组合后的文章 HTML，包括嵌入文章，但不包含页面模板、导航、侧边栏或引用与反向链接页脚。普通链接和图片地址会转为绝对 URL。脚本会被移除；RSS 阅读器可能无法像网页一样显示 SVG、MathML、交互元素或站点专用 CSS。

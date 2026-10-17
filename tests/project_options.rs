@@ -57,4 +57,5 @@ fn missing_site_section_uses_the_same_defaults_as_an_empty_section() {
     assert_eq!(absent.project.site.rss_limit, 20);
     assert_eq!(absent.project.site.rss_path, "/rss.xml");
     assert_eq!(absent.project.site.rss_content, RssContent::Summary);
+    assert!(!absent.project.default_metadata.options.rss);
 }
