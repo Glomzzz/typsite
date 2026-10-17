@@ -1,4 +1,5 @@
 mod cache;
+pub mod clean;
 pub mod compiler;
 pub mod error;
 mod graph;

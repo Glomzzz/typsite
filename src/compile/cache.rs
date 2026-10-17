@@ -43,6 +43,13 @@ impl Manifest {
             })
     }
 
+    pub fn owns_directory(root: &Path) -> bool {
+        std::fs::read(root.join("manifest.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
+            .is_some_and(|manifest| manifest.version != 0)
+    }
+
     pub fn save(&self, root: &Path) -> Result<()> {
         crate::util::atomic::write(
             &root.join("manifest.json"),
