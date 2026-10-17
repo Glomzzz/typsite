@@ -63,23 +63,12 @@ impl Compiler {
 
     pub fn clean(&self) -> Result<()> {
         self.paths.validate()?;
-        // Hold both locks while cleaning contents; never unlink the lock inode.
-        let _cache_lock = lock(&self.paths.cache)?;
-        let _output_lock = lock(&self.paths.output)?;
-        for root in [&self.paths.cache, &self.paths.output] {
-            for entry in fs::read_dir(root)? {
-                let entry = entry?;
-                if entry.file_name() == LOCK {
-                    continue;
-                }
-                if entry.file_type()?.is_dir() {
-                    fs::remove_dir_all(entry.path())?;
-                } else {
-                    fs::remove_file(entry.path())?;
-                }
-            }
-        }
-        Ok(())
+        super::clean::clean_roots(
+            &self.paths.cache,
+            &self.paths.output,
+            &[&self.paths.input, &self.paths.config],
+            false,
+        )
     }
 
     pub async fn watch(self, host: String, port: u16) -> Result<()> {
@@ -370,7 +359,7 @@ impl Compiler {
     }
 }
 
-fn lock(root: &Path) -> Result<File> {
+pub(super) fn lock(root: &Path) -> Result<File> {
     fs::create_dir_all(root)
         .with_context(|| format!("Cannot create managed directory {}", root.display()))?;
     let path = managed_path(root, Path::new(LOCK))?;
@@ -397,12 +386,4 @@ fn is_library(path: &Path, config: &TypsiteConfig<'_>) -> bool {
     let path = path.to_string_lossy().replace('\\', "/");
     let library = &config.options.project.typst_lib;
     library.files.contains(&path) || library.dirs.iter().any(|prefix| path.starts_with(prefix))
-}
-
-/// Explicit clean command. Callers must validate both roots before deletion.
-pub fn clean_dir(path: &Path) -> Result<()> {
-    if path.exists() {
-        fs::remove_dir_all(path).with_context(|| format!("Cannot clean {}", path.display()))?;
-    }
-    Ok(())
 }

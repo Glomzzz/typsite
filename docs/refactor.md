@@ -129,6 +129,14 @@ Package names/versions cannot traverse directories; duplicate identities and
 filesystem errors are failures rather than skipped entries. Namespace locks
 prevent concurrent installers from corrupting one another.
 
+CLI paths may be absolute or relative, including paths/executable names with
+spaces. Root resolution follows symlinks before interpreting parent components.
+`clean` validates both roots before deleting, protects source/configuration and
+repository roots, and shares build locks without unlinking their inodes.
+Unmarked legacy cache/output directories require `clean --force`; `--input` and
+`--config` identify protected roots when using nondefault project directories.
+These safeguards intentionally reject previously unsafe cleanup commands.
+
 ## Baseline
 
 Before semantic changes: 56 tests passed; build and Clippy completed (with lint

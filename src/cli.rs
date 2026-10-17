@@ -1,13 +1,13 @@
-use std::{env, fs, process::exit};
+use std::fs;
 
-use crate::compile::compiler::clean_dir;
+use crate::compile::clean::clean_roots;
+use crate::compile::compiler::Compiler;
 use crate::compile::options::CompileOptions;
 use crate::config::highlight::CodeHightlightConfig;
 use crate::resource::default::copy_default_typsite;
-use crate::{compile::compiler::Compiler, util::path::verify_if_relative_path};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use clap::Parser;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub async fn cli() -> Result<()> {
     Executor::execute(Cli::parse().command).await
@@ -45,23 +45,14 @@ impl Executor {
 
     fn build_compiler(cmd: CompileCmd) -> Result<Compiler> {
         println!("Preparing compiler...");
-        let cwd = env::current_dir().context("Failed to get current work dir")?;
-        let cache_path = cmd.cache.as_str();
-        let config_path = cmd.config.as_str();
-        let input_path = cmd.input.as_str();
-        let output_path = cmd.output.as_str();
-        let packages_path = cmd.packages.as_str();
+        let cache_path = PathBuf::from(cmd.cache);
+        let config_path = PathBuf::from(cmd.config);
+        let input_path = PathBuf::from(cmd.input);
+        let output_path = PathBuf::from(cmd.output);
+        let packages_path = (!cmd.packages.is_empty())
+            .then(|| PathBuf::from(cmd.packages))
+            .filter(|path| path.is_dir());
         let typst = cmd.typst;
-
-        let cache_path = verify_if_relative_path(&cwd, cache_path)?;
-        let config_path = verify_if_relative_path(&cwd, config_path)?;
-        let input_path = verify_if_relative_path(&cwd, input_path)?;
-        let output_path = verify_if_relative_path(&cwd, output_path)?;
-        let packages_path = if !packages_path.is_empty() {
-            Some(verify_if_relative_path(&cwd, packages_path)?).filter(|it| it.is_dir())
-        } else {
-            None
-        };
 
         println!(
             "  - Packages: {}",
@@ -75,7 +66,7 @@ impl Executor {
         println!("  - Input dir: {input_path:?}");
         println!("  - Output dir: {output_path:?}");
         if typst != "typst" {
-            println!("  - Typst excutable: {typst}")
+            println!("  - Typst executable: {typst}")
         }
 
         let config = CompileOptions {
@@ -97,10 +88,12 @@ impl Executor {
 
     fn execute_clean(clean_cmd: CleanCmd) -> Result<()> {
         println!("Start cleaning...");
-        let cache = Path::new(clean_cmd.cache.as_str());
-        clean_dir(cache)?;
-        let output = Path::new(clean_cmd.output.as_str());
-        clean_dir(output)?;
+        clean_roots(
+            Path::new(&clean_cmd.cache),
+            Path::new(&clean_cmd.output),
+            &[Path::new(&clean_cmd.input), Path::new(&clean_cmd.config)],
+            clean_cmd.force,
+        )?;
         println!("Cleaning done.");
         Ok(())
     }
@@ -112,7 +105,9 @@ impl Executor {
         match port {
             0 => {
                 println!("Start compiling...");
-                let report = compiler.compile()?;
+                let report = tokio::task::spawn_blocking(move || compiler.compile())
+                    .await
+                    .context("Build task panicked")??;
                 for diagnostic in &report.diagnostics {
                     eprintln!(
                         "{:?} {:?}: {}",
@@ -127,9 +122,8 @@ impl Executor {
                         report.written.len(),
                         report.removed.len()
                     );
-                } else {
-                    exit(1);
                 }
+                ensure!(report.is_success(), "Compilation failed");
             }
             _ => {
                 println!("Start watching...");
@@ -221,6 +215,18 @@ struct SyntectCmd {
 
 #[derive(clap::Args)]
 pub struct CleanCmd {
+    /// Protected Typst input directory (never cleaned).
+    #[arg(long, default_value = "./root")]
+    input: String,
+
+    /// Protected configuration directory (never cleaned).
+    #[arg(long, default_value = "./.typsite", alias = "cfg")]
+    config: String,
+
+    /// Allow cleaning unmarked legacy cache/output directories after checking paths.
+    #[arg(long)]
+    force: bool,
+
     /// Output dir.
     #[arg(short, long, default_value_t = format!("./publish"))]
     output: String,

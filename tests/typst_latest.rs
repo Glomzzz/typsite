@@ -81,3 +81,53 @@ fn main() {}
     assert!(!warm.changed());
     assert!(warm.exported.is_empty());
 }
+
+#[test]
+#[ignore = "requires the latest stable Typst executable; CI runs this explicitly"]
+fn shipped_templates_support_relationship_edits_with_latest_typst() {
+    let project = Project::named("typsite shipped templates [fixture]");
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
+    std::fs::remove_dir_all(&project.config).unwrap();
+    typsite::util::fs::copy_dir(repository.join("resources/.typsite"), &project.config).unwrap();
+    typsite::util::fs::copy_dir(
+        repository.join("resources/root/lib"),
+        project.input.join("lib"),
+    )
+    .unwrap();
+    project.source(
+        "index.typ",
+        r#"
+#import "/lib/lib.typ": *
+#show: schema.with("page")
+#title[Home]
+#author[Smoke test]
+= A section
+A citation: #cite-title("/other.typ")
+== #embed("/child.typ", open: true)
+"#,
+    );
+    project.source(
+        "other.typ",
+        "#import \"/lib/lib.typ\": *\n#show: schema.with(\"page\")\n#title[Other]\nOther content",
+    );
+    let child =
+        "#import \"/lib/lib.typ\": *\n#show: schema.with(\"page\")\n#title[Child]\nChild content";
+    project.source("child.typ", child);
+    let runner = CommandTypst::new(std::env::var_os("TYPST").unwrap_or_else(|| "typst".into()))
+        .with_package_path(project.root.join("isolated packages"));
+    let compiler = project.compiler(std::sync::Arc::new(runner));
+    common::successful(&compiler);
+    let first = std::fs::read_to_string(project.output.join("index.html")).unwrap();
+    assert!(first.contains("Child content"));
+    assert!(first.contains("Other"));
+    assert!(!first.contains("<embed"));
+    assert!(!first.contains("<rewrite"));
+    project.source("child.typ", &child.replace("Child", "Updated child"));
+    assert_eq!(common::successful(&compiler).exported.len(), 1);
+    assert!(
+        std::fs::read_to_string(project.output.join("index.html"))
+            .unwrap()
+            .contains("Updated child content")
+    );
+    common::clean_equivalent(&project, &compiler);
+}

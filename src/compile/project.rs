@@ -87,42 +87,29 @@ impl ProjectPaths {
 /// Resolve existing ancestors too, so a symlink cannot disguise overlapping roots.
 pub fn resolve(path: &Path) -> Result<PathBuf> {
     let absolute = std::path::absolute(path)?;
-    let mut normalized = PathBuf::new();
+    let mut resolved = PathBuf::new();
     for component in absolute.components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                normalized.pop();
+                resolved.pop();
             }
-            other => normalized.push(other.as_os_str()),
+            Component::Normal(name) => {
+                resolved.push(name);
+                match fs::symlink_metadata(&resolved) {
+                    Ok(_) => {
+                        resolved = fs::canonicalize(&resolved)
+                            .with_context(|| format!("Cannot resolve {}", resolved.display()))?
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(error)
+                            .with_context(|| format!("Cannot inspect {}", resolved.display()));
+                    }
+                }
+            }
+            root => resolved.push(root.as_os_str()),
         }
-    }
-    let mut ancestor = normalized.as_path();
-    let mut suffix = Vec::new();
-    loop {
-        match fs::symlink_metadata(ancestor) {
-            Ok(_) => break,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                suffix.push(
-                    ancestor
-                        .file_name()
-                        .context("Cannot resolve project path")?
-                        .to_owned(),
-                );
-                ancestor = ancestor
-                    .parent()
-                    .context("Cannot resolve project ancestor")?;
-            }
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("Cannot inspect {}", ancestor.display()));
-            }
-        }
-    }
-    let mut resolved = fs::canonicalize(ancestor)
-        .with_context(|| format!("Cannot resolve {}", ancestor.display()))?;
-    for name in suffix.into_iter().rev() {
-        resolved.push(name);
     }
     Ok(resolved)
 }
