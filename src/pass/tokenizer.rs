@@ -6,7 +6,7 @@ use std::result::Result::Ok;
 use std::iter::Peekable;
 
 use crate::ir::embed::EmbedVariables;
-use crate::util::html::{from_css_style, html_as_str, to_css_style, Attributes};
+use crate::util::html::{Attributes, from_css_style, html_as_str, to_css_style};
 use html5gum::{EndTag, HtmlString, StartTag, StringReader, Token};
 
 pub trait Label {

@@ -1,10 +1,9 @@
-
 use crate::compile::registry::{Key, KeyRegistry};
 use crate::ir::article::sidebar::{SidebarIndexes, SidebarPos};
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 
-pub type EmbedVariables = Vec<(String,String)>;
+pub type EmbedVariables = Vec<(String, String)>;
 
 pub struct Embed {
     pub slug: Key,
@@ -12,8 +11,8 @@ pub struct Embed {
     pub variables: EmbedVariables,
     pub section_type: SectionType,
     pub sidebar_pos: SidebarPos,
-    pub full_sidebar_indexes: SidebarIndexes,  
-    pub embed_sidebar_indexes: SidebarIndexes, 
+    pub full_sidebar_indexes: SidebarIndexes,
+    pub embed_sidebar_indexes: SidebarIndexes,
     pub body_index: usize,
 }
 

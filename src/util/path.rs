@@ -18,7 +18,6 @@ pub fn format_path(path: PathBuf) -> PathBuf {
 pub fn verify_if_relative_path<P: AsRef<Path>>(cwd: &Path, path: P) -> Result<PathBuf> {
     let path = path.as_ref();
     if path.starts_with("/") {
-        
         relative_path(cwd, path)
     } else {
         Ok(path.to_path_buf())

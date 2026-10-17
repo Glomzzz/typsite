@@ -1,10 +1,10 @@
 use crate::compile::error::TypResult;
 use crate::compile::registry::{Key, KeyRegistry, SlugPath};
-use crate::config::schema::Schema;
 use crate::config::TypsiteConfig;
+use crate::config::schema::Schema;
+use crate::ir::article::Article;
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::Indexes;
-use crate::ir::article::Article;
 use crate::ir::embed::Embed;
 use crate::ir::pending::Pending;
 use crate::ir::rewriter::{BodyRewriter, MetaRewriter};

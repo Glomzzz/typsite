@@ -1,10 +1,10 @@
 use crate::compile::registry::Key;
-use crate::ir::article::sidebar::SidebarIndexes;
 use crate::config::TypsiteConfig;
+use crate::ir::article::sidebar::SidebarIndexes;
 use anyhow::*;
-use std::result::Result::Ok;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::result::Result::Ok;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum RewriterType {
@@ -53,7 +53,9 @@ impl<'a> BodyRewriter<'a> {
                 body_index: pure.body_index,
             })
         } else {
-            Err(anyhow!("Rewriter not found: {id} in {self_slug}, skip this rewriter."))
+            Err(anyhow!(
+                "Rewriter not found: {id} in {self_slug}, skip this rewriter."
+            ))
         }
     }
 }
@@ -96,7 +98,9 @@ impl<'a> MetaRewriter<'a> {
                 body_index: pure.body_index,
             })
         } else {
-            Err(anyhow!("Rewriter not found: {id} in metacontent {meta_key} in {self_slug}, skip this rewriter."))
+            Err(anyhow!(
+                "Rewriter not found: {id} in metacontent {meta_key} in {self_slug}, skip this rewriter."
+            ))
         }
     }
 }

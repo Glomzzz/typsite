@@ -20,7 +20,7 @@ pub const WATCH_AUTO_RELOAD_SCRIPT: &str = r"
 ";
 
 //noinspection ALL
-pub async fn watch(compiler: Compiler,host:String, port: u16) -> Result<()> {
+pub async fn watch(compiler: Compiler, host: String, port: u16) -> Result<()> {
     let (reload_sender, reload_receiver) = mpsc::channel::<()>(1);
 
     let url = format!("{host}:{port}");
@@ -58,7 +58,7 @@ async fn compile_task(compiler: Compiler, reload_sender: Sender<()>) {
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;
         let result = compiler.compile();
-        if let Ok((true,_)) = result {
+        if let Ok((true, _)) = result {
             let _ = reload_sender.try_send(());
         } else {
             log_err(result);

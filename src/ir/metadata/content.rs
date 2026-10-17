@@ -395,11 +395,11 @@ pub(crate) mod tests {
     use crate::ir::article::body::Body;
     use crate::ir::article::data::GlobalData;
     use crate::ir::article::dep::{Dependency, Indexes};
-    use crate::ir::article::{sidebar::Sidebar, Article};
+    use crate::ir::article::{Article, sidebar::Sidebar};
+    use crate::ir::metadata::Metadata;
     use crate::ir::metadata::content::PureMetaContent;
     use crate::ir::metadata::graph::MetaNode;
     use crate::ir::metadata::options::MetaOptions;
-    use crate::ir::metadata::Metadata;
     use crate::ir::rewriter::{PureRewriter, RewriterType};
     use std::collections::HashMap;
     use std::collections::HashSet;

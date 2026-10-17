@@ -1,7 +1,7 @@
 use crate::compile::error::{TypError, TypResult};
 use crate::compile::registry::{Key, KeyRegistry, SlugPath};
-use crate::config::schema::Schema;
 use crate::config::TypsiteConfig;
+use crate::config::schema::Schema;
 use crate::ir::article::sidebar::Sidebar;
 use crate::ir::embed::{Embed, PureEmbed};
 use crate::ir::metadata::content::MetaContents;

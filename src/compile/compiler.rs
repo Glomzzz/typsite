@@ -10,8 +10,8 @@ use anyhow::*;
 use html_pass::pass_html;
 use initializer::{Input, initialize};
 use output_sync::{Output, sync_files_to_output};
-use site_output::generate_site_outputs;
 use page_composer::{PageData, compose_pages};
+use site_output::generate_site_outputs;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::result::Result::Ok;
@@ -48,13 +48,13 @@ pub fn clean_dir(path: &Path) -> Result<()> {
 }
 
 pub struct Compiler {
-    typst_path: PathBuf,      // Typst root
+    typst_path: PathBuf,            // Typst root
     html_cache_path: PathBuf, // Typst-export-html path (in which are raw typst-html-export files)
     config_path: PathBuf,     // Config root
     assets_path: PathBuf,     // Assets
     cache_path: PathBuf,      // Cache root
     output_path: PathBuf,     // Output
-    packages_path: Option<PathBuf>,// Package
+    packages_path: Option<PathBuf>, // Package
     typst: String,            // Typst executable path
 }
 
@@ -66,7 +66,7 @@ impl Compiler {
         typst_path: PathBuf,
         output_path: PathBuf,
         packages_path: Option<PathBuf>,
-        typst: String
+        typst: String,
     ) -> Result<Self> {
         init_compile_options(options)?;
         let html_cache_path = cache_path.join("html");
@@ -79,7 +79,7 @@ impl Compiler {
             cache_path,
             output_path,
             packages_path,
-            typst
+            typst,
         })
     }
     pub fn output_path(&self) -> &Path {
@@ -131,11 +131,14 @@ impl Compiler {
             ..
         } = input;
 
-
         let config =
-            TypsiteConfig::load(&self.config_path, &self.typst_path, &self.html_cache_path).with_context(|| {
-                format!("Loading '{:?}' failed, try to init Typsite first by: typsite init",&self.config_path)
-            })?;
+            TypsiteConfig::load(&self.config_path, &self.typst_path, &self.html_cache_path)
+                .with_context(|| {
+                    format!(
+                        "Loading '{:?}' failed, try to init Typsite first by: typsite init",
+                        &self.config_path
+                    )
+                })?;
 
         let mut registry = KeyRegistry::new();
 
@@ -335,26 +338,56 @@ pub(crate) mod tests {
             "<html><body>{references}</body></html>",
         )
         .expect("references");
-        fs::write(root.join("components/anchor_def.html"), "<html><body></body></html>")
-            .expect("anchor def");
-        fs::write(root.join("components/anchor_def_svg.html"), "<html><body></body></html>")
-            .expect("anchor def svg");
-        fs::write(root.join("components/anchor_goto.html"), "<html><body></body></html>")
-            .expect("anchor goto");
-        fs::write(root.join("components/anchor_goto_svg.html"), "<html><body></body></html>")
-            .expect("anchor goto svg");
-        fs::write(root.join("components/sidebar.html"), "<html><body>{children}</body></html>")
-            .expect("sidebar");
-        fs::write(root.join("components/sidebar_each.html"), "<html><body>{title}</body></html>")
-            .expect("sidebar each");
-        fs::write(root.join("components/embed.html"), "<html><body>{content}</body></html>")
-            .expect("embed");
-        fs::write(root.join("components/embed_title.html"), "<html><body>{title}</body></html>")
-            .expect("embed title");
-        fs::write(root.join("schemas/main.html"), "<html><body><content></content></body></html>")
-            .expect("schema");
-        fs::write(root.join("schemas/reference.html"), "<html><body><content></content></body></html>")
-            .expect("reference schema");
+        fs::write(
+            root.join("components/anchor_def.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor def");
+        fs::write(
+            root.join("components/anchor_def_svg.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor def svg");
+        fs::write(
+            root.join("components/anchor_goto.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor goto");
+        fs::write(
+            root.join("components/anchor_goto_svg.html"),
+            "<html><body></body></html>",
+        )
+        .expect("anchor goto svg");
+        fs::write(
+            root.join("components/sidebar.html"),
+            "<html><body>{children}</body></html>",
+        )
+        .expect("sidebar");
+        fs::write(
+            root.join("components/sidebar_each.html"),
+            "<html><body>{title}</body></html>",
+        )
+        .expect("sidebar each");
+        fs::write(
+            root.join("components/embed.html"),
+            "<html><body>{content}</body></html>",
+        )
+        .expect("embed");
+        fs::write(
+            root.join("components/embed_title.html"),
+            "<html><body>{title}</body></html>",
+        )
+        .expect("embed title");
+        fs::write(
+            root.join("schemas/main.html"),
+            "<html><body><content></content></body></html>",
+        )
+        .expect("schema");
+        fs::write(
+            root.join("schemas/reference.html"),
+            "<html><body><content></content></body></html>",
+        )
+        .expect("reference schema");
     }
 
     fn init_options(root: &std::path::Path) {
@@ -395,7 +428,11 @@ pub(crate) mod tests {
         .expect("compose pages should collect the missing article as an error entry");
 
         assert_eq!(page_data.error_pages.len(), 1);
-        assert!(page_data.error_pages[0].1.contains("should be loaded before composition"));
+        assert!(
+            page_data.error_pages[0]
+                .1
+                .contains("should be loaded before composition")
+        );
 
         let _ = fs::remove_dir_all(root);
     }
@@ -442,7 +479,8 @@ pub(crate) mod tests {
         fs::write(&html_cache_root, "occupied by file").expect("blocking html cache path");
         init_options(&root);
 
-        let config = TypsiteConfig::load(&root, &typst, &rendered_html).expect("config should load");
+        let config =
+            TypsiteConfig::load(&root, &typst, &rendered_html).expect("config should load");
         let mut monitor = Monitor::load(&cache, &root, &typst, &rendered_html, None);
         let errors = typst_pass::compile_typsts(
             "typst",
@@ -474,10 +512,20 @@ pub(crate) mod tests {
         fs::create_dir_all(&html).expect("html dir");
         fs::create_dir_all(&assets).expect("assets dir");
         fs::create_dir_all(packages_dir.join("broken-package")).expect("packages dir");
-        fs::write(packages_dir.join("broken-package/README.txt"), "missing typst manifest")
-            .expect("package marker file");
+        fs::write(
+            packages_dir.join("broken-package/README.txt"),
+            "missing typst manifest",
+        )
+        .expect("package marker file");
 
-        let err = match initializer::initialize(&cache, &typst, &html, &root, &assets, Some(&packages_dir)) {
+        let err = match initializer::initialize(
+            &cache,
+            &typst,
+            &html,
+            &root,
+            &assets,
+            Some(&packages_dir),
+        ) {
             Ok(_) => panic!("file packages path should be reported as an error"),
             Err(err) => err,
         };

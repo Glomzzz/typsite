@@ -2,10 +2,10 @@ use super::cache::dep::RevDeps;
 use crate::compile::error::TypResult;
 use crate::compile::registry::Key;
 use crate::config::TypsiteConfig;
+use crate::ir::article::Article;
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::{Indexes, UpdatedIndex};
 use crate::ir::article::sidebar::SidebarType;
-use crate::ir::article::Article;
 use crate::ir::embed::SectionType;
 use crate::pass::pass_schema;
 use anyhow::*;
@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::result::Result::Ok;
 use std::sync::{Arc, OnceLock};
 
-use super::{analyse_slugs_to_update_and_load, ErrorArticles, PathBufs, UpdatedPages};
+use super::{ErrorArticles, PathBufs, UpdatedPages, analyse_slugs_to_update_and_load};
 
 fn invariant_err(slug: &Key, message: impl Into<String>) -> crate::compile::error::TypError {
     crate::compile::error::TypError::new_with(slug.clone(), vec![anyhow!(message.into())])
