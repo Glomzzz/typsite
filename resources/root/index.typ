@@ -224,6 +224,10 @@ Typsite 兼容绝大部分 typst 的原生表达:
 
 = RSS 订阅与站点地图
 
+*RSS 需要主动开启。* 文章标记 `rss` 默认是 `false`，内置配置的 `base_url` 留空。生成订阅需要*同时*填写站点地址，并在集合页通过 `#rss(true)` 选择文章。不要把全局文章默认值改为 true。
+
+== 1. 开启订阅文件生成
+
 在 `.typsite/options.toml` 中填写站点公开地址，即可生成 RSS 2.0 和站点地图：
 
 ```toml
@@ -239,7 +243,7 @@ rss_content = "summary" # 可选 "summary" 或 "full"
 
 请修改已有的 `[site]`，不要重复添加。把示例地址换成自己的公开地址后，运行 `typsite compile`。文件写入输出目录；每个生成页面的 HTML head 中都会加入 RSS 自动发现链接，读者可订阅 `https://example.org/rss.xml`。
 
-== 通过集合页选择文章
+== 2. 通过集合页选择文章
 
 文章元数据新增布尔选项 `rss`，默认是 `false`。在集合页写上 `#rss(true)`，并直接嵌入要订阅的文章：
 
@@ -258,6 +262,19 @@ rss_content = "summary" # 可选 "summary" 或 "full"
 `#rss(false)` 将页面恢复为普通文章；如果仍被某个已标记的集合页直接嵌入，它仍可进入 RSS。没有标记集合页或没有可选直接嵌入时，已启用的订阅文件为空。日期排序和 `rss_limit` 在*选出条目之后*应用。站点地图仍包含所有编译文章。
 
 演示站点的两个首页都是集合页，各自直接嵌入文章指南和 Typst 简介，因此 RSS 共*四个条目*，而不是全部页面。旧站点库可从 `@local/typsite:0.1.0` 导入 `rss`，或合并新版 `root/lib/lib.typ` 的导入列表。
+
+== 3. 在演示站点中试用
+
+填写 `base_url` 后，在初始化的演示站点目录运行：
+
+```sh
+typsite compile
+typsite compile --port 8080
+```
+
+检查 `publish/rss.xml`，或在预览运行时打开 `http://localhost:8080/rss.xml`。部署输出后，用公开地址（例如 `https://example.org/rss.xml`）订阅；预览地址只用于本地检查。
+
+没有文件时，检查 `base_url`、`rss_path`、`rss_limit`；文件为空时，检查是否存在带有可选直接嵌入的标记集合页。保留 `[default_metadata.options].rss = false`；`#rss(true)` 写在集合页，而不是准备发布的文章上。完整的升级操作见 #cite("./migrate-to-018.typ")[0.1.8 RSS 迁移步骤]。
 
 == 条目内容与日期
 

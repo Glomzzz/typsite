@@ -331,6 +331,41 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
         assert!(html.contains("migrate-to-018"), "{path}");
         assert!(html.contains("<svg"), "{path}");
     }
+    for path in [
+        "index.html",
+        "en/index.html",
+        "migrate-to-018.html",
+        "en/migrate-to-018.html",
+    ] {
+        let html = std::fs::read_to_string(project.output.join(path)).unwrap();
+        let text = html5gum::Tokenizer::new(&html)
+            .map(Result::unwrap)
+            .filter_map(|token| match token {
+                html5gum::Token::String(value) => Some(String::from_utf8(value.to_vec()).unwrap()),
+                _ => None,
+            })
+            .collect::<String>();
+        for instruction in [
+            "[site]",
+            "base_url",
+            "rss_path",
+            "rss_limit",
+            "rss_content",
+            "summary",
+            "full",
+            "[default_metadata.options]",
+            "false",
+            "#rss(true)",
+            "#embed(",
+            "publish/rss.xml",
+            "http://localhost:8080/rss.xml",
+        ] {
+            assert!(
+                text.contains(instruction),
+                "missing RSS instruction {instruction} in {path}"
+            );
+        }
+    }
     assert!(project.output.join("fonts/Inria Sans.ttf").exists());
     assert!(project.output.join("icon.png").exists());
     assert!(
@@ -413,4 +448,41 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
     demo_success(demo_command(&project).arg("clean").output().unwrap());
     compile();
     assert_eq!(incremental, project.snapshot());
+
+    // Execute the copyable migration examples, not just the surrounding prose.
+    // Both use real demo articles and must keep the feed deduplicated.
+    for path in ["migrate-to-018.typ", "en/migrate-to-018.typ"] {
+        let guide = std::fs::read_to_string(project.input.join(path)).unwrap();
+        let rss_section = &guide[guide.find("= RSS").unwrap()..];
+        let site_options = rss_section
+            .split_once("```toml\n")
+            .unwrap()
+            .1
+            .split_once("```")
+            .unwrap()
+            .0;
+        project.configure(
+            "options.toml",
+            &format!(
+                "{}\n{site_options}",
+                options.split("[site]").next().unwrap()
+            ),
+        );
+        let snippet = rss_section
+            .split_once("```typ\n")
+            .unwrap()
+            .1
+            .split_once("```")
+            .unwrap()
+            .0;
+        project.source("feed.typ", snippet);
+        let report = compile();
+        assert!(report.contains("1 exported"), "{path}: {report}");
+        let feed = std::fs::read_to_string(&feed_path).unwrap();
+        assert_eq!(feed.matches("<item>").count(), selected.len(), "{path}");
+        assert!(
+            !feed.contains("<content:encoded>"),
+            "the documented configuration uses summary mode"
+        );
+    }
 }

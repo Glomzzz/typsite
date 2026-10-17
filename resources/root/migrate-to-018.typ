@@ -130,11 +130,62 @@ typsite compile
 
 = RSS 订阅配置
 
-RSS 仍需手动开启：把 `[site].base_url` 设为站点公开的 HTTP(S) 地址。默认的 `rss_path = "/rss.xml"` 和 `rss_limit = 20` 不变。新增 `rss_content = "summary"` 保留摘要和链接；选择 `"full"` 时，还会输出组合后的文章 HTML。开启后，每个生成页面都会加入 RSS 自动发现链接。完整示例见 #cite("index.typ")[首页的 RSS 配置章节]。
+RSS 2.0 支持摘要或全文。配置分为*两个步骤*：先在站点配置中开启文件生成，再通过集合页选择文章。文章元数据 `rss` *默认是 false*；只填写站点地址不会自动选出任何条目。
 
-RSS 不再包含所有编译文章。请在集合页加入 `#rss(true)`，仅选出它直接嵌入的文章，标记页自身始终排除。多个集合的条目合并去重；布尔选项默认是 false，不会继承。嵌套嵌入、引用或父级关系不选出独立条目；没有标记集合页时，已启用的订阅文件为空。请从 `@local/typsite:0.1.0` 导入 `rss`，或合并新版 `root/lib/lib.typ` 的导入列表。`#rss(false)` 取消集合标记，不是条目排除开关。站点地图仍独立包含所有编译页面。
+== 第一步：配置站点
 
-RSS 日期改为符合规范的 RFC 2822，不再使用 ISO 时间戳。纯日期及 `YYYY-MM-DD HH:MM[:SS]` 元数据按 UTC 处理，RFC 3339/RFC 2822 的时区偏移会转换为 UTC。无效日期会被省略；标题和摘要从 Typst 元数据中提取文本，不会直接显示 HTML 标签。非空但无效的站点 URL 现在会导致配置校验失败。
+修改 `.typsite/options.toml` 已有的 `[site]`，不要重复添加同名配置段。把示例地址换成站点部署后的公开地址：
+
+```toml
+[site]
+base_url = "https://example.org"
+title = "我的站点"
+description = "笔记与文章"
+rss_path = "/rss.xml"
+rss_limit = 20
+rss_content = "summary" # 可选 "summary" 或 "full"
+sitemap_path = "/sitemap.xml"
+```
+
+保留 `[default_metadata.options]` 下的 `rss = false`，也可以省略。这是每篇文章的默认值，不是 `[site]` 下的开关。请在具体集合页中显式开启，不要把所有文章的默认值都改为 true。
+
+== 第二步：标记集合页并嵌入条目
+
+合并新版 `root/lib/lib.typ` 的 `rss` 导入，或像下面一样直接从内置包导入。例如创建 `root/feed.typ`，嵌入演示站点中已有的两篇文章：
+
+```typ
+#import "/lib/lib.typ": *
+#import "@local/typsite:0.1.0": rss
+#show: schema.with("page")
+#title[订阅集合]
+#rss(true)
+
+= #embed("./typst.typ")
+= #embed("./article.typ")
+```
+
+这会选出 `typst.typ` 和 `article.typ`，*不包含* `feed.typ`。自己的站点应替换为实际文章路径。只选择直接嵌入；嵌套嵌入、引用、父级关系和仅声明的 child 图关系不添加条目。多个集合的选择合并去重。标记页自身始终排除，即使被另一个集合嵌入也不例外；标记不会被子文章继承。`#rss(false)` 只取消集合标记，不会排除被其他集合选中的文章。
+
+== 第三步：构建与订阅
+
+```sh
+typsite compile
+typsite compile --port 8080
+```
+
+第一条命令生成 `publish/rss.xml`，使用自定义输出目录或路径时则写到相应位置。第二条命令可通过 `http://localhost:8080/rss.xml` 本地检查。读者应订阅部署后的公开地址，例如 `https://example.org/rss.xml`，而不是 localhost 预览地址。每个生成页面的 HTML head 中也会加入 RSS 自动发现链接。
+
+演示站点的两个首页已有 `#rss(true)`。填写 `base_url` 后，它们直接嵌入的文章会组成四个条目：中英文文章指南和 Typst 简介。再加入上面的 `feed.typ` 只会重复选中已有文章，不会生成重复条目。首页、迁移指南和内容示例不会自动进入 RSS；站点地图仍包含所有编译文章。
+
+== 内容模式与常见配置问题
+
+- `rss_content = "summary"` 是默认模式：依次取非空的 `description`、`summary`、`abstract` 元数据。可在所选文章里写 `#metacontent("summary")[简短介绍。]`；缺少摘要不会排除文章。
+- `rss_content = "full"` 还会输出组合后的文章 HTML，不含页面导航、侧边栏或引用与反向链接页脚。嵌入内容仍保留在所选文章内部。不同阅读器对 SVG、MathML 和站点专用 CSS 的支持不同。
+- 没有生成 `rss.xml`：检查 `base_url`、`rss_path` 是否非空，以及 `rss_limit` 是否大于零。默认路径和上限仍是 `/rss.xml`、20。非空但无效的站点 URL 会导致校验失败。
+- 文件有了但没有条目：检查集合页是否写了 `#rss(true)`，以及是否有实际的直接 `#embed(...)`。只填写 `[site].base_url` 不够；`rss = false` 也不是条目排除开关。
+- RSS 日期使用 RFC 2822，不使用 ISO 时间戳。纯日期和 `YYYY-MM-DD HH:MM[:SS]` 按 UTC 处理；RFC 3339/RFC 2822 的偏移会转换为 UTC。无效日期省略，标题和摘要提取为文本，不会直接显示 HTML 标签。
+
+更多选项与文章元数据示例见 #cite("index.typ")[首页的 RSS 章节]。
 
 = 预览与失败恢复
 

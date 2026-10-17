@@ -152,6 +152,10 @@ Options:
 
 = RSS feed and sitemap
 
+*RSS is opt-in.* The article flag `rss` defaults to `false`, and the bundled `base_url` is empty. To publish a feed, configure the site URL *and* select articles with `#rss(true)` on a collection page. Do not set the global article default to true.
+
+== 1. Enable feed generation
+
 Set the public site URL in `.typsite/options.toml` to generate RSS 2.0 and a sitemap:
 
 ```toml
@@ -167,7 +171,7 @@ rss_content = "summary" # "summary" or "full"
 
 Do not add a second `[site]` section; edit the existing one. Replace the example URL with your actual public URL, then run `typsite compile`. The files are written beneath the output directory. Every generated page receives an RSS autodiscovery link in its HTML head; readers can subscribe to `https://example.org/rss.xml`.
 
-== Select articles with a container
+== 2. Select articles with a container
 
 Article metadata has a boolean `rss` option, defaulting to `false`. Mark a collection page with `#rss(true)`, then directly embed the articles to publish:
 
@@ -186,6 +190,19 @@ Only those *directly embedded articles* become feed items. The marked collection
 `#rss(false)` makes a page an ordinary article again; it can still be included if a marked container embeds it. With no marked containers (or no eligible direct embeds), the enabled feed is empty. Date ordering and `rss_limit` apply *after* selection. The sitemap still lists all compiled articles.
 
 Both demo homepages are marked containers. They directly embed the article guide and Typst introduction in each language, so the demo feed has *four entries*, not every page. For older customized libraries, import `rss` from `@local/typsite:0.1.0` or merge the new `root/lib/lib.typ` import.
+
+== 3. Try it in this demo
+
+After setting `base_url`, run these commands from the initialized demo directory:
+
+```sh
+typsite compile
+typsite compile --port 8080
+```
+
+Inspect `publish/rss.xml`, or open `http://localhost:8080/rss.xml` while preview is running. Deploy the output and subscribe using your public URL, such as `https://example.org/rss.xml`; the preview address is only for local checks.
+
+No file? Check `base_url`, `rss_path`, and `rss_limit`. Empty feed? Check for a marked container with eligible direct embeds. Keep `[default_metadata.options].rss = false`; `#rss(true)` belongs on the collection, not on the posts you want to publish. A self-contained upgrade walkthrough is in #cite("./migrate-to-018.typ")[the 0.1.8 RSS migration instructions].
 
 == Item content and dates
 
