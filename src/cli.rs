@@ -114,15 +114,27 @@ impl Executor {
         match port {
             0 => {
                 println!("Start compiling...");
-                if let (_, true) = compiler.compile()? {
-                    println!("Compiling done.");
+                let report = compiler.compile()?;
+                for diagnostic in &report.diagnostics {
+                    eprintln!(
+                        "{:?} {:?}: {}",
+                        diagnostic.stage, diagnostic.path, diagnostic.message
+                    );
+                }
+                if report.is_success() {
+                    println!(
+                        "Compiling done: {} exported, {} rendered, {} written, {} removed.",
+                        report.exported.len(),
+                        report.rendered,
+                        report.written.len(),
+                        report.removed.len()
+                    );
                 } else {
                     exit(1);
                 }
             }
             _ => {
                 println!("Start watching...");
-                compiler.clean()?;
                 compiler.watch(host, port).await?;
             }
         }

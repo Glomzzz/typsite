@@ -198,7 +198,7 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
     pub fn get_pending_or_init(
         &'b self,
         global_data: &'c GlobalData<'a, 'b, 'c>,
-    ) -> &'c Pending<'c> {
+    ) -> TypResult<&'c Pending<'c>> {
         global_data.get_pending_or_init(self)
     }
 
@@ -249,6 +249,10 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
             });
             all_used_rules
         })
+    }
+
+    pub fn metadata_dependencies(&self) -> HashSet<Key> {
+        self.dependency.metadata_articles()
     }
 
     pub fn get_depending_articles(&self) -> HashSet<Key> {

@@ -5,7 +5,6 @@ use crate::compile::registry::Key;
 use crate::compile::watch::WATCH_AUTO_RELOAD_SCRIPT;
 use crate::config::TypsiteConfig;
 use crate::config::schema::{BACKLINK_KEY, REFERENCE_KEY};
-use crate::ir::article::sidebar::HeadingNumberingStyle;
 use crate::ir::metadata::Metadata;
 use crate::ir::pending::Pending;
 use crate::pass::{pass_embed, pass_rewriter_body, pass_schema};
@@ -23,7 +22,6 @@ pub struct GlobalData<'a, 'b, 'c> {
     global_body_rewrite_indexes: HashMap<Key, Indexes>,
     global_body_embed_indexes: HashMap<Key, Indexes>,
     runtime_errors: Mutex<HashMap<Key, TypError>>,
-    invalid_pending: OnceLock<Pending<'c>>,
 }
 impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
     pub fn new(
@@ -40,7 +38,6 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
             global_body_rewrite_indexes,
             global_body_embed_indexes,
             runtime_errors: Mutex::new(HashMap::new()),
-            invalid_pending: OnceLock::new(),
         }
     }
 
@@ -55,28 +52,13 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
             .add(err);
     }
 
-    fn invalid_pending(&'c self) -> &'c Pending<'c> {
-        self.invalid_pending.get_or_init(|| {
-            let raw = Box::leak(Box::new((Vec::new(), Vec::new(), Vec::new())));
-            let anchors = Box::leak(Box::new(Vec::new()));
-            Pending::new(
-                raw,
-                HeadingNumberingStyle::Bullet,
-                Vec::new(),
-                crate::ir::pending::SidebarData::new(
-                    crate::ir::pending::SidebarIndexesData::new(HashSet::new()),
-                    Vec::new(),
-                    Vec::new(),
-                ),
-                crate::ir::pending::SidebarData::new(
-                    crate::ir::pending::SidebarIndexesData::new(HashSet::new()),
-                    Vec::new(),
-                    Vec::new(),
-                ),
-                Vec::new(),
-                anchors,
-            )
-        })
+    pub(crate) fn take_runtime_errors(&self) -> Vec<TypError> {
+        self.runtime_errors
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .drain()
+            .map(|(_, error)| error)
+            .collect()
     }
 
     #[cfg(test)]
@@ -143,51 +125,46 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
         (body.content, full_sidebar, embed_sidebar)
     }
 
-    pub(super) fn get_pending_or_init(&'c self, article: &'b Article<'a>) -> &'c Pending<'c> {
-        let Some(pending) = self.pendings.get(article.slug.as_ref()) else {
-            self.record_runtime_error(
-                article.slug.clone(),
-                anyhow!("Missing pending cache for loaded article {}", article.slug),
-            );
-            return self.invalid_pending();
-        };
-
-        pending.get_or_init(|| {
-            let Some(embed_indexes) = self.global_body_embed_indexes.get(article.slug.as_ref())
-            else {
-                self.record_runtime_error(
-                    article.slug.clone(),
-                    anyhow!(
-                        "Missing global body embed indexes for loaded article {}",
-                        article.slug
-                    ),
-                );
-                return Pending::new(
-                    Box::leak(Box::new((Vec::new(), Vec::new(), Vec::new()))),
-                    article.get_meta_options().heading_numbering_style,
-                    Vec::new(),
-                    crate::ir::pending::SidebarData::new(
-                        crate::ir::pending::SidebarIndexesData::new(HashSet::new()),
-                        Vec::new(),
-                        Vec::new(),
-                    ),
-                    crate::ir::pending::SidebarData::new(
-                        crate::ir::pending::SidebarIndexesData::new(HashSet::new()),
-                        Vec::new(),
-                        Vec::new(),
-                    ),
-                    Vec::new(),
-                    Box::leak(Box::new(Vec::new())),
-                );
-            };
-            let content = article.get_content_or_init(self);
-            pass_embed(
-                article.slug.clone(),
-                content,
-                &article.embeds,
-                embed_indexes,
-                self,
-            )
+    pub(super) fn get_pending_or_init(
+        &'c self,
+        article: &'b Article<'a>,
+    ) -> TypResult<&'c Pending<'c>> {
+        let error =
+            |message: String| TypError::new_with(article.slug.clone(), vec![anyhow!(message)]);
+        let slot = self.pendings.get(article.slug.as_ref()).ok_or_else(|| {
+            error(format!(
+                "Missing pending cache for loaded article {}",
+                article.slug
+            ))
+        })?;
+        if let Some(pending) = slot.get() {
+            return Ok(pending);
+        }
+        let indexes = self
+            .global_body_embed_indexes
+            .get(article.slug.as_ref())
+            .ok_or_else(|| {
+                error(format!(
+                    "Missing global body embed indexes for loaded article {}",
+                    article.slug
+                ))
+            })?;
+        let content = article.get_content_or_init(self);
+        let pending = pass_embed(
+            article.slug.clone(),
+            content,
+            &article.embeds,
+            indexes,
+            self,
+        )?;
+        // Concurrent renders can compute the same immutable pending value. Only
+        // one wins; no error or leaked fallback allocation is necessary.
+        let _ = slot.set(pending);
+        slot.get().ok_or_else(|| {
+            error(format!(
+                "Pending cache was not initialized for {}",
+                article.slug
+            ))
         })
     }
     pub fn schema_html(
@@ -267,15 +244,11 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
                 .map(|article| article.all_used_rules(self))
                 .flatten(),
         );
-        {
-            let mut heads = HashSet::new();
-            for rule_id in rules.iter() {
-                if let Some(rule) = self.config.rules.get(rule_id) {
-                    heads.insert(&rule.head);
-                }
-            }
-            for rule_head in heads {
-                head.push(rule_head.as_str());
+        let mut rules: Vec<_> = rules.into_iter().collect();
+        rules.sort_unstable();
+        for rule_id in rules {
+            if let Some(rule) = self.config.rules.get(rule_id) {
+                head.push(&rule.head);
             }
         }
     }
@@ -283,12 +256,11 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
     pub fn init_article_head(&'c self, article: &'b Article<'a>, head: &mut OutputHead<'a>) {
         let metadata = article.get_metadata();
         article.head.iter().for_each(|it| head.end(it.to_string()));
-        metadata
-            .node
-            .children
-            .iter()
-            .filter_map(|it| self.article(it))
-            .for_each(|it| self.init_article_head(it, head));
+        let mut children: Vec<_> = metadata.node.children.iter().collect();
+        children.sort();
+        for child in children.into_iter().filter_map(|slug| self.article(slug)) {
+            self.init_article_head(child, head);
+        }
     }
 
     pub fn init_html_head(&'c self, article: &'b Article<'a>) -> &'b OutputHead<'a> {

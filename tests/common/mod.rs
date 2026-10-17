@@ -122,3 +122,87 @@ impl Drop for Project {
 pub fn html(body: &str) -> String {
     format!("<head><schema name=\"main\"></schema></head><body>{body}</body>")
 }
+
+#[derive(Default)]
+pub struct FakeTypst {
+    calls: std::sync::Mutex<Vec<PathBuf>>,
+    dependencies: std::sync::Mutex<BTreeMap<String, Vec<String>>>,
+    pub fail_next: std::sync::atomic::AtomicBool,
+    pub revision: std::sync::atomic::AtomicUsize,
+}
+
+impl FakeTypst {
+    pub fn calls(&self) -> Vec<PathBuf> {
+        self.calls.lock().unwrap().clone()
+    }
+    pub fn depends_on(&self, source: &str, dependency: &str) {
+        self.dependencies
+            .lock()
+            .unwrap()
+            .entry(source.into())
+            .or_default()
+            .push(dependency.into());
+    }
+}
+
+impl typsite::compile::typst::TypstRunner for FakeTypst {
+    fn identity(&self) -> anyhow::Result<String> {
+        Ok(format!(
+            "fake Typst 0.15.1 revision {}",
+            self.revision.load(Ordering::SeqCst)
+        ))
+    }
+    fn export(
+        &self,
+        request: &typsite::compile::typst::ExportRequest<'_>,
+    ) -> anyhow::Result<Vec<PathBuf>> {
+        assert!(request.root.is_absolute());
+        assert!(request.input.starts_with(request.root));
+        let relative = request.input.strip_prefix(request.root)?.to_owned();
+        self.calls.lock().unwrap().push(relative.clone());
+        if self.fail_next.swap(false, Ordering::SeqCst) {
+            fs::write(request.output, "partial failed export")?;
+            anyhow::bail!("deliberate export failure");
+        }
+        let mut source = fs::read_to_string(request.input)?;
+        let mut dependencies = vec![request.input.to_owned()];
+        for dependency in self
+            .dependencies
+            .lock()
+            .unwrap()
+            .get(relative.to_string_lossy().as_ref())
+            .into_iter()
+            .flatten()
+        {
+            let dependency = request.root.join(dependency);
+            source = source.replace("{{include}}", &fs::read_to_string(&dependency)?);
+            dependencies.push(dependency);
+        }
+        fs::write(request.output, source)?;
+        Ok(dependencies)
+    }
+}
+
+impl Project {
+    pub fn compiler(
+        &self,
+        runner: std::sync::Arc<dyn typsite::compile::typst::TypstRunner>,
+    ) -> typsite::compile::compiler::Compiler {
+        self.compiler_with_options(runner, CompileOptions::default())
+    }
+    pub fn compiler_with_options(
+        &self,
+        runner: std::sync::Arc<dyn typsite::compile::typst::TypstRunner>,
+        options: CompileOptions,
+    ) -> typsite::compile::compiler::Compiler {
+        let paths = typsite::compile::project::ProjectPaths::new(
+            self.input.clone(),
+            self.config.clone(),
+            self.cache.clone(),
+            self.output.clone(),
+            None,
+        )
+        .unwrap();
+        typsite::compile::compiler::Compiler::with_runner(paths, options, runner).unwrap()
+    }
+}

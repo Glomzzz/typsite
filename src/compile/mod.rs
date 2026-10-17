@@ -1,6 +1,13 @@
+mod cache;
 pub mod compiler;
 pub mod error;
+mod graph;
 pub mod options;
+mod output;
+pub mod project;
 pub mod registry;
+mod render;
+pub mod report;
+mod site_output;
 pub mod typst;
 pub mod watch;

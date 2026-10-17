@@ -1,5 +1,6 @@
 use crate::ir::article::sidebar::Pos;
 
+pub mod atomic;
 pub mod error;
 pub mod fs;
 pub mod html;

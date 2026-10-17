@@ -50,7 +50,7 @@ pub fn pass_embed<'c, 'b: 'c, 'a: 'b>(
     embeds: &[Embed],
     indexes: &Indexes,
     global_data: &'c GlobalData<'a, 'b, 'c>,
-) -> Pending<'c> {
+) -> TypResult<Pending<'c>> {
     PendingPass::new(slug, global_data).run(content, embeds, indexes)
 }
 
