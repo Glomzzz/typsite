@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -44,8 +45,47 @@ impl CommandTypst {
         self
     }
 
+    fn executable(&self) -> Result<PathBuf> {
+        if !self.executable.is_absolute()
+            && self
+                .executable
+                .parent()
+                .is_some_and(|parent| !parent.as_os_str().is_empty())
+        {
+            Ok(std::path::absolute(&self.executable)?)
+        } else {
+            Ok(self.executable.clone())
+        }
+    }
+
+    fn environment() -> Result<Vec<(&'static str, Option<OsString>)>> {
+        [
+            "TYPST_FONT_PATHS",
+            "TYPST_IGNORE_SYSTEM_FONTS",
+            "TYPST_IGNORE_EMBEDDED_FONTS",
+            "TYPST_PACKAGE_PATH",
+            "TYPST_PACKAGE_CACHE_PATH",
+            "SOURCE_DATE_EPOCH",
+        ]
+        .into_iter()
+        .map(|key| {
+            let value = std::env::var_os(key)
+                .map(|value| absolute_environment_value(key, value))
+                .transpose()?;
+            Ok((key, value))
+        })
+        .collect()
+    }
+
     fn command(&self, request: &ExportRequest<'_>, dependencies: &Path) -> Result<Command> {
-        let mut command = Command::new(&self.executable);
+        let mut command = Command::new(self.executable()?);
+        for (key, value) in Self::environment()? {
+            if let Some(value) = value {
+                command.env(key, value);
+            } else {
+                command.env_remove(key);
+            }
+        }
         command
             .current_dir(std::path::absolute(request.root)?)
             .arg("compile")
@@ -89,7 +129,8 @@ impl TypstRunner for CommandTypst {
     }
 
     fn identity(&self) -> Result<String> {
-        let output = Command::new(&self.executable)
+        let executable = self.executable()?;
+        let output = Command::new(&executable)
             .arg("--version")
             .output()
             .with_context(|| {
@@ -101,22 +142,17 @@ impl TypstRunner for CommandTypst {
             String::from_utf8_lossy(&output.stderr)
         );
         // Environment settings can change fonts, imports, and rendered content.
-        let environment: Vec<_> = [
-            "TYPST_FONT_PATHS",
-            "TYPST_IGNORE_SYSTEM_FONTS",
-            "TYPST_IGNORE_EMBEDDED_FONTS",
-            "TYPST_PACKAGE_PATH",
-            "TYPST_PACKAGE_CACHE_PATH",
-            "SOURCE_DATE_EPOCH",
-        ]
-        .into_iter()
-        .map(|key| (key, std::env::var_os(key)))
-        .collect();
+        let environment = Self::environment()?;
+        let package_path = self
+            .package_path
+            .as_ref()
+            .map(std::path::absolute)
+            .transpose()?;
         Ok(format!(
             "{}|{:?}|{:?}|{:?}",
             String::from_utf8_lossy(&output.stdout).trim(),
-            self.executable,
-            self.package_path,
+            executable,
+            package_path,
             environment
         ))
     }
@@ -162,9 +198,44 @@ impl TypstRunner for CommandTypst {
     }
 }
 
+fn absolute_environment_value(key: &str, value: OsString) -> Result<OsString> {
+    if value.is_empty() {
+        return Ok(value);
+    }
+    match key {
+        "TYPST_FONT_PATHS" => Ok(std::env::join_paths(
+            std::env::split_paths(&value)
+                .map(std::path::absolute)
+                .collect::<std::io::Result<Vec<_>>>()?,
+        )?),
+        "TYPST_PACKAGE_PATH" | "TYPST_PACKAGE_CACHE_PATH" => {
+            Ok(std::path::absolute(value)?.into_os_string())
+        }
+        _ => Ok(value),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relative_executables_and_environment_paths_are_resolved_before_chdir() {
+        let runner = CommandTypst::new(Path::new(".").join("typst with spaces"));
+        assert_eq!(
+            runner.executable().unwrap(),
+            std::path::absolute("typst with spaces").unwrap()
+        );
+        let fonts = std::env::join_paths([Path::new("fonts one"), Path::new("fonts two")]).unwrap();
+        let normalized = absolute_environment_value("TYPST_FONT_PATHS", fonts).unwrap();
+        assert!(std::env::split_paths(&normalized).all(|path| path.is_absolute()));
+        assert_eq!(
+            absolute_environment_value("TYPST_PACKAGE_PATH", "relative packages".into()).unwrap(),
+            std::path::absolute("relative packages")
+                .unwrap()
+                .into_os_string()
+        );
+    }
 
     #[test]
     fn arguments_are_portable_and_preserve_custom_roots_and_spaces() {

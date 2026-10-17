@@ -59,7 +59,7 @@ fn cli_accepts_absolute_custom_roots_and_a_typst_executable_with_spaces() {
             .arg("--output")
             .arg(&project.output)
             .arg("--typst")
-            .arg(&executable)
+            .arg(std::path::Path::new(".").join(executable.file_name().unwrap()))
             .output()
             .unwrap()
     };
@@ -200,6 +200,119 @@ fn cleaning_unmarked_legacy_directories_requires_explicit_force() {
     );
     assert!(!project.cache.join("legacy-cache").exists());
     assert!(project.config.join("options.toml").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn watch_broadcasts_changes_preserves_last_good_pages_and_shuts_down() {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::time::{Duration, Instant};
+    struct Child(std::process::Child);
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let project = Project::new();
+    project.source("a.typ", &html("Original"));
+    let executable = stub(&project);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let mut child = Child(
+        command(&project)
+            .args([
+                "c",
+                "--input",
+                "content",
+                "--cache",
+                "cache",
+                "--host",
+                "127.0.0.1",
+                "--port",
+            ])
+            .arg(address.port().to_string())
+            .arg("--typst")
+            .arg(executable)
+            .stdout(fs::File::create(project.root.join("watch.stdout")).unwrap())
+            .stderr(fs::File::create(project.root.join("watch.stderr")).unwrap())
+            .spawn()
+            .unwrap(),
+    );
+    let get = |path: &str| -> std::io::Result<String> {
+        let mut stream = TcpStream::connect_timeout(&address, Duration::from_millis(100))?;
+        stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        )?;
+        let mut response = String::new();
+        stream.read_to_string(&mut response)?;
+        Ok(response)
+    };
+    let revision = || {
+        get("/_reload").ok().and_then(|response| {
+            response
+                .split_once("\r\n\r\n")
+                .and_then(|(_, body)| body.trim().parse::<u64>().ok())
+        })
+    };
+    let await_revision = |minimum: u64| {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if let Some(revision) = revision().filter(|revision| *revision >= minimum) {
+                break revision;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "watch failed: {}",
+                fs::read_to_string(project.root.join("watch.stderr")).unwrap()
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    let initial = await_revision(1);
+    assert_eq!(revision(), Some(initial));
+    assert_eq!(
+        revision(),
+        Some(initial),
+        "another client must not consume the revision"
+    );
+    std::thread::sleep(Duration::from_millis(1100));
+    assert_eq!(revision(), Some(initial), "no-op polls must not reload");
+    project.source("a.typ", &html("Changed"));
+    let changed = await_revision(initial + 1);
+    assert!(get("/a?query=yes").unwrap().contains("Changed"));
+    let schema = fs::read_to_string(project.config.join("schemas/main.html")).unwrap();
+    project.configure("schemas/main.html", "broken template");
+    project.source("a.typ", &html("Fixed"));
+    std::thread::sleep(Duration::from_millis(1100));
+    assert_eq!(revision(), Some(changed));
+    assert!(get("/a").unwrap().contains("Changed"));
+    project.configure("schemas/main.html", &schema);
+    await_revision(changed + 1);
+    assert!(get("/a").unwrap().contains("Fixed"));
+    assert!(
+        Command::new("kill")
+            .args(["-INT", &child.0.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "watch did not shut down gracefully"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 #[cfg(unix)]

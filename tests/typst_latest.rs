@@ -31,6 +31,8 @@ fn bundled_authoring_helpers_export_with_latest_typst() {
 A paragraph with *emphasis* and a footnote#footnote[Footnote content].
 $ x^2 + y^2 = z^2 $
 #inline(rect(width: 20pt, height: 10pt))
+#inline([SVG footnote #footnote(<frame-note>) and #link("https://example.org")[external]])
+#footnote[Frame footnote content] <frame-note>
 #inline-math($a/b$)
 #inline-math($sum_(i=1)^n i$, block: true)
 ```rust
@@ -39,7 +41,7 @@ fn main() {}
 "#,
     );
     let runner = CommandTypst::new(std::env::var_os("TYPST").unwrap_or_else(|| "typst".into()))
-        .with_package_path(packages);
+        .with_package_path(packages.clone());
     let identity = runner
         .identity()
         .expect("Install latest stable Typst or set TYPST");
@@ -74,12 +76,18 @@ fn main() {}
     let published = std::fs::read_to_string(project.output.join("latest.html")).unwrap();
     assert!(published.contains("<svg"));
     assert!(published.contains("Footnote content"));
+    assert!(published.contains("Frame footnote content"));
+    assert!(published.contains("https://example.org"));
     assert!(!published.contains("<rewrite"));
     assert!(!published.contains("<schema"));
     let warm = compiler.compile().unwrap();
     assert!(warm.is_success());
     assert!(!warm.changed());
     assert!(warm.exported.is_empty());
+    std::fs::remove_dir_all(packages.join("local/typsite/0.1.0")).unwrap();
+    let repaired = common::successful(&compiler);
+    assert_eq!(repaired.exported.len(), 1);
+    assert!(packages.join("local/typsite/0.1.0/typst.toml").exists());
 }
 
 #[test]
