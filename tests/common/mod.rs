@@ -119,6 +119,28 @@ impl Drop for Project {
     }
 }
 
+pub fn successful(
+    compiler: &typsite::compile::compiler::Compiler,
+) -> typsite::compile::report::BuildReport {
+    let report = compiler
+        .compile()
+        .expect("build infrastructure should succeed");
+    assert!(report.is_success(), "{:#?}", report.diagnostics);
+    report
+}
+
+pub fn clean_equivalent(project: &Project, compiler: &typsite::compile::compiler::Compiler) {
+    let incremental = project.snapshot();
+    fs::remove_dir_all(&project.cache).unwrap();
+    fs::remove_dir_all(&project.output).unwrap();
+    successful(compiler);
+    assert_eq!(
+        incremental,
+        project.snapshot(),
+        "incremental output must equal a clean build"
+    );
+}
+
 pub fn html(body: &str) -> String {
     format!("<head><schema name=\"main\"></schema></head><body>{body}</body>")
 }
@@ -129,6 +151,7 @@ pub struct FakeTypst {
     dependencies: std::sync::Mutex<BTreeMap<String, Vec<String>>>,
     pub fail_next: std::sync::atomic::AtomicBool,
     pub revision: std::sync::atomic::AtomicUsize,
+    pub edit_during_export: std::sync::Mutex<Option<(PathBuf, String)>>,
 }
 
 impl FakeTypst {
@@ -170,13 +193,16 @@ impl typsite::compile::typst::TypstRunner for FakeTypst {
             .dependencies
             .lock()
             .unwrap()
-            .get(relative.to_string_lossy().as_ref())
+            .get(relative.to_string_lossy().replace('\\', "/").as_str())
             .into_iter()
             .flatten()
         {
             let dependency = request.root.join(dependency);
             source = source.replace("{{include}}", &fs::read_to_string(&dependency)?);
             dependencies.push(dependency);
+        }
+        if let Some((path, content)) = self.edit_during_export.lock().unwrap().take() {
+            fs::write(path, content)?;
         }
         fs::write(request.output, source)?;
         Ok(dependencies)

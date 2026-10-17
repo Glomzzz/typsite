@@ -195,6 +195,13 @@ pub fn validate_relative(path: &Path) -> Result<()> {
 /// Never traverse output/cache symlinks, even for a path loaded from a manifest.
 pub fn managed_path(root: &Path, relative: &Path) -> Result<PathBuf> {
     validate_relative(relative)?;
+    if let Ok(metadata) = fs::symlink_metadata(root) {
+        ensure!(
+            !metadata.file_type().is_symlink(),
+            "Managed root is a symlink: {}",
+            root.display()
+        );
+    }
     let mut path = root.to_owned();
     for part in relative.components() {
         path.push(part.as_os_str());
@@ -204,7 +211,11 @@ pub fn managed_path(root: &Path, relative: &Path) -> Result<PathBuf> {
                 "Managed artifact is a symlink: {}",
                 path.display()
             ),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) => {}
             Err(error) => {
                 return Err(error).with_context(|| {
                     format!("Cannot inspect managed artifact {}", path.display())

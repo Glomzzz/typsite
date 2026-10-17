@@ -35,10 +35,12 @@ impl Ownership {
     }
 
     fn save(&self, root: &Path) -> Result<()> {
-        crate::util::atomic::write(
-            &managed_path(root, Path::new(OWNERSHIP))?,
-            &serde_json::to_vec_pretty(self)?,
-        )
+        let path = managed_path(root, Path::new(OWNERSHIP))?;
+        let bytes = serde_json::to_vec_pretty(self)?;
+        if fs::read(&path).is_ok_and(|existing| existing == bytes) {
+            return Ok(());
+        }
+        crate::util::atomic::write(&path, &bytes)
     }
 }
 
@@ -51,11 +53,7 @@ impl OutputPlan {
     ) -> Result<()> {
         validate_relative(&path)?;
         let origin = origin.into();
-        ensure!(
-            path != Path::new(OWNERSHIP) && path != Path::new(LOCK),
-            "Reserved output path: {}",
-            path.display()
-        );
+        validate_output_path(&path)?;
         let name = path.to_string_lossy().replace('\\', "/").to_lowercase();
         if let Some(previous) = self.names.get(&name) {
             let previous_origin = &self.files[previous].1;
@@ -104,10 +102,7 @@ impl OutputPlan {
         let old = Ownership::load(root)?;
         // Validate the entire plan and old manifest before the first write/delete.
         for path in self.files.keys().chain(old.files.iter()) {
-            ensure!(
-                path != Path::new(OWNERSHIP) && path != Path::new(LOCK),
-                "Invalid reserved path in output manifest"
-            );
+            validate_output_path(path)?;
             managed_path(root, path)?;
         }
         let desired: BTreeSet<_> = self.files.keys().cloned().collect();
@@ -117,15 +112,6 @@ impl OutputPlan {
             files: old.files.union(&desired).cloned().collect(),
         };
         journal.save(root)?;
-        for (relative, (bytes, _)) in self.files {
-            let path = managed_path(root, &relative)?;
-            if fs::read(&path).is_ok_and(|existing| existing == bytes) {
-                continue;
-            }
-            crate::util::atomic::write(&path, &bytes)
-                .with_context(|| format!("Cannot publish {}", path.display()))?;
-            report.written.push(relative);
-        }
         for relative in old.files.difference(&desired) {
             let path = managed_path(root, relative)?;
             match fs::remove_file(&path) {
@@ -140,9 +126,40 @@ impl OutputPlan {
                 }
             }
         }
+        // Remove stale owned paths first so file<->directory transitions can
+        // recover without cleaning. Non-owned children are never removed.
+        for (relative, (bytes, _)) in self.files {
+            let path = managed_path(root, &relative)?;
+            if fs::read(&path).is_ok_and(|existing| existing == bytes) {
+                continue;
+            }
+            if path.is_dir() && fs::read_dir(&path)?.next().is_none() {
+                fs::remove_dir(&path)?;
+            }
+            crate::util::atomic::write(&path, &bytes)
+                .with_context(|| format!("Cannot publish {}", path.display()))?;
+            report.written.push(relative);
+        }
         Ownership { files: desired }.save(root)?;
         Ok(hashes)
     }
+}
+
+fn validate_output_path(path: &Path) -> Result<()> {
+    validate_relative(path)?;
+    let first = path
+        .components()
+        .next()
+        .context("Empty output path")?
+        .as_os_str()
+        .to_string_lossy()
+        .to_lowercase();
+    ensure!(
+        first != OWNERSHIP && first != LOCK,
+        "Reserved output path: {}",
+        path.display()
+    );
+    Ok(())
 }
 
 fn prune_empty_parents(root: &Path, file: &Path) -> Result<()> {
