@@ -19,7 +19,37 @@ pub struct OutputPlan {
 
 #[derive(Default, Serialize, Deserialize)]
 struct Ownership {
+    #[serde(with = "portable_paths")]
     files: BTreeSet<PathBuf>,
+}
+
+mod portable_paths {
+    use super::*;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        files: &BTreeSet<PathBuf>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        files
+            .iter()
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .collect::<BTreeSet<_>>()
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<BTreeSet<PathBuf>, D::Error> {
+        Ok(BTreeSet::<String>::deserialize(deserializer)?
+            .into_iter()
+            .map(|path| {
+                // Read legacy Windows-native manifests on Unix as well. Backslash
+                // was never a valid artifact filename under the portable policy.
+                PathBuf::from(path.replace('\\', "/"))
+            })
+            .collect())
+    }
 }
 
 impl Ownership {

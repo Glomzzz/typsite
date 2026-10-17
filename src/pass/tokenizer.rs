@@ -1,5 +1,4 @@
 use anyhow::*;
-use std::cell::LazyCell;
 use std::collections::BTreeMap;
 use std::result::Result::Ok;
 
@@ -380,9 +379,8 @@ const STYLE_KEY: &[u8] = b"style";
 const WIDTH_KEY: &[u8] = b"width";
 const HEIGHT_KEY: &[u8] = b"height";
 
-// const VIEW_BOX_KEY: LazyCell<HtmlString> = LazyCell::new(|| b"viewbox".to_vec().into());
-const SVG_HREF_KEY: LazyCell<HtmlString> = LazyCell::new(|| b"href".to_vec().into());
-const SVG_TRANSFORM_KEY: LazyCell<HtmlString> = LazyCell::new(|| b"transform".to_vec().into());
+const SVG_HREF_KEY: &[u8] = b"href";
+const SVG_TRANSFORM_KEY: &[u8] = b"transform";
 const PT_OVER_PX: f64 = 3.0 / 4.0;
 
 const FRACTION_TO_PX: f64 = 11.0 / 9.0;
@@ -417,8 +415,16 @@ fn emit_other_start(
             let scale = start_tag.attributes.get(SCALE_KEY).with_context(|| {
                 format!("Expect an attribute of {SCALE_KEY:#?} in auto-sized-svg tag")
             })?;
-            let scale = html_as_str(scale).to_string();
-            let scale = scale[0..scale.len() - 1].parse::<f64>()? / 100.0;
+            let scale = html_as_str(scale);
+            let scale = scale
+                .strip_suffix('%')
+                .context("SVG scale must be a percentage")?
+                .parse::<f64>()?
+                / 100.0;
+            ensure!(
+                scale.is_finite() && scale >= 0.0,
+                "SVG scale must be finite and nonnegative"
+            );
             state.auto_svg = Some(scale)
         }
         "svg"
@@ -429,9 +435,10 @@ fn emit_other_start(
             if let Some(ratio) = state.auto_svg {
                 let mut svg_style = svg
                     .get(STYLE_KEY)
-                    .ok_or(anyhow!("Unsupport typst version, 0.14.1 required."))
+                    .ok_or(anyhow!(
+                        "Typst SVG frame has no size style; use the latest stable Typst"
+                    ))
                     .and_then(|it| from_css_style(html_as_str(it).as_ref()))?;
-                // svg.remove(VIEW_BOX_KEY.as_ref());
                 scale(&mut svg_style, WIDTH_KEY, ratio)?;
                 scale(&mut svg_style, HEIGHT_KEY, ratio)?;
                 svg.insert(
@@ -444,19 +451,13 @@ fn emit_other_start(
         "a" if state.svg => {
             let url = start_tag
                 .attributes
-                .get((*SVG_HREF_KEY).as_ref())
-                .ok_or(anyhow!(
-                    "Expect an attribute of {:?} in svg <a> tag",
-                    *SVG_HREF_KEY
-                ))
+                .get(SVG_HREF_KEY)
+                .context("Missing href in SVG <a> tag")
                 .map(|v| html_as_str(v))?;
             let transform = start_tag
                 .attributes
-                .get((*SVG_TRANSFORM_KEY).as_ref())
-                .ok_or(anyhow!(
-                    "Expect an attribute of {:?} in svg <a> tag",
-                    *SVG_TRANSFORM_KEY
-                ))
+                .get(SVG_TRANSFORM_KEY)
+                .context("Missing transform in SVG <a> tag")
                 .map(|v| html_as_str(v).to_string())?;
             let url = url.as_ref();
             let tag = if url.starts_with(SVG_ANCHOR_PREFIX) {
@@ -578,6 +579,20 @@ pub(crate) mod tests {
                 Some(Err(err)) => panic!("svg anchor should parse without error: {err}"),
                 None => panic!("svg anchor should produce an AnchorDef event"),
             }
+        }
+    }
+
+    #[test]
+    fn malformed_svg_scaling_is_an_error_not_a_slice_panic() {
+        for scale in ["", "100", "NaN%", "inf%", "-1%"] {
+            let html =
+                format!("<body><span class=\"auto-sized-svg\" scale=\"{scale}\"></span></body>");
+            let mut raw = html5gum::Tokenizer::new(&html).peekable();
+            let mut tokenizer = Tokenizer::<BodyTag>::new(&mut raw);
+            assert!(
+                std::iter::from_fn(|| tokenizer.next()).any(|event| event.is_err()),
+                "{scale}"
+            );
         }
     }
 

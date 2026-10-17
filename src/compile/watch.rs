@@ -30,6 +30,25 @@ pub const WATCH_AUTO_RELOAD_SCRIPT: &str = r#"
 </script>
 "#;
 
+#[derive(Default)]
+struct ReloadState {
+    pending_changes: bool,
+}
+
+impl ReloadState {
+    fn observe(&mut self, report: &BuildReport) -> bool {
+        // A failed per-file publication (or its cache checkpoint) may already
+        // have changed served bytes. Notify once a later build succeeds, even
+        // if its repair only completes metadata and rewrites no page bytes.
+        self.pending_changes |= report.changed();
+        if report.is_success() && self.pending_changes {
+            self.pending_changes = false;
+            return true;
+        }
+        false
+    }
+}
+
 pub async fn watch(compiler: Compiler, host: String, port: u16) -> Result<()> {
     let server =
         Arc::new(Server::http(format!("{host}:{port}")).map_err(|error| anyhow!("{error}"))?);
@@ -48,6 +67,7 @@ pub async fn watch(compiler: Compiler, host: String, port: u16) -> Result<()> {
         let stopped = stopped.clone();
         let revision = revision.clone();
         tokio::spawn(async move {
+            let mut reload = ReloadState::default();
             while !stopped.load(Ordering::Acquire) {
                 let compiler = compiler.clone();
                 match tokio::task::spawn_blocking(move || compiler.compile())
@@ -56,7 +76,7 @@ pub async fn watch(compiler: Compiler, host: String, port: u16) -> Result<()> {
                 {
                     Ok(report) => {
                         print_report(&report);
-                        if report.is_success() && report.changed() {
+                        if reload.observe(&report) {
                             revision.fetch_add(1, Ordering::AcqRel);
                         }
                     }
@@ -125,11 +145,10 @@ fn serve(server: &Server, root: &Path, revision: &AtomicU64, stopped: &AtomicBoo
         if let Some(request) = server
             .recv_timeout(Duration::from_millis(100))
             .context("Preview server receive failed")?
+            && let Err(error) = respond(request, root, revision.load(Ordering::Acquire))
         {
-            if let Err(error) = respond(request, root, revision.load(Ordering::Acquire)) {
-                // A disconnected browser must not stop the server.
-                eprintln!("[WARN] Preview response failed: {error:#}");
-            }
+            // A disconnected browser must not stop the server.
+            eprintln!("[WARN] Preview response failed: {error:#}");
         }
     }
     Ok(())
@@ -356,6 +375,30 @@ mod tests {
             self.thread.take().unwrap().join().unwrap().unwrap();
             let _ = std::fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn successful_repair_notifies_after_a_partial_failed_publication() {
+        let mut reload = ReloadState::default();
+        let unchanged = BuildReport::default();
+        assert!(!reload.observe(&unchanged));
+        let mut failed = BuildReport::default();
+        failed.written.push("page.html".into());
+        failed.error(
+            super::super::report::Stage::Cache,
+            None,
+            "checkpoint failed",
+        );
+        assert!(!reload.observe(&failed));
+        assert!(
+            reload.observe(&unchanged),
+            "a successful checkpoint repair must release pending changes"
+        );
+        assert!(!reload.observe(&unchanged));
+        let mut export_error = BuildReport::default();
+        export_error.error(super::super::report::Stage::Export, None, "Typst failed");
+        assert!(!reload.observe(&export_error));
+        assert!(!reload.observe(&unchanged));
     }
 
     #[test]

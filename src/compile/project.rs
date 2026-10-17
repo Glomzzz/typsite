@@ -73,6 +73,11 @@ impl ProjectPaths {
                 "Packages directory does not exist: {}",
                 packages.display()
             );
+            ensure!(
+                resolve(packages)? == *packages,
+                "Packages path changed through a symbolic link: {}",
+                packages.display()
+            );
             for writable in [&self.cache, &self.output] {
                 ensure!(
                     !packages.starts_with(writable) && !writable.starts_with(packages),
