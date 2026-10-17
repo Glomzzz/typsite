@@ -138,8 +138,10 @@ impl Compiler {
                 expected.insert(fs::canonicalize(root.join(relative))?, hash.clone());
             }
         }
+        let mut prepared = false;
         if cache.export_key != export_key {
             self.runner.prepare(paths.packages.as_deref())?;
+            prepared = true;
             cache.exports.clear();
             cache.export_key = export_key;
         }
@@ -157,6 +159,12 @@ impl Compiler {
                 .is_some_and(|entry| entry.is_current(source_hash, &artifact))
             {
                 continue;
+            }
+            if !prepared {
+                // A local package namespace can disappear independently of the
+                // build cache. Repair it before retrying an invalid export.
+                self.runner.prepare(paths.packages.as_deref())?;
+                prepared = true;
             }
             // Never use last build's HTML after a failed export of this source.
             cache.exports.remove(relative);
