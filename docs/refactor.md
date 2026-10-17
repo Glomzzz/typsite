@@ -121,6 +121,13 @@ are rejected rather than selected by parallel iteration order. HTML template
 blocks are accepted); missing blocks no longer silently produce empty fragments.
 File discovery is sorted and fallible, and treats spaces and glob metacharacters
 in directory names literally. The real-Typst fixture covers these paths too.
+Package preparation belongs to the executable runner, so injected runners never
+install packages. Explicit namespace installation supports isolated builds and
+tests. The default CLI keeps installing bundled/custom `@local` packages for
+compatibility, but honors `TYPST_PACKAGE_PATH` / `TYPST_PACKAGE_CACHE_PATH`.
+Package names/versions cannot traverse directories; duplicate identities and
+filesystem errors are failures rather than skipped entries. Namespace locks
+prevent concurrent installers from corrupting one another.
 
 ## Baseline
 

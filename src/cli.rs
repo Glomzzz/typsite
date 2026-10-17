@@ -4,7 +4,6 @@ use crate::compile::compiler::clean_dir;
 use crate::compile::options::CompileOptions;
 use crate::config::highlight::CodeHightlightConfig;
 use crate::resource::default::copy_default_typsite;
-use crate::resource::package::install_included_packages;
 use crate::{compile::compiler::Compiler, util::path::verify_if_relative_path};
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -110,7 +109,6 @@ impl Executor {
         let host = compile_cmd.host.clone();
         let port = compile_cmd.port;
         let compiler = Self::build_compiler(compile_cmd)?;
-        install_included_packages()?;
         match port {
             0 => {
                 println!("Start compiling...");

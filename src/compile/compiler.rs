@@ -121,6 +121,7 @@ impl Compiler {
         let identity = self.runner.identity()?;
         let export_key = fingerprint(&(
             1_u32,
+            &self.engine_identity,
             &identity,
             &paths.input,
             &paths.config,
@@ -149,9 +150,7 @@ impl Compiler {
             }
         }
         if cache.export_key != export_key {
-            if let Some(packages) = &paths.packages {
-                crate::resource::package::install_packages(packages)?;
-            }
+            self.runner.prepare(paths.packages.as_deref())?;
             cache.exports.clear();
             cache.export_key = export_key;
         }
