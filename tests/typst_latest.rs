@@ -330,6 +330,40 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
         let html = std::fs::read_to_string(project.output.join(path)).unwrap();
         assert!(html.contains("migrate-to-018"), "{path}");
         assert!(html.contains("<svg"), "{path}");
+        let icons: Vec<_> = html5gum::Tokenizer::new(&html)
+            .map(Result::unwrap)
+            .filter_map(|token| match token {
+                html5gum::Token::StartTag(tag)
+                    if tag.name == b"img"
+                        && tag
+                            .attributes
+                            .get(b"alt".as_slice())
+                            .is_some_and(|alt| alt.as_slice() == b"Typsite") =>
+                {
+                    Some(tag)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(icons.len(), 1, "{path}: one shared, responsive icon");
+        let attributes = &icons[0].attributes;
+        for (name, value) in [("src", "/icon.svg"), ("width", "192"), ("height", "192")] {
+            assert_eq!(
+                attributes
+                    .get(name.as_bytes())
+                    .map(|value| value.as_slice()),
+                Some(value.as_bytes()),
+                "{path}: {name}"
+            );
+        }
+        let style = std::str::from_utf8(attributes.get(b"style".as_slice()).unwrap()).unwrap();
+        for rule in ["width: 192px", "max-width: 100%", "height: auto"] {
+            assert!(style.contains(rule), "{path}: {style}");
+        }
+        assert!(
+            !html.contains("data:image/png;base64,"),
+            "{path}: do not frame the large PNG as SVG"
+        );
     }
     for path in [
         "index.html",
@@ -367,7 +401,7 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
         }
     }
     assert!(project.output.join("fonts/Inria Sans.ttf").exists());
-    assert!(project.output.join("icon.png").exists());
+    assert!(project.output.join("icon.svg").exists());
     assert!(
         !project.root.join("isolated package cache/preview").exists(),
         "the demo must not download preview packages"
