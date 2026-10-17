@@ -68,4 +68,16 @@ fn main() {}
             .iter()
             .any(|path| path.ends_with("lib/lib.typ"))
     );
+    let compiler = project.compiler(std::sync::Arc::new(runner));
+    let report = compiler.compile().unwrap();
+    assert!(report.is_success(), "{:#?}", report.diagnostics);
+    let published = std::fs::read_to_string(project.output.join("latest.html")).unwrap();
+    assert!(published.contains("<svg"));
+    assert!(published.contains("Footnote content"));
+    assert!(!published.contains("<rewrite"));
+    assert!(!published.contains("<schema"));
+    let warm = compiler.compile().unwrap();
+    assert!(warm.is_success());
+    assert!(!warm.changed());
+    assert!(warm.exported.is_empty());
 }

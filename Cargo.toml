@@ -18,6 +18,7 @@ name = "typsite"
 version = "0.1.7"
 edition = "2024"
 description = "Build and development environment for Typsite"
+rust-version = "1.89"
 
 [dependencies]
 clap = { version = "4.5.38", features = ["std", "derive"] }
@@ -30,7 +31,6 @@ thiserror = "2.0.12"
 serde = { version = "*", default-features = false, features = ["derive"] }
 rayon = "1.10.0"
 blake3 = { version = "1.8.2", features = ["rayon"] }
-memmap2 = "0.9.5"
 glob = "0.3.2"
 serde_json = "1.0.140"
 tiny_http = "0.12.0"

@@ -10,11 +10,6 @@ pub struct GeneratedFile {
     pub content: String,
 }
 
-pub struct GeneratedSite {
-    pub files: Vec<GeneratedFile>,
-    pub removed: Vec<PathBuf>,
-}
-
 struct PageEntry {
     url: String,
     title: String,
@@ -26,30 +21,19 @@ struct PageEntry {
 pub fn generate_site_outputs(
     articles: &HashMap<Key, Article<'_>>,
     options: &ProjectOptions,
-) -> Result<GeneratedSite> {
+) -> Result<Vec<GeneratedFile>> {
     let site = &options.project.site;
     let rss_path = normalize_output_path(&site.rss_path);
     let sitemap_path = normalize_output_path(&site.sitemap_path);
     let base_url = normalize_base_url(&site.base_url);
 
     let Some(base_url) = base_url else {
-        let mut removed = Vec::new();
-        if let Some(path) = rss_path {
-            removed.push(path);
-        }
-        if let Some(path) = sitemap_path {
-            removed.push(path);
-        }
-        return Ok(GeneratedSite {
-            files: Vec::new(),
-            removed,
-        });
+        return Ok(Vec::new());
     };
     let pretty_url = options.compile.pretty_url;
     let mut entries = collect_entries(articles, &base_url, pretty_url);
 
     let mut files = Vec::new();
-    let mut removed = Vec::new();
 
     if let Some(path) = sitemap_path {
         let sitemap = build_sitemap(&mut entries);
@@ -60,15 +44,13 @@ pub fn generate_site_outputs(
     }
 
     if let Some(path) = rss_path {
-        if site.rss_limit == 0 {
-            removed.push(path);
-        } else {
+        if site.rss_limit != 0 {
             let rss = build_rss(&mut entries, &base_url, site);
             files.push(GeneratedFile { path, content: rss });
         }
     }
 
-    Ok(GeneratedSite { files, removed })
+    Ok(files)
 }
 
 fn collect_entries(
@@ -130,11 +112,14 @@ fn build_rss(
     base_url: &str,
     site: &crate::compile::options::SiteOptions,
 ) -> String {
-    entries.sort_by(|a, b| match (a.date_ymd, b.date_ymd) {
-        (Some(a_date), Some(b_date)) => b_date.cmp(&a_date),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.title.cmp(&b.title),
+    entries.sort_by(|a, b| {
+        let by_date = match (a.date_ymd, b.date_ymd) {
+            (Some(a_date), Some(b_date)) => b_date.cmp(&a_date),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.title.cmp(&b.title),
+        };
+        by_date.then_with(|| a.url.cmp(&b.url))
     });
 
     let limit = site.rss_limit.min(entries.len());

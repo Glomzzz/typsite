@@ -173,7 +173,8 @@ impl<'a> TypsiteConfig<'a> {
         } else {
             return Err(anyhow!("Can't find a slug for {:?}", path));
         };
-        Ok(self.format_slug(path.to_string_lossy().as_ref()))
+        let path = path.with_extension("");
+        Ok(format!("/{}", path.to_string_lossy().replace('\\', "/")))
     }
 
     pub fn format_slug(&self, slug: &str) -> String {

@@ -65,6 +65,29 @@ entries without a manual clean.
    fallback. Fixed the bundled fallback helper's outdated inline call.
 5. Replace persistent rendered-fragment/dependency caches with conservative
    rebuild planning, validated graph resolution, and recoverable publication.
+   **Done.** A versioned manifest caches raw Typst HTML plus actual dependency
+   hashes from current Typst's `--deps` output. Dirty builds parse source HTML
+   anew, reconstruct relationships, validate embed/parent/metadata recursion,
+   and render complete pages. The initial conservative planner recomposes all
+   pages, not only a minimal affected subset; unchanged output bytes are never
+   rewritten. Typst export remains selective, including imports not declared in
+   `typst_lib`. No parsed-IR cache is persisted yet.
+
+   Publication uses atomic per-file replacement and an ownership journal in
+   `.typsite-outputs.json`; this survives cache deletion and safely removes stale
+   generated files without deleting unrelated output files. `.typsite.lock`
+   files provide cross-process build exclusion (Rust 1.89+). These names are
+   reserved. Exports and publication have independent cache checkpoints.
+   Failed export/parse/resolve/render stages retain the last successful site;
+   publication failures may leave a mixture of complete old/new files, never a
+   truncated file. They report failure and an ordinary rerun repairs the site.
+   This is deliberately not an all-or-nothing whole-site deployment transaction.
+
+   Six tests tied to the removed cache implementation were replaced by portable
+   build-level coverage: citation removal, footer template isolation, malformed
+   HTML, invalid roots, cache recovery, and publication failures, plus graph,
+   asset, feed, dependency, rename, and no-op cases. The real latest-Typst test
+   now exercises the complete engine as well as raw export.
 6. Isolate blocking preview work, broadcast revisions, validate request paths,
    and add portable integration tests and CI.
 
