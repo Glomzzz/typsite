@@ -5,7 +5,6 @@ use crate::util::html::Attributes;
 use crate::util::str::ac_replace;
 use crate::{compile::proj_options, config::TypsiteConfig};
 use std::collections::{HashMap, HashSet};
-use typsite_macros::rewrite_pass;
 
 pub mod highlighter;
 

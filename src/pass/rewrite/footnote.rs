@@ -4,7 +4,6 @@ use crate::util::html::Attributes;
 use crate::util::str::ac_replace;
 use anyhow::anyhow;
 use std::collections::HashMap;
-use typsite_macros::rewrite_pass;
 
 rewrite_pass![FootnoteRef, id = "footnote-ref", atom = true, pure = false];
 impl TagRewritePass for FootnoteRef {

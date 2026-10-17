@@ -4,7 +4,6 @@ use crate::pass::rewrite::*;
 use crate::util::html::Attributes;
 use anyhow::anyhow;
 use std::collections::{HashMap, HashSet};
-use typsite_macros::rewrite_pass;
 
 rewrite_pass![
     MetaContentPass,
