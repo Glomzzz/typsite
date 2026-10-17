@@ -3,15 +3,41 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct CompileOptions {
     pub watch: bool,
     pub short_slug: bool,
     pub pretty_url: bool,
 }
 
+impl Default for CompileOptions {
+    fn default() -> Self {
+        Self {
+            watch: false,
+            short_slug: true,
+            pretty_url: true,
+        }
+    }
+}
+
+/// Immutable options owned by one project/build, never shared through globals.
+#[derive(Debug, PartialEq)]
+pub struct ProjectOptions {
+    pub compile: CompileOptions,
+    pub project: ProjOptions,
+}
+
+impl ProjectOptions {
+    pub fn load(config_path: &Path, compile: CompileOptions) -> anyhow::Result<Self> {
+        Ok(Self {
+            compile,
+            project: ProjOptions::load(config_path)?,
+        })
+    }
+}
+
 pub const OPTIONS_PATH: &str = "options.toml";
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct ProjOptions {
     pub default_metadata: DefaultMetadata,
     #[serde(deserialize_with = "lib_paths::deserialize_lib_paths")]
@@ -21,12 +47,12 @@ pub struct ProjOptions {
     pub site: SiteOptions,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct TypstLib {
     pub files: HashSet<String>,
     pub dirs: HashSet<String>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct DefaultMetadata {
     pub content: metadata::Content,
     pub options: metadata::Options,
@@ -40,13 +66,13 @@ impl ProjOptions {
         Ok(options)
     }
 }
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct CodeFallbackStyle {
     pub dark: String,
     pub light: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct SiteOptions {
     #[serde(default = "default_site_base_url")]
     pub base_url: String,
@@ -60,6 +86,19 @@ pub struct SiteOptions {
     pub sitemap_path: String,
     #[serde(default = "default_rss_limit")]
     pub rss_limit: usize,
+}
+
+impl Default for SiteOptions {
+    fn default() -> Self {
+        Self {
+            base_url: default_site_base_url(),
+            title: default_site_title(),
+            description: default_site_description(),
+            rss_path: default_rss_path(),
+            sitemap_path: default_sitemap_path(),
+            rss_limit: default_rss_limit(),
+        }
+    }
 }
 
 fn default_site_base_url() -> String {
@@ -87,17 +126,14 @@ fn default_rss_limit() -> usize {
 }
 pub mod metadata {
     use crate::{
-        compile::{proj_options, registry::Key},
+        compile::registry::Key,
         config::TypsiteConfig,
         ir::article::sidebar::{HeadingNumberingStyle, SidebarType},
     };
     use serde::{Deserialize, Serialize};
-    use std::{
-        collections::HashMap,
-        sync::{Arc, OnceLock},
-    };
+    use std::{collections::HashMap, sync::Arc};
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Debug, Deserialize, PartialEq)]
     pub struct Content {
         #[serde(
             flatten,
@@ -106,22 +142,20 @@ pub mod metadata {
         )]
         pub default: HashMap<String, Arc<str>>,
     }
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
     pub struct Options {
         #[serde(default = "default_heading_numbering")]
         pub heading_numbering: HeadingNumberingStyle,
         #[serde(default = "default_sidebar_type")]
         pub sidebar_type: SidebarType,
     }
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
     pub struct Graph {
         #[serde(
             default = "default_parent",
             deserialize_with = "deserialize_optional_parent"
         )]
         pub parent: Option<String>,
-        #[serde(skip)]
-        default_parent_slug: OnceLock<Option<Key>>,
     }
     impl Graph {
         pub fn default_parent_slug(
@@ -129,18 +163,10 @@ pub mod metadata {
             config: &TypsiteConfig,
             verify_slug: impl FnOnce(String) -> Option<Key>,
         ) -> Option<Key> {
-            self.default_parent_slug
-                .get_or_init(|| {
-                    proj_options().ok().and_then(|it| {
-                        it.default_metadata
-                            .graph
-                            .parent
-                            .as_ref()
-                            .map(|slug| config.format_slug(slug))
-                            .and_then(verify_slug)
-                    })
-                })
-                .clone()
+            self.parent
+                .as_ref()
+                .map(|slug| config.format_slug(slug))
+                .and_then(verify_slug)
         }
     }
 

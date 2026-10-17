@@ -287,10 +287,6 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::compile::{
-        init_compile_options, init_proj_options,
-        options::{CompileOptions, ProjOptions},
-    };
     use crate::config::TypsiteConfig;
     use crate::ir::article::body::Body;
     use crate::ir::article::dep::Dependency;
@@ -397,14 +393,6 @@ pub(crate) mod tests {
         fs::create_dir_all(&html).expect("html dir");
 
         let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
-        let proj = ProjOptions::load(&root).expect("project options should load");
-        init_proj_options(proj).expect("project options should initialize");
-        init_compile_options(CompileOptions {
-            watch: false,
-            short_slug: false,
-            pretty_url: true,
-        })
-        .expect("compile options should initialize");
 
         let pure = PureArticle {
             path: std::path::PathBuf::from("missing.typ"),
@@ -415,6 +403,7 @@ pub(crate) mod tests {
                     Arc::from("/missing"),
                     HashMap::new(),
                     false,
+                    &config.options,
                 ),
                 options: MetaOptions {
                     heading_numbering_style:
@@ -470,12 +459,9 @@ pub(crate) mod tests {
 
     #[test]
     fn article_from_collects_registry_and_schema_errors() {
-        let _guard = crate::test_lock();
         run_article_from_collects_registry_and_schema_errors();
     }
 }
-
-unsafe impl Send for Article<'_> {}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PureArticle {

@@ -212,10 +212,6 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::compile::{
-        init_compile_options, init_proj_options,
-        options::{CompileOptions, ProjOptions},
-    };
     use crate::config::TypsiteConfig;
     use crate::ir::article::body::Body;
     use crate::ir::article::data::GlobalData;
@@ -327,18 +323,10 @@ pub(crate) mod tests {
         fs::create_dir_all(&html).expect("html dir");
 
         let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
-        let proj = ProjOptions::load(&root).expect("project options should load");
-        init_proj_options(proj).expect("project options should initialize");
-        init_compile_options(CompileOptions {
-            watch: false,
-            short_slug: false,
-            pretty_url: true,
-        })
-        .expect("compile options should initialize");
 
         let slug: crate::compile::registry::Key = std::sync::Arc::from("/article");
         let metadata = Metadata {
-            contents: MetaContents::new(slug.clone(), HashMap::new(), false),
+            contents: MetaContents::new(slug.clone(), HashMap::new(), false, &config.options),
             options: MetaOptions {
                 heading_numbering_style: crate::ir::article::sidebar::HeadingNumberingStyle::Bullet,
                 sidebar_type: crate::ir::article::sidebar::SidebarType::All,
@@ -406,7 +394,6 @@ pub(crate) mod tests {
 
     #[test]
     fn schema_pass_reports_missing_metadata_tag_attr() {
-        let _guard = crate::test_lock();
         run_schema_pass_reports_missing_metadata_tag_attr();
     }
 }

@@ -1,4 +1,4 @@
-use crate::compile::proj_options;
+use crate::compile::options::ProjectOptions;
 use crate::compile::registry::Key;
 use crate::ir::article::sidebar::{HeadingNumberingStyle, SidebarType};
 use crate::ir::metadata::Metadata;
@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 pub struct MetadataBuilder<'a> {
     slug: Key,
+    options: &'a ProjectOptions,
     pub(crate) meta_key: Option<String>,
     meta_rewriter_buffer: Vec<MetaRewriter<'a>>,
     // content supported metadata
@@ -26,9 +27,8 @@ pub struct MetadataBuilder<'a> {
 }
 
 impl<'a> MetadataBuilder<'a> {
-    pub fn new(self_slug: Key) -> Self {
-        let options = proj_options()
-            .expect("project options should be initialized before parsing article metadata");
+    pub fn new(self_slug: Key, project_options: &'a ProjectOptions) -> Self {
+        let options = &project_options.project;
 
         let heading_numbering_style = options.default_metadata.options.heading_numbering;
         let sidebar_type = options.default_metadata.options.sidebar_type;
@@ -48,6 +48,7 @@ impl<'a> MetadataBuilder<'a> {
 
         Self {
             slug: self_slug,
+            options: project_options,
             meta_key: None,
             meta_rewriter_buffer: Vec::new(),
             contents: HashMap::new(),
@@ -142,7 +143,7 @@ impl<'a> MetadataBuilder<'a> {
             .as_ref()
             .map(|cache| !cache.same_contents(&self.contents))
             .unwrap_or(true);
-        let contents = MetaContents::new(slug.clone(), self.contents, updated);
+        let contents = MetaContents::new(slug.clone(), self.contents, updated, self.options);
         let options = MetaOptions {
             heading_numbering_style: self.heading_numbering_style,
             sidebar_type: self.sidebar_type,

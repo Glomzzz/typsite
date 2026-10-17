@@ -287,7 +287,7 @@ pub(crate) mod tests {
             MetaContent::new(vec!["Regression Article".to_string()], Vec::new()),
         );
         let metadata = Metadata {
-            contents: MetaContents::new(slug.clone(), contents, false),
+            contents: MetaContents::new(slug.clone(), contents, false, &config.options),
             options: MetaOptions {
                 heading_numbering_style: HeadingNumberingStyle::Bullet,
                 sidebar_type: SidebarType::All,
@@ -370,7 +370,6 @@ pub(crate) mod tests {
 
     #[test]
     fn pending_pass_skips_missing_embed_article_without_panicking() {
-        let _guard = crate::test_lock();
         run_pending_pass_skips_missing_embed_article_without_panicking();
     }
 }

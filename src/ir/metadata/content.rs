@@ -1,6 +1,6 @@
 use crate::compile::error::{TypError, TypResult};
+use crate::compile::options::ProjectOptions;
 use crate::compile::registry::Key;
-use crate::compile::{compile_options, proj_options};
 use crate::config::TypsiteConfig;
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::Indexes;
@@ -26,6 +26,7 @@ pub const HAS_PARENT_REPLACEMENT_: &str = "{has_parent}";
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetaContents<'a> {
     slug: Key,
+    options: &'a ProjectOptions,
     // Content supported
     pub contents: HashMap<String, MetaContent<'a>>,
     replacement: OnceLock<HashMap<String, String>>,
@@ -39,9 +40,11 @@ impl<'b, 'a: 'b> MetaContents<'a> {
         slug: Key,
         contents: HashMap<String, MetaContent<'a>>,
         updated: bool,
+        options: &'a ProjectOptions,
     ) -> MetaContents<'a> {
         MetaContents {
             slug,
+            options,
             contents,
             replacement: OnceLock::new(),
             parent: OnceLock::new(),
@@ -65,7 +68,7 @@ impl<'b, 'a: 'b> MetaContents<'a> {
                 err.ok_typ(result)
             })
             .collect();
-        err.err_or(|| MetaContents::new(self_slug, contents, false))
+        err.err_or(|| MetaContents::new(self_slug, contents, false, &config.options))
     }
     pub fn same_contents(&self, other: &HashMap<String, MetaContent<'a>>) -> bool {
         self.contents.eq(other)
@@ -77,8 +80,8 @@ impl<'b, 'a: 'b> MetaContents<'a> {
     pub fn get(&self, key: &str) -> Option<Arc<str>> {
         let content = self.contents.get(key).map(|c| c.get());
         content.or_else(|| {
-            proj_options()
-                .expect("project options should be initialized before reading metadata defaults")
+            self.options
+                .project
                 .default_metadata
                 .content
                 .default
@@ -98,8 +101,7 @@ impl<'b, 'a: 'b> MetaContents<'a> {
                 .iter()
                 .map(|(k, v)| (format!("{{{k}}}"), v.get().to_string()))
                 .collect::<HashMap<_, _>>();
-            let compile_options = compile_options()
-                .expect("compile options should be initialized before metadata replacements");
+            let compile_options = self.options.compile;
             let (short_slug, pretty_url) = (compile_options.short_slug, compile_options.pretty_url);
             // Short slug
             let slug_display = if short_slug {
@@ -138,9 +140,7 @@ impl<'b, 'a: 'b> MetaContents<'a> {
             map.insert(HAS_PARENT_REPLACEMENT_.to_string(), parent.to_string());
 
             // Add default meta contents
-            proj_options()
-                .expect("project options should be initialized before metadata replacements")
-                .default_metadata
+            self.options.project.default_metadata
                 .content
                 .default
                 .iter()
@@ -184,8 +184,9 @@ impl<'b, 'a: 'b> MetaContents<'a> {
     }
 
     pub fn init_parent<'c>(&self, global_data: &'c GlobalData<'a, 'b, 'c>) {
-        let default_parent_slug = proj_options()
-            .expect("project options should be initialized before metadata parent replacements")
+        let default_parent_slug = self
+            .options
+            .project
             .default_metadata
             .graph
             .default_parent_slug(global_data.config, |slug| {
@@ -387,10 +388,6 @@ impl<'ce> Deserialize<'ce> for PureMetaContent {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::compile::{
-        init_compile_options, init_proj_options,
-        options::{CompileOptions, ProjOptions},
-    };
     use crate::config::TypsiteConfig;
     use crate::ir::article::body::Body;
     use crate::ir::article::data::GlobalData;
@@ -560,18 +557,10 @@ light = "light"
         fs::create_dir_all(&html).expect("html dir");
 
         let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
-        let proj = ProjOptions::load(&root).expect("project options should load");
-        init_proj_options(proj).expect("project options should initialize");
-        init_compile_options(CompileOptions {
-            watch: false,
-            short_slug: true,
-            pretty_url: true,
-        })
-        .expect("compile options should initialize");
 
         let slug: crate::compile::registry::Key = Arc::from("/");
         let metadata = Metadata {
-            contents: MetaContents::new(slug.clone(), HashMap::new(), false),
+            contents: MetaContents::new(slug.clone(), HashMap::new(), false, &config.options),
             options: MetaOptions {
                 heading_numbering_style: crate::ir::article::sidebar::HeadingNumberingStyle::Bullet,
                 sidebar_type: crate::ir::article::sidebar::SidebarType::All,
@@ -641,7 +630,6 @@ light = "light"
 
     #[test]
     fn meta_contents_init_replacement_handles_root_slug_and_parent_defaults() {
-        let _guard = crate::test_lock();
         run_meta_contents_init_replacement_handles_root_slug_and_parent_defaults();
     }
 }

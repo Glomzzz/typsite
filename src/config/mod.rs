@@ -1,3 +1,4 @@
+use crate::compile::options::{CompileOptions, ProjectOptions};
 use crate::config::anchor::AnchorConfig;
 use crate::config::footer::FooterConfig;
 use crate::config::heading_numbering::HeadingNumberingConfig;
@@ -45,6 +46,7 @@ const EMBED_TITLE_PATH: &str = "components/embed_title.html";
 const SIDEBAR_BLOCK_PATH: &str = "components/sidebar.html";
 const SIDEBAR_EACH_PATH: &str = "components/sidebar_each.html";
 pub struct TypsiteConfig<'a> {
+    pub options: ProjectOptions,
     pub section: SectionConfig,
     pub heading_numbering: HeadingNumberingConfig,
     pub footer: FooterConfig,
@@ -62,6 +64,21 @@ pub struct TypsiteConfig<'a> {
 
 impl<'a> TypsiteConfig<'a> {
     pub fn load(config_path: &'a Path, typst_path: &'a Path, html_path: &'a Path) -> Result<Self> {
+        Self::load_with_options(
+            config_path,
+            typst_path,
+            html_path,
+            CompileOptions::default(),
+        )
+    }
+
+    pub fn load_with_options(
+        config_path: &'a Path,
+        typst_path: &'a Path,
+        html_path: &'a Path,
+        compile: CompileOptions,
+    ) -> Result<Self> {
+        let options = ProjectOptions::load(config_path, compile)?;
         // Components
         let section = SectionConfig::load(config_path)?;
         let heading_numbering = HeadingNumberingConfig::load(config_path)?;
@@ -79,6 +96,7 @@ impl<'a> TypsiteConfig<'a> {
             .to_string();
 
         let config = Self {
+            options,
             rules,
             section,
             heading_numbering,
