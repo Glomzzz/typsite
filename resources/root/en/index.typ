@@ -226,6 +226,8 @@ Add metadata to an article with the existing helpers:
 
 #get-metacontent("process", from: "/index.typ")
 
+Follow the square diagram's numbered snake: left to right across the first row, right to left across the second, then left to right across the third. HIT reuses raw HTML; MISS invokes Typst. An unchanged published site exits at step 03; only dirty publication continues through parsing, graph resolution, and whole-page composition. Independent checkpoints preserve exports and publication state, and the bottom red band explains recovery. On small screens, scroll within the diagram to read the details.
+
 The cache stores raw Typst HTML and actual dependency hashes, not old relationships or rendered fragments.
 Dirty builds recompose all pages but write only changed bytes; true no-ops neither write output nor reload preview clients.
 Publication is atomic per file, not for the whole site; fix a reported failure and rerun to recover.

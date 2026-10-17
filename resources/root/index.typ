@@ -4,37 +4,7 @@
 #show: schema.with("page")
 
 
-#let _process = {
-  // Built-in drawing keeps the demo self-contained: no preview packages.
-  set text(font: "Inria Sans", size: 10pt)
-  let stage(body, tint) = rect(
-    width: 100%,
-    inset: 6pt,
-    radius: 4pt,
-    fill: tint.lighten(90%),
-    stroke: 0.6pt + tint,
-    align(center, body),
-  )
-  let arrow = [↓]
-  grid(
-    columns: (76mm,),
-    align: center,
-    row-gutter: 4pt,
-    stage([Discover project inputs], blue),
-    arrow,
-    stage([Export changed Typst or reuse raw HTML\ + dependency hashes], orange),
-    arrow,
-    stage([Parse current article facts], purple),
-    arrow,
-    stage([Resolve and validate current relationships], maroon),
-    arrow,
-    stage([Recompose all pages and feeds], blue),
-    arrow,
-    stage([Publish changed bytes atomically per file\ + output ownership journal], green),
-    arrow,
-    stage([Record publication and report results], teal),
-  )
-}
+#import "/lib/process.typ": process-diagram
 
 #let _typst-support = table(
   columns: (auto, auto, auto, auto),
@@ -62,7 +32,9 @@
 #author[Glomzzz]
 
 #metacontent("process")[
-  #html.align(center, inline(block(fill: color.white, _process)))
+  #html.div(class: "process-diagram", role: "img", aria-label: "Typsite build pipeline: export cache, no-op branch, graph resolution, page and feed composition, atomic publication, and failure recovery")[
+    #inline(process-diagram())
+  ]
 ]
 
 #metacontent("icon")[
@@ -309,6 +281,8 @@ typsite compile --port 8080
 = 架构 & 流程
 
 #get-metacontent("process")
+
+方形图按编号蛇形阅读：第一行从左到右，第二行从右到左，第三行再从左到右。HIT 复用原始 HTML，MISS 重新调用 Typst；发布状态未变时在步骤 03 直接结束。只有需要发布更新时，才继续解析、关系解析和完整页面组合。两个独立检查点分别保存导出结果与发布状态，底部红色区域说明失败恢复。小屏可在图内横向滚动查看细节。
 
 构建缓存保存原始 Typst HTML 和实际依赖的指纹，不保存旧关系图或渲染片段。
 需要更新时重新组合所有页面，但只写入内容发生变化的文件；无变化的构建不写输出，也不刷新预览。
