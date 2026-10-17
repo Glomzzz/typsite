@@ -66,7 +66,19 @@
 ]
 
 #metacontent("icon")[
-  #html.align(center, inline(scale: 37.5%, image("icon.png")))
+  #context {
+    if target() == "html" {
+      html.align(center, html.img(
+        src: "/icon.png",
+        alt: "Typsite",
+        width: "192",
+        height: "192",
+        style: "width: 192px; max-width: 100%; height: auto;",
+      )[])
+    } else {
+      align(center, image("icon.png", width: 144pt))
+    }
+  }
 ]
 
 #set text(font: "Inria Sans") // From .typsite/assets/font
