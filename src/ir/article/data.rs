@@ -241,8 +241,7 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
                 .refs_and_backlinks()
                 .into_iter()
                 .filter_map(|slug| self.article(slug))
-                .map(|article| article.all_used_rules(self))
-                .flatten(),
+                .flat_map(|article| article.all_used_rules(self)),
         );
         let mut rules: Vec<_> = rules.into_iter().collect();
         rules.sort_unstable();

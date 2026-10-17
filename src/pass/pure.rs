@@ -424,11 +424,8 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
         Ok(())
     }
     fn handle_head_end_tag(&mut self, end_tag: HeadTag) -> std::result::Result<(), Error> {
-        match end_tag {
-            HeadTag::Unique => {
-                self.push_head_buffer();
-            }
-            _ => {}
+        if let HeadTag::Unique = end_tag {
+            self.push_head_buffer();
         }
         Ok(())
     }

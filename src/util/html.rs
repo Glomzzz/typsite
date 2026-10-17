@@ -569,23 +569,20 @@ mod tests {
 
     #[test]
     fn style_attributes_serialize() {
-        let attrs = BTreeMap::from_iter(
-            vec![
-                (
-                    HtmlString::from("color".as_bytes().to_vec()),
-                    HtmlString::from("red".as_bytes().to_vec()),
-                ),
-                (
-                    HtmlString::from("font-size".as_bytes().to_vec()),
-                    HtmlString::from("16px".as_bytes().to_vec()),
-                ),
-                (
-                    HtmlString::from("margin".as_bytes().to_vec()),
-                    HtmlString::from("0".as_bytes().to_vec()),
-                ),
-            ]
-            .into_iter(),
-        );
+        let attrs = BTreeMap::from_iter(vec![
+            (
+                HtmlString::from("color".as_bytes().to_vec()),
+                HtmlString::from("red".as_bytes().to_vec()),
+            ),
+            (
+                HtmlString::from("font-size".as_bytes().to_vec()),
+                HtmlString::from("16px".as_bytes().to_vec()),
+            ),
+            (
+                HtmlString::from("margin".as_bytes().to_vec()),
+                HtmlString::from("0".as_bytes().to_vec()),
+            ),
+        ]);
         // Should serialize to a single CSS string
         assert_eq!(
             "color: red; font-size: 16px; margin: 0;",
@@ -594,23 +591,20 @@ mod tests {
     }
     #[test]
     fn style_attributes_deserialize() {
-        let attrs = BTreeMap::from_iter(
-            vec![
-                (
-                    HtmlString::from("color".as_bytes().to_vec()),
-                    HtmlString::from("red".as_bytes().to_vec()),
-                ),
-                (
-                    HtmlString::from("font-size".as_bytes().to_vec()),
-                    HtmlString::from("16px".as_bytes().to_vec()),
-                ),
-                (
-                    HtmlString::from("margin".as_bytes().to_vec()),
-                    HtmlString::from("0".as_bytes().to_vec()),
-                ),
-            ]
-            .into_iter(),
-        );
+        let attrs = BTreeMap::from_iter(vec![
+            (
+                HtmlString::from("color".as_bytes().to_vec()),
+                HtmlString::from("red".as_bytes().to_vec()),
+            ),
+            (
+                HtmlString::from("font-size".as_bytes().to_vec()),
+                HtmlString::from("16px".as_bytes().to_vec()),
+            ),
+            (
+                HtmlString::from("margin".as_bytes().to_vec()),
+                HtmlString::from("0".as_bytes().to_vec()),
+            ),
+        ]);
         let serialized = to_css_style(&attrs);
         assert_eq!(
             serialized,

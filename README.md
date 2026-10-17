@@ -70,6 +70,29 @@ cd typsite
 nix build .
 ```
 
+### 4.1 Building and checking from source
+
+Use stable Rust **1.89 or newer** and the latest stable Typst:
+
+```sh
+cargo build --release --locked
+cargo test --workspace --all-targets --locked
+# Real Typst smoke tests (isolated packages, bundled helpers and templates):
+cargo test --test typst_latest --locked -- --ignored
+```
+
+Existing authoring helpers, templates, and CLI options remain supported. The
+build engine now reports export/render/publication failures instead of leaving
+stale output with a successful exit status. Builds track actual Typst imports;
+dirty builds recompose whole pages but write only changed bytes.
+
+Cache formats are disposable. Output ownership is tracked separately in
+`.typsite-outputs.json`; keep this file to allow safe cleanup of deleted pages.
+`clean` protects project source/configuration paths. For unmarked legacy
+cache/output directories, use `clean --force` only after checking the paths;
+pass `--input` / `--config` when those protected directories are nondefault.
+See [build architecture, validation changes, and limitations](docs/refactor.md).
+
 ## 5. Architecture & Flow
 
 ![alt text](./process.png)
