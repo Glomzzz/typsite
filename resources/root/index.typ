@@ -5,143 +5,35 @@
 
 
 #let _process = {
-  import "@preview/fletcher:0.5.8" as fletcher: diagram, node, edge
-  import fletcher.shapes: house, hexagon, circle, rect
-
-  let blob(pos, label, tint: white, ..args) = node(
-    pos,
-    align(center, label),
-    width: 28mm,
-    fill: tint.lighten(60%),
-    stroke: 1pt + tint.darken(20%),
-    corner-radius: 5pt,
-    ..args,
+  // Built-in drawing keeps the demo self-contained: no preview packages.
+  set text(font: "Inria Sans", size: 10pt)
+  let stage(body, tint) = rect(
+    width: 100%,
+    inset: 6pt,
+    radius: 4pt,
+    fill: tint.lighten(90%),
+    stroke: 0.6pt + tint,
+    align(center, body),
   )
-
-
-  let diagram = diagram(
-    spacing: 21pt,
-    cell-size: (14mm, 10mm),
-    edge-stroke: 1pt,
-    edge-corner-radius: 7pt,
-    mark-scale: 70%,
-
-
-    blob((0.35, 0.8), [*Input*], shape: house.with(angle: 30deg, dir: bottom), width: 15mm, tint: red),
-
-
-    for x in (-.2, +.2) {
-      edge((0.35, 1.4), (0.35 + x, 1.4), (0.35 + x, 2), "-|>")
-    },
-
-    edge("-|>", [_changed files_], label-side: right, label-pos: 0),
-
-    blob((0.35, 2), [Compile Typst \ to HTML], width: auto, tint: orange),
-
-
-    for x in (-.2, +.2) {
-      edge((0.35, 2), (0.35 + x, 2), (0.35 + x, 2.9), "-|>")
-    },
-
-    edge("-|>"),
-
-    blob((0.35, 3), [Pass HTML], tint: purple),
-
-    for x in (-.2, +.2) {
-      edge((0.35 + x, 3), (0.35 + x, 4), (0.35, 4), "-")
-    },
-    edge((0.35, 3), (0.35, 4.65), "r", "-|>"),
-
-    blob((1, 4.65), [Dependency Analysis], tint: yellow, shape: hexagon),
-
-    edge((0.35, 3), (1, 3), "--|>"),
-
-    blob((1, 3), [Cache], width: auto, shape: circle, tint: maroon),
-
-    edge(
-      (1, 3),
-      "d",
-      (1, 3.8),
-      "-",
-      [_articles remain unchanged \ but require an update_],
-      label-side: center,
-      label-pos: 100%,
-      label-size: 0.9em,
-    ),
-
-    edge((1, 4), (1, 4.65), "-|>"),
-
-    edge((1, 4.65), (1.65, 4.65), (1.65, 4)),
-
-    for x in (-.2, -.07, +.07, +.2) {
-      edge((1.65, 4), (1.65 + x, 4), (1.65 + x, 3), "-|>")
-    },
-
-
-    blob((1.65, 3), [Pass Articles], tint: blue),
-    for x in (-.2, -.07, +.07, +.2) {
-      edge((1.65, 3), (1.65 + x, 3), (1.65 + x, 2), "-|>")
-    },
-
-    blob((1.65, 2), [Compose Pages \ with Schemas], tint: green, width: 30mm),
-
-
-    for x in (-.2, -.07, +.07, +.2) {
-      edge((1.65 + x, 2), (1.65 + x, 1.5), (1.65, 1.5), "-")
-    },
-
-    edge((1.65, 1.5), (1.65, 0.8), "-|>"),
-
-
-    edge((0.35, 0.9), (0.35, 0.3), (1.65, 0.3), (1.65, 0.8), "..|>", [_Sync_]),
-
-    blob((1.65, 0.8), [*Output*], shape: house.with(dir: bottom, angle: 30deg), width: 15mm, tint: red),
-
-
-    edge((1, 3), (1, 0.8), "--|>"),
-
-    blob((1, 0.8), [*Cache*], shape: house.with(dir: bottom, angle: 30deg), width: 15mm, tint: red),
-
-    edge((0.2, 1.4), (-0.3, 1.4), ".."),
-    blob((-0.3, 1.5), [.typ], width: auto, shape: rect, tint: gray),
-    edge("..|>"),
-    edge((0.15, 2.5), (-0.3, 2.5), ".."),
-    blob((-0.3, 2.5), [.html], width: auto, shape: rect, tint: gray),
-
-    edge((0.15, 3.5), (-0.3, 3.5), ".."),
-
-    edge((-0.3, 2.5), (-0.3, 5.9), (1, 5.9), "..|>", [_Articles_], label-side: left),
-
-    for y in (+.5, -.5) {
-      edge((0.16, 5.9), (0.16, 5.9 + y), (1, 5.9 + y), "..|>")
-    },
-
-    edge((1, 4.65), (1, 5.4), ".."),
-
-    blob((1, 5.4), [(Parents, Children, Cited, Citing)], width: 65mm, shape: rect, tint: gray),
-    edge(".."),
-
-    blob((1, 5.9), [{ Metadata, Sidebar, Embed ,Rewrite }], width: 65mm, shape: rect, tint: gray),
-    edge(".."),
-
-    blob((1, 6.4), [[Head,Body]], width: 65mm, shape: rect, tint: gray),
-
-
-    edge((1, 5.9), (2.35, 5.9), (2.35, 2.55), "..|>"),
-    for y in (+.5, -.5) {
-      edge((1.84, 5.9), (1.84, 5.9 + y), (1, 5.9 + y), "..")
-    },
-
-    edge((1.85, 3.5), (2.35, 3.5), ".."),
-
-    edge((1.85, 2.55), (2.35, 2.55), ".."),
-
-    blob((2.35, 2.55), [Pendings], width: auto, shape: rect, tint: gray),
-    edge("..|>"),
-    blob((2.35, 1.5), [.html], width: auto, shape: rect, tint: gray),
-    edge((1.55, 1.5), (2.35, 1.5), ".."),
+  let arrow = [↓]
+  grid(
+    columns: (76mm,),
+    align: center,
+    row-gutter: 4pt,
+    stage([Discover project inputs], blue),
+    arrow,
+    stage([Export changed Typst or reuse raw HTML\ + dependency hashes], orange),
+    arrow,
+    stage([Parse current article facts], purple),
+    arrow,
+    stage([Resolve and validate current relationships], maroon),
+    arrow,
+    stage([Recompose all pages and feeds], blue),
+    arrow,
+    stage([Publish changed bytes atomically per file\ + output ownership journal], green),
+    arrow,
+    stage([Record publication and report results], teal),
   )
-  diagram
 }
 
 #let _typst-support = table(
@@ -159,7 +51,7 @@
   [`label`], [✅], [`ref`], [✅],
   [`footnote`], [✅], [`math.equation`], [✅],
   [`highlight`], [✅], [`text with color`], [✅],
-  [`align`#super[1]], [inline#super[2]], [`strike`], [inline],
+  [`align`#footnote(<align>)], [inline#footnote(<svg-inline>)], [`strike`], [inline],
   [`table`], [inline], [`terms`], [inline],
   [`figure`], [inline],
 )
@@ -169,8 +61,7 @@
 #author[Glomzzz]
 
 #metacontent("process")[
-  #set text(font: "libertinus serif")
-  #html.align(center, inline(scale: 200%, block(fill: color.white, _process)))
+  #html.align(center, inline(block(fill: color.white, _process)))
 ]
 
 #metacontent("icon")[
@@ -189,6 +80,7 @@
 
 
 
+#html.align(center)[ #cite-title("migrate-to-018.typ") ]
 #html.align(center)[ #cite-title("migrate-to-017.typ") ]
 #html.align(center)[ #cite-title("migrate-to-016.typ") ]
 
@@ -210,7 +102,8 @@ Typsite 是一个用于构建静态网站的工具，其文章内容由纯 *Typs
 = 安装
 
 - 通过 #link("https://github.com/Glomzzz/typsite/releases/latest")[Release 页面]下载二进制文件
-  - 请确保你已安装了*0.13+*的typst
+  - 请使用 *Typst 最新稳定版*（当前已测试 *0.15.1*）
+  - 从源码构建需要 *Rust 1.89 或更新版本*
 - 通过 Nix & Flakes 构建
   - 请确保你已经开启了 `experimental-features = nix-command flakes`
 
@@ -229,7 +122,7 @@ nix build .
 .
 ├── root     ---  typst 根目录
 │   ├── index.typ    --- 文章
-│   └── lib.typ      --- typsite 库文件
+│   └── lib/         --- typsite 库文件，入口为 lib/lib.typ
 ├── .typsite --- typsite 配置目录
 │   ├── assets       ---  资源目录 (会同步到输出目录)
 │   ├── components   ---  组件模板
@@ -244,26 +137,12 @@ nix build .
 
 = 写作
 
-#import "@preview/frame-it:1.2.0": *
-
-#let (example, feature, variant, syntax) = frames(
-  feature: ("Feature",),
-  // For each frame kind, you have to provide its supplement title to be displayed
-  variant: ("Variant",),
-  // You can provide a color or leave it out and it will be generated
-  example: ("Example", gray),
-  // You can add as many as you want
-  syntax: ("Syntax",),
-)
-// This is necessary. Don't forget this!
-#show: frame-style(styles.boxy)
-
 Typsite 兼容绝大部分 typst 的原生表达:
 
 #get-metacontent("typst-support")
 
 #footnote[对于align, 请单独使用库中的 `html.align` 函数] <align>
-#footnote[对于复杂样式的元素, 请使用 `inline` 函数进行 *svg* 内联]
+#footnote[对于复杂样式的元素, 请使用 `inline` 函数进行 *svg* 内联] <svg-inline>
 
 = 命令行
 
@@ -309,6 +188,7 @@ Typsite 兼容绝大部分 typst 的原生表达:
   -i, --input <INPUT>    Typst 根目录，存放 typst 文件的位置 [默认: ./root] [别名: --i]
   -o, --output <OUTPUT>  输出目录 [默认: ./publish] [别名: --o]
   -p, --packages <PACKAGES>  本地包目录，typsite会将在此目录的包自动安装到@local，若在watch-mode则会自动同步，如果为空或未找到目录则跳过 [默认: ""] [别名: --p]
+  -t, --typst <TYPST>    Typst 可执行程序路径 [默认: typst]
       --no-pretty-url
       --no-short-slug
   -h, --help             打印帮助
@@ -322,8 +202,11 @@ Typsite 兼容绝大部分 typst 的原生表达:
 用法: typsite clean [OPTIONS]
 
 选项:
+      --input <INPUT>    受保护的 Typst 源文件目录 [默认: ./root]
+      --config <CONFIG>  受保护的配置目录 [默认: ./.typsite]
+      --force            检查路径后允许清理没有归属标记的旧目录
   -o, --output <OUTPUT>  输出目录 [默认: ./publish]
-  -c, --cache <CACHE>    缓存目录，用于存储原始 typst_html_export 内容 [默认: ./.cache]
+  -c, --cache <CACHE>    缓存目录，用于存储原始 Typst HTML [默认: ./.cache]
   -h, --help             打印帮助
 ```
 
@@ -341,6 +224,11 @@ Typsite 兼容绝大部分 typst 的原生表达:
 = 架构 & 流程
 
 #get-metacontent("process")
+
+构建缓存保存原始 Typst HTML 和实际依赖的指纹，不保存旧关系图或渲染片段。
+需要更新时重新组合所有页面，但只写入内容发生变化的文件；无变化的构建不写输出，也不刷新预览。
+发布按单个文件原子替换，不是整个站点的事务；失败后修复问题并重新运行即可。
+升级与输出归属说明见 #cite-title("migrate-to-018.typ")。
 
 = 配置
 

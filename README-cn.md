@@ -7,7 +7,11 @@
 </div>
 
 <div style="text-align: center;">
-<a href="https://typ.rowlib.com/migrate-to-017" title="迁移到 Typsite 0.1.7 [https://typ.rowlib.com/migrate-to-017]">迁移到 Typsite <span style="color: #22d3ee;">0.1.7</span></a>
+<a href="resources/root/migrate-to-018.typ" title="迁移到 Typsite 0.1.8">迁移到 Typsite <span style="color: #22d3ee;">0.1.8</span></a>
+</div>
+
+<div style="text-align: center;">
+<a href="https://typ.rowlib.com/migrate-to-017" title="迁移到 Typsite 0.1.7">迁移到 Typsite <span style="color: #22d3ee;">0.1.7</span></a>
 </div>
 
 <div style="text-align: center;">
@@ -80,7 +84,7 @@ nix build .
 ```sh
 cargo build --release --locked
 cargo test --workspace --all-targets --locked
-# 真实 Typst 测试，使用隔离的包目录，覆盖内置辅助函数和模板：
+# 真实 Typst 测试，使用隔离的包目录，覆盖辅助函数、模板和完整演示站点：
 cargo test --test typst_latest --locked -- --ignored
 ```
 
@@ -92,7 +96,31 @@ cargo test --test typst_latest --locked -- --ignored
 请保留它，以便安全清理已删除页面的输出。`clean` 会保护源文件和配置目录。
 清理没有归属标记的旧缓存或输出目录时，先检查路径，再使用 `clean --force`；
 源文件或配置目录不是默认位置时，请同时传入 `--input` / `--config`。
-详见[构建架构、校验变化及限制](docs/refactor.md)。
+详见 [0.1.8 迁移指南](resources/root/migrate-to-018.typ)及
+[构建架构、校验变化及限制](docs/refactor.md)。
+
+### 4.2 运行内置演示站点
+
+`init` 会把完整的中英文演示站点及迁移指南复制到新目录中。构建时不需要下载 preview 包：
+
+```sh
+typsite init --dir ./demo
+cd demo
+typsite compile
+typsite compile --port 8080
+```
+
+访问 `http://localhost:8080/` 或 `http://localhost:8080/en/`。
+也可以不初始化新项目，直接在仓库中构建 `resources` 下的演示站点：
+
+```sh
+cargo run --locked -- compile --input ./resources/root \
+  --config ./resources/.typsite --cache ./target/demo-cache \
+  --output ./target/demo-site
+```
+
+请保留 `publish/.typsite-outputs.json`，使用自定义输出目录时则保留该目录中的归属记录。
+示例中的外部音乐播放器和网页字体需要浏览器联网，但不是构建依赖。
 
 ## 5. 架构 & 流程
 
