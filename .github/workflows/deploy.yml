@@ -27,8 +27,7 @@ jobs:
         uses: actions/configure-pages@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly
-          rustflags: --cfg tokio_unstable
+          toolchain: stable
           override: true
       - name: Build Typsite
         run: |

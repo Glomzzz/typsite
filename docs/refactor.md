@@ -55,7 +55,7 @@ entries without a manual clean.
    manual `Send` implementation; the compiler now verifies thread safety.
    Also made an absent `[site]` section use the documented field defaults.
 4. Introduce a testable Typst runner and truthful structured build reports.
-   The runner now uses direct, portable argument passing and current Typst JSON
+   **Done.** The runner now uses direct, portable argument passing and current Typst JSON
    dependency metadata. Latest stable Typst compatibility is a requirement, not
    a best-effort extra; 0.15.1 was verified against GitHub's latest stable release
    and tested locally with the real executable. CI tests both 0.15.1 and rolling
@@ -89,7 +89,15 @@ entries without a manual clean.
    asset, feed, dependency, rename, and no-op cases. The real latest-Typst test
    now exercises the complete engine as well as raw export.
 6. Isolate blocking preview work, broadcast revisions, validate request paths,
-   and add portable integration tests and CI.
+   and add portable integration tests and CI. **Done.** Build and HTTP work use
+   blocking workers, shutdown awaits in-flight work, and a monotonically
+   increasing revision is visible to every browser rather than consumed by one
+   client. The preview server handles decoded paths, query strings, pretty
+   URLs, MIME types, HEAD requests, disconnected clients, and output symlinks.
+   No-op and failed builds do not increment revisions. Polling remains
+   intentionally simple (500 ms); no filesystem watcher or dependency task
+   scheduler is introduced. Tokio's unstable APIs and custom compiler flags
+   are no longer needed; release/deploy workflows use stable Rust.
 
 Each step is independently tested and committed with a Conventional Commit.
 The full test matrix and any remaining limitations must be documented here as
