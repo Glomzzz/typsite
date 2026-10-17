@@ -7,7 +7,7 @@ use typsite::compile::typst::{CommandTypst, ExportRequest, TypstRunner};
 #[test]
 #[ignore = "requires the latest stable Typst executable; CI runs this explicitly"]
 fn bundled_authoring_helpers_export_with_latest_typst() {
-    let project = Project::new();
+    let project = Project::named("typsite latest [fixture]");
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
     typsite::util::fs::copy_dir(
         repository.join("resources/root/lib"),

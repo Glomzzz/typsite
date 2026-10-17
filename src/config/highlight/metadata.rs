@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, fs::File, io::BufReader, path::PathBuf};
 
 use super::settings::*;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use syntect::parsing::{Metadata, MetadataSet};
 
@@ -59,8 +60,9 @@ const KEYS_WE_USE: &[&str] = &[
     "shellVariables",
 ];
 
-impl From<LoadMetadata> for Metadata {
-    fn from(src: LoadMetadata) -> Metadata {
+impl TryFrom<LoadMetadata> for Metadata {
+    type Error = anyhow::Error;
+    fn try_from(src: LoadMetadata) -> Result<Metadata> {
         let LoadMetadata { mut loaded } = src;
         loaded.sort_unstable_by(|a, b| a.path.cmp(&b.path));
 
@@ -87,12 +89,9 @@ impl From<LoadMetadata> for Metadata {
                 }
 
                 if key.as_str() == "shellVariables" {
-                    if let Err(err) = append_vars(scoped_settings, value, &scope) {
-                        eprintln!(
-                            "failed to merge tmPreferences shellVariables for scope {scope} from {}: {err}",
-                            path.display()
-                        );
-                    }
+                    append_vars(scoped_settings, value, &scope).with_context(|| {
+                        format!("Failed to merge tmPreferences from {}", path.display())
+                    })?;
                 } else {
                     scoped_settings.insert(key, value);
                 }
@@ -101,9 +100,12 @@ impl From<LoadMetadata> for Metadata {
 
         let scoped_metadata = scoped_metadata
             .into_iter()
-            .flat_map(|r| MetadataSet::from_raw(r).map_err(|e| eprintln!("{e}")))
-            .collect();
-        Metadata { scoped_metadata }
+            .map(|raw| {
+                MetadataSet::from_raw(raw)
+                    .map_err(|error| anyhow::anyhow!("Invalid syntax metadata: {error}"))
+            })
+            .collect::<Result<_>>()?;
+        Ok(Metadata { scoped_metadata })
     }
 }
 

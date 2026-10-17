@@ -146,15 +146,35 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> anyhow::Result<()> {
 
     Ok(())
 }
-#[macro_export]
-macro_rules! walk_glob {
-    ($($arg:tt)*) => {
-        {
-            let pattern = format!($($arg)*);
-            let paths = glob(&pattern)
-                .expect(&format!("glob patterns should be valid internal invariants: {pattern}"));
-            Box::new(paths.filter_map(std::result::Result::ok))
-                as Box<dyn Iterator<Item = std::path::PathBuf> + Send>
+/// Sorted, fallible discovery without interpreting a project's directory name
+/// as a glob pattern. Missing optional resource directories are empty.
+pub fn files_with_extension(
+    root: &Path,
+    extension: &str,
+) -> anyhow::Result<Vec<std::path::PathBuf>> {
+    match fs::metadata(root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        result => {
+            result.with_context(|| format!("Cannot inspect {}", root.display()))?;
         }
     }
+    let canonical = fs::canonicalize(root)?;
+    let mut files = Vec::new();
+    for entry in walkdir::WalkDir::new(root).follow_links(false) {
+        let entry = entry.with_context(|| format!("Cannot scan {}", root.display()))?;
+        if entry.file_type().is_symlink() {
+            let target = fs::canonicalize(entry.path())?;
+            anyhow::ensure!(
+                target.starts_with(&canonical) && target.is_file(),
+                "Resource symlink must name a file inside {}: {}",
+                root.display(),
+                entry.path().display()
+            );
+        }
+        if entry.path().is_file() && entry.path().extension().is_some_and(|ext| ext == extension) {
+            files.push(entry.into_path());
+        }
+    }
+    files.sort();
+    Ok(files)
 }

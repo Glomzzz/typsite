@@ -1,12 +1,9 @@
 use crate::config::SCHEMAS_DIR;
-use crate::util::error::log_err_or_ok;
+use crate::util::fs::files_with_extension;
 use crate::util::html::Html;
 use crate::util::path::file_stem;
-use crate::walk_glob;
 use anyhow::*;
-use glob::glob;
 use html5gum::Token;
-use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -24,12 +21,17 @@ impl SchemaConfig {
     pub fn load(config_path: &Path) -> Result<Self> {
         let schemas_path = config_path.join(SCHEMAS_DIR);
         let mut schemas = HashMap::new();
-        let loaded_schemas = walk_glob!("{}/**/*.html", schemas_path.display())
-            .par_bridge()
-            .filter_map(|path| Some((file_stem(&path)?.to_string(), path)))
-            .map(Schema::load_schema)
-            .collect::<Vec<Result<(String, Schema)>>>();
-        schemas.extend(loaded_schemas.into_iter().filter_map(log_err_or_ok));
+        for path in files_with_extension(&schemas_path, "html")? {
+            let id = file_stem(&path).context("Schema has no name")?.to_string();
+            let (id, schema) = Schema::load_schema((id, path.clone()))
+                .with_context(|| format!("Cannot load schema {}", path.display()))?;
+            ensure!(
+                !schemas.contains_key(&id),
+                "Duplicate schema {id} in {}",
+                path.display()
+            );
+            schemas.insert(id, schema);
+        }
         Ok(Self { schemas })
     }
 

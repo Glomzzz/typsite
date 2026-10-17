@@ -88,7 +88,7 @@ impl<'a> TypsiteConfig<'a> {
         let embed = EmbedConfig::load(config_path)?;
         let rules = RulesConfig::load(config_path)?;
         let schemas = SchemaConfig::load(config_path)?;
-        let highlight = CodeHightlightConfig::load(config_path);
+        let highlight = CodeHightlightConfig::load(config_path)?;
 
         let typst_path = format_path_ref(typst_path);
         let typst_root_name = dir_name(typst_path)

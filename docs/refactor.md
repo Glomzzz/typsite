@@ -111,6 +111,17 @@ The full test matrix and any remaining limitations must be documented here as
 implementation progresses. Keep performance optimization separate from the
 correctness work.
 
+## Intentional validation changes
+
+Malformed schemas, rewrite rules, themes, syntax definitions, and syntax metadata
+now fail configuration loading, even when unused, rather than logging an error
+and pretending the configuration loaded successfully. Duplicate resource names
+are rejected rather than selected by parallel iteration order. HTML template
+`<head>`/`<body>` envelopes must be present and balanced (self-closing empty
+blocks are accepted); missing blocks no longer silently produce empty fragments.
+File discovery is sorted and fallible, and treats spaces and glob metacharacters
+in directory names literally. The real-Typst fixture covers these paths too.
+
 ## Baseline
 
 Before semantic changes: 56 tests passed; build and Clippy completed (with lint

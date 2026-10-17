@@ -185,7 +185,7 @@ pub(crate) mod tests {
     use crate::ir::pending::AnchorData;
     use std::collections::{HashMap, HashSet};
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_root(label: &str) -> PathBuf {
@@ -196,94 +196,7 @@ pub(crate) mod tests {
         std::env::temp_dir().join(format!("typsite-{label}-{unique}"))
     }
 
-    fn write_test_config(root: &Path) {
-        fs::create_dir_all(root.join("components/footer")).expect("footer dir");
-        fs::create_dir_all(root.join("rewrite")).expect("rewrite dir");
-        fs::create_dir_all(root.join("schemas")).expect("schema dir");
-        fs::create_dir_all(root.join("syntaxes")).expect("syntaxes dir");
-        fs::create_dir_all(root.join("themes")).expect("themes dir");
-
-        fs::write(
-            root.join("options.toml"),
-            include_str!("../../resources/.typsite/options.toml"),
-        )
-        .expect("options file");
-        fs::write(
-            root.join("components/section.html"),
-            include_str!("../../resources/.typsite/components/section.html"),
-        )
-        .expect("section");
-        fs::write(
-            root.join("components/heading-numbering.html"),
-            "<html><body>{numbering}</body></html>",
-        )
-        .expect("heading numbering");
-        fs::write(
-            root.join("components/footer.html"),
-            "<html><body><footer>{references}{backlinks}</footer></body></html>",
-        )
-        .expect("footer");
-        fs::write(
-            root.join("components/footer/backlinks.html"),
-            "<html><body>{backlinks}</body></html>",
-        )
-        .expect("backlinks");
-        fs::write(
-            root.join("components/footer/references.html"),
-            "<html><body>{references}</body></html>",
-        )
-        .expect("references");
-        fs::write(
-            root.join("components/anchor_def.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor def");
-        fs::write(
-            root.join("components/anchor_def_svg.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor def svg");
-        fs::write(
-            root.join("components/anchor_goto.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor goto");
-        fs::write(
-            root.join("components/anchor_goto_svg.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor goto svg");
-        fs::write(
-            root.join("components/sidebar.html"),
-            "<html><body>{children}</body></html>",
-        )
-        .expect("sidebar");
-        fs::write(
-            root.join("components/sidebar_each.html"),
-            "<html><body>{title}</body></html>",
-        )
-        .expect("sidebar each");
-        fs::write(
-            root.join("components/embed.html"),
-            "<html><body>{content}</body></html>",
-        )
-        .expect("embed");
-        fs::write(
-            root.join("components/embed_title.html"),
-            "<html><body>{title}</body></html>",
-        )
-        .expect("embed title");
-        fs::write(
-            root.join("schemas/main.html"),
-            "<html><body><content></content></body></html>",
-        )
-        .expect("main schema");
-        fs::write(
-            root.join("schemas/reference.html"),
-            "<html><body><content></content></body></html>",
-        )
-        .expect("reference schema");
-    }
+    use crate::test_support::write_config as write_test_config;
 
     fn article_with_title<'a>(config: &'a TypsiteConfig<'a>, slug: &str) -> Article<'a> {
         let slug = Key::from(slug);

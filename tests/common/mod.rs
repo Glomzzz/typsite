@@ -20,8 +20,12 @@ pub struct Project {
 
 impl Project {
     pub fn new() -> Self {
+        Self::named("typsite-test")
+    }
+
+    pub fn named(prefix: &str) -> Self {
         let root = std::env::temp_dir().join(format!(
-            "typsite-test-{}-{}-{}",
+            "{prefix}-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

@@ -3,16 +3,13 @@ use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::Source;
 use crate::pass::pure::PurePass;
 use crate::pass::rewrite::*;
-use crate::util::error::log_err_or_ok;
+use crate::util::fs::files_with_extension;
 use crate::util::html::Attributes;
 use crate::util::html::HtmlWithTail;
 use crate::util::html::parse_first_tag;
 use crate::util::path::file_stem;
-use crate::walk_glob;
 use anyhow::{Context, anyhow};
-use glob::glob;
 use html5gum::{Token, Tokenizer};
-use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,11 +23,16 @@ impl RulesConfig {
         let registry = RewriteRegistry::default();
         let rules_path = config_path.join(RULES_DIR);
         let mut rules = HashMap::new();
-        let load_rules = walk_glob!("{}/**/*.html", rules_path.display())
-            .par_bridge()
-            .map(|path| TagRewriteRule::load_rule(path, &registry))
-            .collect::<Vec<anyhow::Result<(String, TagRewriteRule)>>>();
-        rules.extend(load_rules.into_iter().filter_map(log_err_or_ok));
+        for path in files_with_extension(&rules_path, "html")? {
+            let (id, rule) = TagRewriteRule::load_rule(path.clone(), &registry)
+                .with_context(|| format!("Cannot load rewrite rule {}", path.display()))?;
+            anyhow::ensure!(
+                !rules.contains_key(&id),
+                "Duplicate rewrite rule {id} in {}",
+                path.display()
+            );
+            rules.insert(id, rule);
+        }
         let metacontent = TagRewriteRule::default(METACONTENT_TAG, &registry);
 
         if let Some(rule) = metacontent {
