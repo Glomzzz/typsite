@@ -149,6 +149,39 @@ Options:
 ```
 
 
+= RSS feed and sitemap
+
+Set the public site URL in `.typsite/options.toml` to generate RSS 2.0 and a sitemap:
+
+```toml
+[site]
+base_url = "https://example.org"
+title = "My site"
+description = "Notes and articles"
+rss_path = "/rss.xml"
+sitemap_path = "/sitemap.xml"
+rss_limit = 20
+rss_content = "summary" # "summary" or "full"
+```
+
+Do not add a second `[site]` section; edit the existing one. Replace the example URL with your actual public URL, then run `typsite compile`. The files are written beneath the output directory. Every generated page receives an RSS autodiscovery link in its HTML head; readers can subscribe to `https://example.org/rss.xml`.
+
+- `summary` includes a plain-text description, taking the first nonempty `description`, `summary`, or `abstract` metadata value. It does not invent an excerpt when these are absent.
+- `full` additionally includes the composed article HTML in `content:encoded`, including embedded articles but not the page schema, navigation, sidebar, or reference/backlink footer. Ordinary links and image URLs become absolute. Scripts are omitted; feed readers may not display SVG, MathML, interactive elements, or site-specific CSS exactly like the website.
+- Titles use `page-title`, then `title`. Articles are ordered by `updated`, `lastmod`, then `date`, newest first, with URLs breaking ties. `pubDate` uses the publication `date`, falling back to the modification time.
+- Dates accept `YYYY-MM-DD`, `YYYY-MM-DD HH:MM[:SS]` (UTC), RFC 3339, or RFC 2822. Invalid or unknown dates are omitted rather than emitting invalid RSS dates.
+- An empty `base_url` disables both outputs. An empty `rss_path` or `rss_limit = 0` disables RSS only. An empty `sitemap_path` disables only the sitemap. Disabled or renamed generated files are cleaned up through the ownership journal.
+- Changing feed settings only recomposes outputs; unchanged articles are not re-exported with Typst. `--no-pretty-url` is reflected in article links.
+
+Add metadata to an article with the existing helpers:
+
+```typ
+#title[An article]
+#date[2026-03-02 18:25]
+#metacontent("summary")[A short introduction for feed readers.]
+#metacontent("updated")[2026-03-03T09:00:00Z]
+```
+
 = Architecture & Flow
 
 #get-metacontent("process", from: "/index.typ")

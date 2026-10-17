@@ -33,6 +33,7 @@ Typsite 是一个用于构建静态网站的工具，其文章内容由纯 `Typs
 - 自动安装 typst-packages, 在 watch-mode 下自动同步包文件
 - 链接/注脚 SVG (0.1.7+)
 - 增量编译, 实时预览
+- RSS 2.0 订阅，可选摘要或全文，并生成站点地图
 
 ## 3. Typst 简介
 
@@ -121,6 +122,31 @@ cargo run --locked -- compile --input ./resources/root \
 
 请保留 `publish/.typsite-outputs.json`，使用自定义输出目录时则保留该目录中的归属记录。
 示例中的外部音乐播放器和网页字体需要浏览器联网，但不是构建依赖。
+
+### 4.3 RSS 订阅
+
+修改 `.typsite/options.toml` 已有的 `[site]` 配置：
+
+```toml
+[site]
+base_url = "https://example.org"
+title = "我的站点"
+description = "笔记与文章"
+rss_path = "/rss.xml"
+rss_limit = 20
+rss_content = "summary" # "summary"（默认）或 "full"
+sitemap_path = "/sitemap.xml"
+```
+
+运行 `typsite compile` 后，读者可订阅生成的 `publish/rss.xml`，每个页面也会加入 RSS
+自动发现链接。摘要模式依次取非空的 `description`、`summary`、`abstract` 元数据；
+全文模式还会在 `content:encoded` 中包含组合后的文章 HTML，不含站点导航或页脚。
+普通链接和图片地址会转为绝对 URL，脚本会被移除。不同阅读器对 SVG、MathML 和站点专用
+CSS 的支持不同。
+
+`base_url` 留空会关闭 RSS 与站点地图；`rss_path = ""` 或 `rss_limit = 0` 只关闭 RSS。
+条目按修改或发表时间元数据排序，不取当前构建时间，因此无变化的构建不会更新订阅文件。
+日期格式、文章元数据示例和完整设置见 [Typst 文档](resources/root/index.typ)。
 
 ## 5. 架构 & 流程
 

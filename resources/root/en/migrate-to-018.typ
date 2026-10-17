@@ -9,6 +9,7 @@
 #date[2026-10-18]
 #author[Glomzzz]
 #parent("index.typ")
+#metacontent("summary")[Upgrade helpers, configure RSS, and migrate safely to the recoverable build engine in Typsite 0.1.8.]
 
 Typsite #version replaces the build engine, fixes stale incremental output, and supports the latest stable Typst. Existing valid articles, templates, configuration keys, and CLI options remain supported. This guide covers the changes that need attention when upgrading from 0.1.7.
 
@@ -126,6 +127,12 @@ typsite compile
 ```
 
 Keep these directories separate from the source, configuration, build cache, and output roots. Without an override, the default shared package installation behavior is retained. Use project fonts and a fixed `SOURCE_DATE_EPOCH` when you need reproducible exports; changes to system fonts or undeclared external inputs may require discarding the build cache.
+
+= RSS feed configuration
+
+RSS remains opt-in: set `[site].base_url` to your public HTTP(S) URL. The default `rss_path = "/rss.xml"` and `rss_limit = 20` are unchanged. New `rss_content = "summary"` retains summaries and links; choose `"full"` to include composed article HTML as well. Every generated page receives an RSS autodiscovery link when enabled. See #cite("index.typ")[the RSS configuration section on the homepage] for a complete example.
+
+RSS dates now use RFC 2822 rather than ISO timestamps. Date-only and `YYYY-MM-DD HH:MM[:SS]` metadata are treated as UTC; RFC 3339/RFC 2822 offsets are normalized to UTC. Invalid calendar dates are omitted. Titles and summaries are extracted as text from Typst metadata instead of exposing literal HTML tags. Invalid nonempty site URLs now fail configuration validation.
 
 = Preview and failure recovery
 

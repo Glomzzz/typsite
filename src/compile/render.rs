@@ -15,11 +15,20 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+pub struct RenderedPage {
+    pub path: PathBuf,
+    pub slug: super::registry::Key,
+    pub html: String,
+    /// Composed article content, without the page schema, sidebar, or footer.
+    pub body: String,
+}
+
 pub fn render<'a>(
     config: &'a TypsiteConfig<'a>,
     site: &ResolvedSite<'a>,
     report: &mut BuildReport,
-) -> Vec<(PathBuf, String)> {
+    feed_link: Option<&str>,
+) -> Vec<RenderedPage> {
     let articles = &site.articles;
     let global = GlobalData::new(
         config,
@@ -100,8 +109,17 @@ pub fn render<'a>(
         .par_iter()
         .map(|slug| {
             let (article, body, sidebar) = &prepared[slug];
-            pass_schema(config, article.schema, article, body, sidebar, &global)
-                .map(|html| (article.path.to_path_buf(), html.to_html()))
+            pass_schema(config, article.schema, article, body, sidebar, &global).map(|mut html| {
+                if let Some(link) = feed_link {
+                    html.head.end(link.to_owned());
+                }
+                RenderedPage {
+                    path: article.path.to_path_buf(),
+                    slug: article.slug.clone(),
+                    html: html.to_html(),
+                    body: body.clone(),
+                }
+            })
         })
         .collect();
     let mut pages = Vec::new();

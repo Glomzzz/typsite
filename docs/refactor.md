@@ -158,6 +158,33 @@ cleans its output when a default parent is configured. Malformed SVG scaling
 produces a diagnostic instead of a slicing panic. The latest-Typst smoke test
 includes SVG links and footnote references as well as shipped page templates.
 
+## RSS and sitemap
+
+`[site].base_url` enables deterministic RSS 2.0 and sitemap generation. Blank
+base URLs keep both disabled; blank output paths disable each independently,
+and `rss_limit = 0` disables RSS. The new `rss_content` setting accepts
+`"summary"` (default) or `"full"`. Summary mode uses plain text from the first
+nonempty description/summary/abstract metadata. Full mode additionally exports
+composed article bodies, not page schema/navigation/sidebar/footers, using the
+standard `content:encoded` namespace. Ordinary link/image URLs become absolute;
+SVG-local glyph references are preserved and scripts are omitted. This is not
+a general HTML sanitizer or a replacement for trusted authoring inputs, and
+feed readers' SVG/MathML/CSS/interactive-content support varies.
+
+Every rendered page gets an autodiscovery link only while RSS is enabled. Feeds
+have an Atom self-link, stable permalink GUIDs, XML-safe titles/summaries/content,
+and RFC 2822 dates. Date-only/local timestamps use UTC; RFC 3339/RFC 2822 offsets
+are normalized to UTC. Invalid dates are omitted, never emitted verbatim.
+Full timestamps drive stable newest-first sorting; the latest metadata date,
+not wall-clock build time, supplies `lastBuildDate`. Site URLs are validated as
+absolute HTTP(S) URLs, and literal filename characters are URL-encoded.
+
+Feed files share the output plan, collision checks, atomic writes, ownership
+cleanup, and no-op behavior with pages/assets. Changing mode/path/limits needs
+no Typst exports. XML-parsed integration tests cover both modes, discovery,
+dates, limits, Unicode URLs, cleanup, failures, and clean-build equivalence.
+The bilingual Typst homepages and 0.1.8 migration guides document configuration.
+
 ## Verification
 
 Verified locally on Linux with Rust 1.94.0 and real Typst 0.15.1 (`9dfd3a08`):
@@ -172,7 +199,7 @@ cargo test --workspace --doc --locked --offline
 cargo build --release --locked --offline
 ```
 
-The default suite passes **90 unit/integration tests**; the three real-Typst
+The default suite passes **101 unit/integration tests**; the three real-Typst
 tests are ignored by default and pass when explicitly enabled. The fixtures
 compare full incremental/clean output snapshots, include independent compiler
 instances, and never change process cwd, HOME, or normal installed packages.
@@ -192,6 +219,9 @@ The support table now uses real SVG footnote references rather than decorative
 superscripts, so its footnote return links have actual targets. A legacy `.typ`
 link in the English 0.1.7 guide now uses a site citation and resolves to HTML.
 The demo includes both 0.1.8 migration guides and links them from each homepage.
+The full-demo fixture enables RSS, checks all items and discovery links, switches
+from summary to full mode without re-exporting articles, parses the generated
+XML, and includes full-content feeds in its incremental/clean comparison.
 External web fonts and music embeds are browser dependencies, not build inputs.
 
 CI includes strict formatting/Clippy, an MSRV 1.89 compile check, and real-Typst

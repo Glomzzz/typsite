@@ -233,6 +233,10 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
     project.input = project.root.join("root");
     project.cache = project.root.join(".cache");
     demo_success(demo_command(&project).arg("init").output().unwrap());
+    let options = std::fs::read_to_string(project.config.join("options.toml"))
+        .unwrap()
+        .replace("base_url = \"\"", "base_url = \"https://example.org\"");
+    project.configure("options.toml", &options);
 
     let executable = std::env::var_os("TYPST").unwrap_or_else(|| "typst".into());
     let executable = Path::new(&executable);
@@ -310,6 +314,38 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
         !project.root.join("isolated package cache/preview").exists(),
         "the demo must not download preview packages"
     );
+    let feed_path = project.output.join("rss.xml");
+    let summary_feed = std::fs::read_to_string(&feed_path).unwrap();
+    assert_eq!(summary_feed.matches("<item>").count(), pages.len());
+    assert!(summary_feed.contains("Migrating to Typsite 0.1.8"));
+    assert!(summary_feed.contains("application/rss+xml"));
+    assert!(!summary_feed.contains("<content:encoded>"));
+    assert!(summary_feed.contains("+0000</pubDate>"));
+    for source in &pages {
+        let page = project.output.join(
+            source
+                .strip_prefix(&project.input)
+                .unwrap()
+                .with_extension("html"),
+        );
+        assert!(
+            std::fs::read_to_string(page)
+                .unwrap()
+                .contains("type=\"application/rss+xml\"")
+        );
+    }
+    project.configure(
+        "options.toml",
+        &options.replace("rss_content = \"summary\"", "rss_content = \"full\""),
+    );
+    let full = compile();
+    assert!(full.contains("0 exported"), "{full}");
+    let full_feed = std::fs::read_to_string(&feed_path).unwrap();
+    assert_eq!(full_feed.matches("<content:encoded>").count(), pages.len());
+    assert!(full_feed.contains("&lt;svg"));
+    assert!(full_feed.contains("https://example.org/"));
+    let mut reader = quick_xml::Reader::from_str(&full_feed);
+    while !matches!(reader.read_event().unwrap(), quick_xml::events::Event::Eof) {}
     let published = project.snapshot();
     let warm = compile();
     assert!(

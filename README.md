@@ -29,6 +29,7 @@ Typsite is a static site generator (SSG) that uses pure `Typst` for content crea
 -   Automatically typst-packages install & sync (in watch-mode)
 -   Links, Footnotes in SVG (0.1.7+)
 -   Incremental compilation and real-time preview
+-   RSS 2.0 feeds with configurable summaries/full articles, plus sitemap output
 
 
 ## 3. About Typst
@@ -121,6 +122,34 @@ cargo run --locked -- compile --input ./resources/root \
 Keep `publish/.typsite-outputs.json` (or the journal in your custom output root).
 External music players and web fonts in the examples need browser network access,
 but are not build dependencies.
+
+### 4.3 RSS subscriptions
+
+Edit the existing `[site]` section in `.typsite/options.toml`:
+
+```toml
+[site]
+base_url = "https://example.org"
+title = "My site"
+description = "Notes and articles"
+rss_path = "/rss.xml"
+rss_limit = 20
+rss_content = "summary" # "summary" (default) or "full"
+sitemap_path = "/sitemap.xml"
+```
+
+Run `typsite compile`: `publish/rss.xml` is ready for readers to subscribe to,
+and generated pages include an RSS autodiscovery link. Summary mode uses the
+first nonempty `description`, `summary`, or `abstract` metadata. Full mode also
+includes composed article HTML in `content:encoded`, without site navigation or
+footers. Links/images are made absolute; scripts are omitted. Reader support for
+SVG, MathML, and site-specific CSS varies.
+
+An empty `base_url` disables both feeds and sitemap. Set `rss_path = ""` or
+`rss_limit = 0` to disable RSS alone. Entries sort by modification/publication
+metadata, not the current build time, so no-op builds do not change the feed.
+See the [Typst documentation](resources/root/en/index.typ) for date formats,
+article metadata examples, and all settings.
 
 ## 5. Architecture & Flow
 
