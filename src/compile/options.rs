@@ -159,6 +159,8 @@ pub mod metadata {
         pub heading_numbering: HeadingNumberingStyle,
         #[serde(default = "default_sidebar_type")]
         pub sidebar_type: SidebarType,
+        #[serde(default)]
+        pub rss: bool,
     }
     #[derive(Debug, Deserialize, Serialize, PartialEq)]
     pub struct Graph {

@@ -19,6 +19,7 @@ pub struct MetadataBuilder<'a> {
     contents: HashMap<String, MetaContent<'a>>,
     pub(crate) heading_numbering_style: HeadingNumberingStyle,
     pub(crate) sidebar_type: SidebarType,
+    rss: bool,
     // slugs
     parent: Option<Key>,
     cited: HashSet<Key>,
@@ -54,6 +55,7 @@ impl<'a> MetadataBuilder<'a> {
             contents: HashMap::new(),
             heading_numbering_style,
             sidebar_type,
+            rss: options.default_metadata.options.rss,
             parent,
             cited: HashSet::new(),
             children: HashSet::new(),
@@ -93,6 +95,13 @@ impl<'a> MetadataBuilder<'a> {
             "sidebar" => {
                 self.sidebar_type = SidebarType::from(value.as_ref());
             }
+            "rss" => match value.trim().parse::<bool>() {
+                Ok(rss) => self.rss = rss,
+                Err(_) => self.errors.push(anyhow!(
+                    "Metadata option rss must be true or false in {}, got {value:?}",
+                    self.slug
+                )),
+            },
             _ => {
                 eprintln!("[WARN] Unknown metadata option: {key}");
             }
@@ -147,6 +156,7 @@ impl<'a> MetadataBuilder<'a> {
         let options = MetaOptions {
             heading_numbering_style: self.heading_numbering_style,
             sidebar_type: self.sidebar_type,
+            rss: self.rss,
         };
         let node = MetaNode {
             slug,

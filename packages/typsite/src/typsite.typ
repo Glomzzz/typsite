@@ -244,6 +244,14 @@
 
 
 
+/// Mark this article as an RSS container. Only its direct embeds become feed
+/// items; this article itself is excluded. The marker is not inherited.
+/// - enabled (bool): default false; use `#rss(true)` on an index/collection page.
+#let rss(enabled) = {
+  assert(type(enabled) == bool, message: "rss expects a bool (true or false)")
+  metaoption("rss", if enabled { "true" } else { "false" })
+}
+
 /// Set metaoption of heading-numbering
 ///
 /// - type (str): "none" | "bullet" | "roman" | "alphabet"

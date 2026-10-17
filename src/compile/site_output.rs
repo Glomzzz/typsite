@@ -8,7 +8,7 @@ use crate::ir::article::Article;
 use crate::ir::metadata::content::MetaContents;
 use anyhow::{Context, Result, ensure};
 use html5gum::{Token, Tokenizer};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use time::format_description::well_known::{Rfc2822, Rfc3339};
 use time::{Date, Month, OffsetDateTime, Time, UtcOffset};
@@ -26,6 +26,7 @@ struct PageEntry {
     published: Option<OffsetDateTime>,
     modified: Option<OffsetDateTime>,
     body: Option<String>,
+    rss: bool,
 }
 
 /// Validate once, before exporting or publishing. A blank base URL disables both
@@ -102,6 +103,14 @@ impl<'a> SiteOutputs<'a> {
         if self.rss.is_none() && self.sitemap.is_none() {
             return Ok(Vec::new());
         }
+        // RSS containers select only actual direct embeds. A selected container
+        // stays excluded even when another container embeds it. Sitemap selection
+        // is independent and continues to include every compiled article.
+        let selected: HashSet<_> = articles
+            .values()
+            .filter(|article| article.get_meta_options().rss)
+            .flat_map(Article::direct_embeds)
+            .collect();
         let pages: HashMap<_, _> = pages.iter().map(|page| (&page.slug, &page.body)).collect();
         let mut entries = Vec::new();
         for article in articles.values() {
@@ -118,7 +127,8 @@ impl<'a> SiteOutputs<'a> {
             let description = first_meta_value(contents, &["description", "summary", "abstract"]);
             let published = first_date(contents, &["date"]);
             let modified = first_date(contents, &["updated", "lastmod", "date"]);
-            let body = if self.rss.is_some() && self.site.rss_content == RssContent::Full {
+            let rss = selected.contains(&article.slug) && !article.get_meta_options().rss;
+            let body = if rss && self.rss.is_some() && self.site.rss_content == RssContent::Full {
                 let body = pages
                     .get(&article.slug)
                     .with_context(|| format!("Missing rendered RSS body for {slug}"))?;
@@ -133,6 +143,7 @@ impl<'a> SiteOutputs<'a> {
                 published,
                 modified,
                 body,
+                rss,
             });
         }
         let mut files = Vec::new();
@@ -143,6 +154,7 @@ impl<'a> SiteOutputs<'a> {
             });
         }
         if let Some((path, url)) = &self.rss {
+            entries.retain(|entry| entry.rss);
             files.push(GeneratedFile {
                 path: path.clone(),
                 content: build_rss(&mut entries, base, url, self.site),

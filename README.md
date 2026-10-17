@@ -138,6 +138,24 @@ rss_content = "summary" # "summary" (default) or "full"
 sitemap_path = "/sitemap.xml"
 ```
 
+Select items by marking a collection article with the boolean `rss` metadata:
+
+```typ
+#import "/lib/lib.typ": *
+#show: schema.with("page")
+#title[Feed collection]
+#rss(true)
+= #embed("./first-post.typ")
+= #embed("./second-post.typ")
+```
+
+Only **direct embeds of `rss: true` pages** enter the feed. Marked containers
+are always excluded; nested embeds, citations, and parent relationships do not
+select separate items. Multiple containers are deduplicated. The flag defaults
+to false and is not inherited. With no containers, the feed has no entries.
+`#rss(false)` removes a container marker, not an article selected by another
+container. Sitemap generation still covers all compiled articles.
+
 Run `typsite compile`: `publish/rss.xml` is ready for readers to subscribe to,
 and generated pages include an RSS autodiscovery link. Summary mode uses the
 first nonempty `description`, `summary`, or `abstract` metadata. Full mode also

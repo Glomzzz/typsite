@@ -5,4 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct MetaOptions {
     pub heading_numbering_style: HeadingNumberingStyle,
     pub sidebar_type: SidebarType,
+    /// Select direct embeds for RSS; the container itself is never a feed item.
+    #[serde(default)]
+    pub rss: bool,
 }

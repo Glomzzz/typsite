@@ -8,6 +8,7 @@ sidebar = "true"
 show-metadata = "true"
 [default_metadata.options]
 heading_numbering = "Bullet" # Bullet | Roman | Alphabet | None
+rss = false # Opt in per collection page with #rss(true); not inherited.
 [default_metadata.graph]
 parent = "" # the default parent page
 
@@ -28,6 +29,7 @@ base_url = ""
 title = ""
 description = ""
 # Output paths are relative to publish/, with an optional leading slash.
+# Items are direct embeds of #rss(true) pages; the marked pages are excluded.
 # Set rss_path = "" or rss_limit = 0 to disable RSS only.
 rss_path = "/rss.xml"
 sitemap_path = "/sitemap.xml"

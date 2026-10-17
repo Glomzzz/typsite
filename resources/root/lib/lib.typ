@@ -10,6 +10,7 @@
   date,
   heading-numbering,
   sidebar,
+  rss,
   parent,
   unique
 )
