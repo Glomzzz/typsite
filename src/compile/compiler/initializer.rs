@@ -1,8 +1,6 @@
 use super::{PathBufs, cache::monitor::Monitor};
 use crate::{
-    compile::{compile_options, init_proj_options, options::ProjOptions, proj_options},
-    resource::package::install_packages,
-    util::path::file_ext,
+    compile::options::ProjOptions, resource::package::install_packages, util::path::file_ext,
 };
 use anyhow::*;
 use std::{collections::HashSet, path::Path};
@@ -90,9 +88,9 @@ pub fn initialize<'a>(
         println!("Packages changed, reloading...");
     }
 
-    init_options_toml(config_path)?;
-    let lib_files = &proj_options()?.typst_lib.files;
-    let lib_dirs = &proj_options()?.typst_lib.dirs;
+    let options = ProjOptions::load(config_path)?;
+    let lib_files = &options.typst_lib.files;
+    let lib_dirs = &options.typst_lib.dirs;
     let libs_changed = changed_typst_paths
         .iter()
         .chain(deleted_typst_paths.iter())
@@ -169,10 +167,7 @@ pub fn initialize<'a>(
 }
 
 impl<'a> Input<'a> {
-    pub fn unchanged(&self) -> bool {
-        let watch_mode = compile_options()
-            .expect("compile options should be initialized before Input::unchanged checks")
-            .watch;
+    pub fn unchanged(&self, watch_mode: bool) -> bool {
         self.changed_typst_paths.is_empty()
             && self.deleted_typst_paths.is_empty()
             && self.changed_config_paths.is_empty()
@@ -183,9 +178,4 @@ impl<'a> Input<'a> {
             && (watch_mode
                 || (self.retry_html_paths.is_empty() && self.retry_typst_paths.is_empty()))
     }
-}
-
-fn init_options_toml(config_path: &Path) -> Result<()> {
-    let new_options = ProjOptions::load(config_path)?;
-    init_proj_options(new_options)
 }

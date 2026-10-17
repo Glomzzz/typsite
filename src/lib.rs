@@ -7,13 +7,3 @@ pub mod ir;
 pub mod pass;
 pub mod resource;
 pub mod util;
-
-#[cfg(test)]
-fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-    use std::sync::{Mutex, OnceLock};
-
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .expect("test lock should not be poisoned")
-}

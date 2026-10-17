@@ -49,6 +49,11 @@ entries without a manual clean.
    built-in rewrite registry explicitly. **Done.** The existing 56-test count
    contained 20 duplicate wrappers; their underlying tests remain.
 3. Make configuration project-local; verify independent compiler instances.
+   **Done.** Options are immutable project-owned values, metadata carries its
+   project's defaults, and tests run without a global lock. Concurrent metadata
+   tests exercise different defaults and URL policies. Removed the unnecessary
+   manual `Send` implementation; the compiler now verifies thread safety.
+   Also made an absent `[site]` section use the documented field defaults.
 4. Introduce a testable Typst runner and truthful structured build reports.
 5. Replace persistent rendered-fragment/dependency caches with conservative
    rebuild planning, validated graph resolution, and recoverable publication.

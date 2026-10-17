@@ -19,7 +19,6 @@ use std::sync::Arc;
 use typst_pass::compile_typsts;
 
 use super::watch::watch;
-use super::{init_compile_options, proj_options};
 
 mod analysis;
 mod html_pass;
@@ -48,6 +47,7 @@ pub fn clean_dir(path: &Path) -> Result<()> {
 }
 
 pub struct Compiler {
+    options: CompileOptions,
     typst_path: PathBuf,            // Typst root
     html_cache_path: PathBuf, // Typst-export-html path (in which are raw typst-html-export files)
     config_path: PathBuf,     // Config root
@@ -68,10 +68,10 @@ impl Compiler {
         packages_path: Option<PathBuf>,
         typst: String,
     ) -> Result<Self> {
-        init_compile_options(options)?;
         let html_cache_path = cache_path.join("html");
         let assets_path = config_path.join("assets");
         Ok(Self {
+            options,
             typst_path,
             html_cache_path,
             config_path,
@@ -111,7 +111,7 @@ impl Compiler {
             }
         };
         // If all files are not changed, return
-        if input.unchanged() {
+        if input.unchanged(self.options.watch) {
             return Ok((false, true));
         } else if !input.overall_compile_needed {
             println!("Files changed, compiling...");
@@ -131,14 +131,18 @@ impl Compiler {
             ..
         } = input;
 
-        let config =
-            TypsiteConfig::load(&self.config_path, &self.typst_path, &self.html_cache_path)
-                .with_context(|| {
-                    format!(
-                        "Loading '{:?}' failed, try to init Typsite first by: typsite init",
-                        &self.config_path
-                    )
-                })?;
+        let config = TypsiteConfig::load_with_options(
+            &self.config_path,
+            &self.typst_path,
+            &self.html_cache_path,
+            self.options,
+        )
+        .with_context(|| {
+            format!(
+                "Loading '{:?}' failed, try to init Typsite first by: typsite init",
+                &self.config_path
+            )
+        })?;
 
         let mut registry = KeyRegistry::new();
 
@@ -230,7 +234,7 @@ impl Compiler {
         )?;
 
         let updated = !loaded_articles.is_empty();
-        let generated_site = generate_site_outputs(&loaded_articles)?;
+        let generated_site = generate_site_outputs(&loaded_articles, &config.options)?;
 
         // 6. Update cache
         article_cache.refresh(&mut registry, loaded_articles);
@@ -273,7 +277,7 @@ impl Compiler {
 
 fn verify_proj_options(config: &TypsiteConfig<'_>, registry: &KeyRegistry) -> Result<Vec<String>> {
     let mut errors = Vec::new();
-    let options = proj_options()?;
+    let options = &config.options.project;
     let parent = options.default_metadata.graph.parent.clone();
     if let Some(parent) = parent {
         let parent = config.format_slug(&parent);
@@ -288,10 +292,7 @@ fn verify_proj_options(config: &TypsiteConfig<'_>, registry: &KeyRegistry) -> Re
 pub(crate) mod tests {
     use super::*;
     use crate::compile::compiler::cache::monitor::Monitor;
-    use crate::compile::{
-        init_compile_options, init_proj_options,
-        options::{CompileOptions, ProjOptions},
-    };
+    use crate::compile::options::ProjectOptions;
     use crate::config::TypsiteConfig;
     use std::collections::{HashMap, HashSet};
     use std::fs;
@@ -390,15 +391,8 @@ pub(crate) mod tests {
         .expect("reference schema");
     }
 
-    fn init_options(root: &std::path::Path) {
-        let proj = ProjOptions::load(root).expect("project options should load");
-        init_proj_options(proj).expect("project options should initialize");
-        init_compile_options(CompileOptions {
-            watch: false,
-            short_slug: false,
-            pretty_url: true,
-        })
-        .expect("compile options should initialize");
+    fn init_options(root: &std::path::Path) -> ProjectOptions {
+        ProjectOptions::load(root, CompileOptions::default()).expect("project options should load")
     }
 
     pub(crate) fn run_compose_pages_collects_missing_article_as_error() {
@@ -541,7 +535,7 @@ pub(crate) mod tests {
         write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
         init_options(&root);
 
-        let generated = site_output::generate_site_outputs(&HashMap::new())
+        let generated = site_output::generate_site_outputs(&HashMap::new(), &init_options(&root))
             .expect("empty base url should disable outputs without panicking");
 
         assert!(generated.files.is_empty());
@@ -552,7 +546,6 @@ pub(crate) mod tests {
 
     #[test]
     fn references_footer_uses_its_own_template_and_rebuild_dependency() {
-        let _guard = crate::test_lock();
         let root = unique_root("references-footer");
         let typst = root.join("typst");
         let html = root.join("html");
@@ -698,31 +691,26 @@ pub(crate) mod tests {
 
     #[test]
     fn compose_pages_collects_missing_article_as_error() {
-        let _guard = crate::test_lock();
         run_compose_pages_collects_missing_article_as_error();
     }
 
     #[test]
     fn pass_html_collects_registry_errors_without_unreachable_panics() {
-        let _guard = crate::test_lock();
         run_pass_html_collects_registry_errors_without_unreachable_panics();
     }
 
     #[test]
     fn compile_typsts_reports_missing_cache_parent_without_panic() {
-        let _guard = crate::test_lock();
         run_compile_typsts_reports_missing_cache_parent_without_panic();
     }
 
     #[test]
     fn initialize_reports_packages_path_and_strip_prefix_failures() {
-        let _guard = crate::test_lock();
         run_initialize_reports_packages_path_and_strip_prefix_failures();
     }
 
     #[test]
     fn generate_site_outputs_handles_empty_base_url_without_unwrap() {
-        let _guard = crate::test_lock();
         run_generate_site_outputs_handles_empty_base_url_without_unwrap();
     }
 }

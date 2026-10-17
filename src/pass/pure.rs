@@ -370,7 +370,7 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
         slug: Key,
         cache: Option<&'k Article<'a>>,
     ) -> PurePass<'a, 'k> {
-        let metadata = MetadataBuilder::new(slug.clone());
+        let metadata = MetadataBuilder::new(slug.clone(), &config.options);
         Self {
             path,
             slug: slug.clone(),
@@ -827,7 +827,10 @@ pub(crate) mod tests {
     use super::sidebar::{Section, SidebarBuilder};
     use super::{TITLE_POS, take_sidebar_title_indexes};
     use crate::compile::error::TypError;
-    use crate::compile::{init_proj_options, options::ProjOptions, registry::Key};
+    use crate::compile::{
+        options::{CompileOptions, ProjectOptions},
+        registry::Key,
+    };
     use anyhow::anyhow;
     use std::collections::HashMap;
     use std::fs;
@@ -898,10 +901,9 @@ light = "light"
 "#,
         )
         .expect("options file");
-        let proj = ProjOptions::load(&root).expect("project options should load");
-        init_proj_options(proj).expect("project options should initialize");
-
-        let mut builder = MetadataBuilder::new(Key::from("/article"));
+        let options = ProjectOptions::load(&root, CompileOptions::default())
+            .expect("project options should load");
+        let mut builder = MetadataBuilder::new(Key::from("/article"), &options);
         builder.emit_metacontent_end(vec!["orphan".to_string()]);
         let err = builder
             .build(Key::from("/article"), None)
@@ -914,19 +916,16 @@ light = "light"
 
     #[test]
     fn sidebar_builder_reports_invalid_parent_section() {
-        let _guard = crate::test_lock();
         run_sidebar_builder_reports_invalid_parent_section();
     }
 
     #[test]
     fn pure_pass_reports_missing_sidebar_title_slot() {
-        let _guard = crate::test_lock();
         run_pure_pass_reports_missing_sidebar_title_slot();
     }
 
     #[test]
     fn metadata_builder_reports_unbalanced_metacontent_state() {
-        let _guard = crate::test_lock();
         run_metadata_builder_reports_unbalanced_metacontent_state();
     }
 }

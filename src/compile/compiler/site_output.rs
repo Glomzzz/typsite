@@ -1,5 +1,5 @@
+use crate::compile::options::ProjectOptions;
 use crate::compile::registry::Key;
-use crate::compile::{compile_options, proj_options};
 use crate::ir::article::Article;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -23,9 +23,11 @@ struct PageEntry {
     date_ymd: Option<(i32, u32, u32)>,
 }
 
-pub fn generate_site_outputs(articles: &HashMap<Key, Article<'_>>) -> Result<GeneratedSite> {
-    let options = proj_options()?;
-    let site = &options.site;
+pub fn generate_site_outputs(
+    articles: &HashMap<Key, Article<'_>>,
+    options: &ProjectOptions,
+) -> Result<GeneratedSite> {
+    let site = &options.project.site;
     let rss_path = normalize_output_path(&site.rss_path);
     let sitemap_path = normalize_output_path(&site.sitemap_path);
     let base_url = normalize_base_url(&site.base_url);
@@ -43,7 +45,7 @@ pub fn generate_site_outputs(articles: &HashMap<Key, Article<'_>>) -> Result<Gen
             removed,
         });
     };
-    let pretty_url = compile_options()?.pretty_url;
+    let pretty_url = options.compile.pretty_url;
     let mut entries = collect_entries(articles, &base_url, pretty_url);
 
     let mut files = Vec::new();

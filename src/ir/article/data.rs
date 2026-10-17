@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 
-use crate::compile::compile_options;
 use crate::compile::error::{TypError, TypResult};
 use crate::compile::registry::Key;
 use crate::compile::watch::WATCH_AUTO_RELOAD_SCRIPT;
@@ -309,10 +308,7 @@ impl<'c, 'b: 'c, 'a: 'b> GlobalData<'a, 'b, 'c> {
                 .filter_map(|slug| self.article(slug))
                 .for_each(|article| self.init_component_head(article, &mut head));
 
-            if compile_options()
-                .map(|options| options.watch)
-                .unwrap_or(false)
-            {
+            if self.config.options.compile.watch {
                 head.push(WATCH_AUTO_RELOAD_SCRIPT);
             }
 
@@ -448,7 +444,7 @@ pub(crate) mod tests {
             MetaContent::new(vec!["Regression Article".to_string()], Vec::new()),
         );
         let metadata = Metadata {
-            contents: MetaContents::new(slug.clone(), contents, false),
+            contents: MetaContents::new(slug.clone(), contents, false, &config.options),
             options: MetaOptions {
                 heading_numbering_style: HeadingNumberingStyle::Bullet,
                 sidebar_type: SidebarType::All,
@@ -559,17 +555,6 @@ pub(crate) mod tests {
         ] {
             fs::write(root.join(path), template).expect("footer test template");
         }
-        crate::compile::init_proj_options(
-            crate::compile::options::ProjOptions::load(&root).expect("project options should load"),
-        )
-        .expect("project options should initialize");
-        crate::compile::init_compile_options(crate::compile::options::CompileOptions {
-            watch: false,
-            short_slug: false,
-            pretty_url: true,
-        })
-        .expect("compile options should initialize");
-
         let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
         let descendants = ["/child", "/grandchild", "/great-grandchild"];
         let unrelated = ["/ancestor", "/sibling", "/external"];
@@ -660,19 +645,16 @@ pub(crate) mod tests {
 
     #[test]
     fn footer_excludes_descendants_but_keeps_other_relations() {
-        let _guard = crate::test_lock();
         assert_footer_excludes_descendants(true);
     }
 
     #[test]
     fn footer_omits_sections_when_all_relations_are_descendants() {
-        let _guard = crate::test_lock();
         assert_footer_excludes_descendants(false);
     }
 
     #[test]
     fn descendant_slugs_handles_shared_children_cycles_and_missing_articles() {
-        let _guard = crate::test_lock();
         let root = unique_root("descendant-slugs");
         let typst = root.join("typst");
         let html = root.join("html");
@@ -728,7 +710,6 @@ pub(crate) mod tests {
 
     #[test]
     fn global_data_reports_missing_rewrite_indexes() {
-        let _guard = crate::test_lock();
         run_global_data_reports_missing_rewrite_indexes();
     }
 }
