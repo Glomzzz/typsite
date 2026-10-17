@@ -16,6 +16,11 @@ pub struct ExportRequest<'a> {
 /// by Typst. This small seam lets build tests run without a shell or package installs.
 pub trait TypstRunner: Send + Sync {
     fn identity(&self) -> Result<String>;
+    /// Prepare package resources in the same environment used by `export`.
+    /// Test runners need no filesystem installation side effects.
+    fn prepare(&self, _packages: Option<&Path>) -> Result<()> {
+        Ok(())
+    }
     fn export(&self, request: &ExportRequest<'_>) -> Result<Vec<PathBuf>>;
 }
 
@@ -71,6 +76,18 @@ impl CommandTypst {
 }
 
 impl TypstRunner for CommandTypst {
+    fn prepare(&self, packages: Option<&Path>) -> Result<()> {
+        let namespace = match &self.package_path {
+            Some(path) => path.clone(),
+            None => crate::resource::package::default_namespace()?,
+        };
+        crate::resource::package::install_included_into(&namespace)?;
+        if let Some(packages) = packages {
+            crate::resource::package::install_packages_into(packages, &namespace)?;
+        }
+        Ok(())
+    }
+
     fn identity(&self) -> Result<String> {
         let output = Command::new(&self.executable)
             .arg("--version")
