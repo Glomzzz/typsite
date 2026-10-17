@@ -62,11 +62,11 @@ impl<'a> MetadataBuilder<'a> {
     }
 
     pub fn intake_meta_graph(&mut self, kind: &str, slug: Key) {
-        if self.slug.as_ref() == slug.as_ref() {
-            eprintln!(
-                "[WARN] MetadataBuilder: An article's parent cannot be itself! {}",
+        if self.slug == slug && kind.eq_ignore_ascii_case("parent") {
+            self.errors.push(anyhow!(
+                "An article cannot be its own parent: {}",
                 self.slug
-            );
+            ));
             return;
         }
         match kind.to_lowercase().as_str() {

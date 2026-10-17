@@ -180,6 +180,32 @@ fn build_locks_reject_concurrent_access_instead_of_racing_manifests() {
 }
 
 #[test]
+fn ownership_paths_are_portable_and_legacy_windows_separators_are_readable() {
+    let project = Project::new();
+    project.source("nested/a.typ", &html("Nested"));
+    let compiler = project.compiler(Arc::new(FakeTypst::default()));
+    successful(&compiler);
+    let path = project.output.join(".typsite-outputs.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert!(
+        manifest["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == "nested/a.html")
+    );
+    for file in manifest["files"].as_array_mut().unwrap() {
+        *file = serde_json::Value::String(file.as_str().unwrap().replace('/', "\\"));
+    }
+    fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    assert!(!successful(&compiler).changed());
+    fs::remove_file(project.input.join("nested/a.typ")).unwrap();
+    successful(&compiler);
+    assert!(!project.output.join("nested/a.html").exists());
+}
+
+#[test]
 fn corrupt_ownership_metadata_never_guesses_which_files_are_owned() {
     let project = Project::new();
     project.source("a.typ", &html("A"));

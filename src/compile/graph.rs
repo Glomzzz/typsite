@@ -60,7 +60,9 @@ impl<'a> ResolvedSite<'a> {
             .parent
             .as_ref()
             .map(|slug| Key::from(config.format_slug(slug)));
-        if let Some(parent) = &default_parent {
+        if let Some(parent) = &default_parent
+            && !articles.is_empty()
+        {
             ensure!(
                 articles.contains_key(parent),
                 "default_metadata.graph.parent not found: {parent}"
