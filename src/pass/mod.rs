@@ -74,10 +74,3 @@ pub fn pass_schema<'c, 'b: 'c, 'a: 'b>(
 ) -> TypResult<OutputHtml<'a>> {
     SchemaPass::new(config, schema, article, content, sidebar, global_data).run()
 }
-
-#[cfg(test)]
-pub(crate) mod tests {
-    pub(crate) fn run_pending_pass_skips_missing_embed_article_without_panicking() {
-        super::pending::tests::run_pending_pass_skips_missing_embed_article_without_panicking();
-    }
-}

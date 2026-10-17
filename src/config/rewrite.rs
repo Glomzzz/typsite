@@ -23,14 +23,15 @@ pub struct RulesConfig {
 
 impl RulesConfig {
     pub fn load(config_path: &Path) -> anyhow::Result<Self> {
+        let registry = RewriteRegistry::default();
         let rules_path = config_path.join(RULES_DIR);
         let mut rules = HashMap::new();
         let load_rules = walk_glob!("{}/**/*.html", rules_path.display())
             .par_bridge()
-            .map(TagRewriteRule::load_rule)
+            .map(|path| TagRewriteRule::load_rule(path, &registry))
             .collect::<Vec<anyhow::Result<(String, TagRewriteRule)>>>();
         rules.extend(load_rules.into_iter().filter_map(log_err_or_ok));
-        let metacontent = TagRewriteRule::default(METACONTENT_TAG);
+        let metacontent = TagRewriteRule::default(METACONTENT_TAG, &registry);
 
         if let Some(rule) = metacontent {
             rules.insert(METACONTENT_TAG.to_string(), rule);
@@ -56,8 +57,8 @@ pub struct TagRewriteRule {
 }
 
 impl<'b, 'a: 'b> TagRewriteRule {
-    fn default(rewrite_pass: &str) -> Option<Self> {
-        let pass = find_rewrite_pass(rewrite_pass)?;
+    fn default(rewrite_pass: &str, registry: &RewriteRegistry) -> Option<Self> {
+        let pass = registry.get(rewrite_pass)?;
         let path = None;
         let head = String::new();
         let body = String::new();
@@ -72,7 +73,7 @@ impl<'b, 'a: 'b> TagRewriteRule {
         Some(rule)
     }
 
-    fn load_rule(path: PathBuf) -> anyhow::Result<(String, Self)> {
+    fn load_rule(path: PathBuf, registry: &RewriteRegistry) -> anyhow::Result<(String, Self)> {
         let mut tag: Option<String> = None;
         let mut pass: Option<String> = None;
 
@@ -95,8 +96,9 @@ impl<'b, 'a: 'b> TagRewriteRule {
         let (head, body, tail) = HtmlWithTail::load_by_tokenizer(tokenizer, "{body}")
             .map(|HtmlWithTail { head, body, tail }| (head, body, tail))?;
 
-        let pass =
-            find_rewrite_pass(&pass).with_context(|| format!("No rewrite pass called {pass}"))?;
+        let pass = registry
+            .get(&pass)
+            .with_context(|| format!("No rewrite pass called {pass}"))?;
 
         let path = Some(Arc::from(path));
         let rule = Self {

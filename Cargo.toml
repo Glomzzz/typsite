@@ -1,5 +1,5 @@
 [workspace]
-members = ["macro", "."]
+members = ["."]
 resolver = "2"
 
 
@@ -23,8 +23,6 @@ edition = "2024"
 clap = { version = "4.5.38", features = ["std","derive"] }
 syntect = { version = "5.2.0", features = ["plist-load", "metadata"]}
 html5gum = { version = "0.7.0"}
-typsite_macros = { path = "./macro" }
-ctor = "0.4.2"
 aho-corasick = "1.1.3"
 include_dir = "0.7.4"
 anyhow = "1.0.98"
