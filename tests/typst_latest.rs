@@ -1,7 +1,9 @@
 mod common;
 
 use common::Project;
+use std::collections::HashSet;
 use std::path::Path;
+use std::process::{Command, Output};
 use typsite::compile::typst::{CommandTypst, ExportRequest, TypstRunner};
 
 #[test]
@@ -138,4 +140,201 @@ A citation: #cite-title("/other.typ")
             .contains("Updated child content")
     );
     common::clean_equivalent(&project, &compiler);
+}
+
+fn demo_command(project: &Project) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_typsite"));
+    command
+        .current_dir(&project.root)
+        .env("TYPST_PACKAGE_PATH", project.root.join("isolated packages"))
+        .env(
+            "TYPST_PACKAGE_CACHE_PATH",
+            project.root.join("isolated package cache"),
+        )
+        .env("SOURCE_DATE_EPOCH", "1772496000")
+        .env("TYPST_IGNORE_SYSTEM_FONTS", "true")
+        .env_remove("TYPST_IGNORE_EMBEDDED_FONTS")
+        .env_remove("TYPST_FONT_PATHS");
+    command
+}
+
+fn demo_success(output: Output) -> String {
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
+fn check_demo_links(project: &Project, page: &Path, html: &str) {
+    let tags: Vec<_> = html5gum::Tokenizer::new(html)
+        .map(Result::unwrap)
+        .filter_map(|token| match token {
+            html5gum::Token::StartTag(tag) => Some(tag),
+            _ => None,
+        })
+        .collect();
+    let ids: HashSet<_> = tags
+        .iter()
+        .flat_map(|tag| &tag.attributes)
+        .filter(|(name, _)| name.as_slice() == b"id")
+        .map(|(_, value)| value.as_slice())
+        .collect();
+    for tag in &tags {
+        for (name, value) in &tag.attributes {
+            if !matches!(name.as_slice(), b"href" | b"src" | b"xlink:href") {
+                continue;
+            }
+            let url = std::str::from_utf8(value).unwrap();
+            if let Some(fragment) = url
+                .strip_prefix('#')
+                .filter(|fragment| !fragment.is_empty())
+            {
+                assert!(
+                    ids.contains(fragment.as_bytes()),
+                    "{} links to missing local anchor {url}",
+                    page.display()
+                );
+            }
+            if url.is_empty()
+                || url.starts_with(['#', '?'])
+                || url.starts_with("//")
+                || url.contains(':')
+            {
+                continue;
+            }
+            let path = url.split(['#', '?']).next().unwrap();
+            let destination = if path.starts_with('/') {
+                project.output.join(path.trim_start_matches('/'))
+            } else {
+                project.output.join(page.parent().unwrap()).join(path)
+            };
+            let mut with_html = destination.as_os_str().to_owned();
+            with_html.push(".html");
+            assert!(
+                destination.is_file()
+                    || Path::new(&with_html).is_file()
+                    || destination.join("index.html").is_file(),
+                "{} links to missing local URL {url}",
+                page.display()
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the latest stable Typst executable; CI runs this explicitly"]
+fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
+    let mut project = Project::named("typsite full demo [fixture]");
+    std::fs::remove_dir_all(&project.config).unwrap();
+    std::fs::remove_dir_all(&project.input).unwrap();
+    project.input = project.root.join("root");
+    project.cache = project.root.join(".cache");
+    demo_success(demo_command(&project).arg("init").output().unwrap());
+
+    let executable = std::env::var_os("TYPST").unwrap_or_else(|| "typst".into());
+    let executable = Path::new(&executable);
+    let executable = if executable
+        .parent()
+        .is_some_and(|path| !path.as_os_str().is_empty())
+    {
+        std::path::absolute(executable).unwrap()
+    } else {
+        executable.to_owned()
+    };
+    let compile = || {
+        demo_success(
+            demo_command(&project)
+                .args(["compile", "--typst"])
+                .arg(&executable)
+                .output()
+                .unwrap(),
+        )
+    };
+    let cold = compile();
+    eprintln!("{cold}");
+    let pages: Vec<_> = walkdir::WalkDir::new(&project.input)
+        .into_iter()
+        .map(Result::unwrap)
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "typ"))
+        .filter(|path| !path.starts_with(project.input.join("lib")))
+        .collect();
+    assert!(
+        cold.contains(&format!("{} exported", pages.len())),
+        "{cold}"
+    );
+    for source in &pages {
+        let destination = source
+            .strip_prefix(&project.input)
+            .unwrap()
+            .with_extension("html");
+        let html = std::fs::read_to_string(project.output.join(&destination))
+            .unwrap_or_else(|error| panic!("{}: {error}", destination.display()));
+        assert!(html.contains("</html>"), "{}", destination.display());
+        check_demo_links(&project, &destination, &html);
+        for unresolved in [
+            "<schema",
+            "<rewrite",
+            "<embed",
+            "<metacontent",
+            "<metagraph",
+            "<metaoption",
+            "<metadata",
+            "<anchorgoto",
+            "<anchordef",
+        ] {
+            assert!(
+                !html.contains(unresolved),
+                "{}: {unresolved}",
+                destination.display()
+            );
+        }
+    }
+    for path in ["migrate-to-018.html", "en/migrate-to-018.html"] {
+        let html = std::fs::read_to_string(project.output.join(path)).unwrap();
+        assert!(html.contains("0.1.8"), "{path}");
+        assert!(html.contains(".typsite-outputs.json"), "{path}");
+    }
+    for path in ["index.html", "en/index.html"] {
+        let html = std::fs::read_to_string(project.output.join(path)).unwrap();
+        assert!(html.contains("migrate-to-018"), "{path}");
+        assert!(html.contains("<svg"), "{path}");
+    }
+    assert!(project.output.join("fonts/Inria Sans.ttf").exists());
+    assert!(project.output.join("icon.png").exists());
+    assert!(
+        !project.root.join("isolated package cache/preview").exists(),
+        "the demo must not download preview packages"
+    );
+    let published = project.snapshot();
+    let warm = compile();
+    assert!(
+        warm.contains("0 exported, 0 rendered, 0 written, 0 removed"),
+        "{warm}"
+    );
+    assert_eq!(published, project.snapshot());
+
+    let source = std::fs::read_to_string(project.input.join("en/example.typ")).unwrap();
+    project.source(
+        "en/example.typ",
+        &source.replace(
+            "This is a regular paragraph of text.",
+            "An incremental demo edit.",
+        ),
+    );
+    let edited = compile();
+    assert!(edited.contains("1 exported"), "{edited}");
+    assert!(
+        std::fs::read_to_string(project.output.join("en/example.html"))
+            .unwrap()
+            .contains("An incremental demo edit.")
+    );
+    let incremental = project.snapshot();
+    demo_success(demo_command(&project).arg("clean").output().unwrap());
+    compile();
+    assert_eq!(incremental, project.snapshot());
 }

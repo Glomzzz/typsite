@@ -9,6 +9,7 @@
 
 #get-metacontent("icon", from: "/index.typ")
 
+#html.align(center)[ #cite-title("./migrate-to-018.typ") ]
 #html.align(center)[ #cite-title("./migrate-to-017.typ") ]
 #html.align(center)[ #cite-title("./migrate-to-016.typ") ]
 
@@ -28,8 +29,9 @@
 
 = Installation
 
-- Download the binary from the #link("[https://github.com/Glomzzz/typsite/releases/latest")[release]
-  - Make sure you have *Typst 0.13+* installed
+- Download the binary from the #link("https://github.com/Glomzzz/typsite/releases/latest")[release page]
+  - Use the *latest stable Typst* (currently tested with *0.15.1*)
+  - Building from source requires *Rust 1.89 or newer*
 - Build via Nix & Flakes
   - Ensure you’ve enabled `experimental-features = nix-command flakes`
 
@@ -48,7 +50,7 @@ Run `typsite init` to initialize a Typsite project in the current directory.
 .
 ├── root         ---  Typst root directory
 │   ├── index.typ    --- Main article
-│   └── lib.typ      --- Typsite library file
+│   └── lib/         --- Typsite library files; entry point: lib/lib.typ
 ├── .typsite     ---  Typsite configuration directory
 │   ├── assets       ---  Resources (synced to output directory)
 │   ├── components   ---  Component templates
@@ -62,23 +64,12 @@ Run `typsite init` to initialize a Typsite project in the current directory.
 
 = Writing
 
-#import "@preview/frame-it:1.2.0": *
-
-#let (example, feature, variant, syntax) = frames(
-  feature: ("Feature",),
-  variant: ("Variant",),
-  example: ("Example", gray),
-  syntax: ("Syntax",),
-)
-
-#show: frame-style(styles.boxy)
-
 Typsite is compatible with most native *Typst* syntax:
 
 #get-metacontent("typst-support", from: "/index.typ")
 
 #footnote[For `align`, please use the `html.align` function from the library] <align>
-#footnote[For complex styled elements, use the `inline` function for *SVG* embedding]
+#footnote[For complex styled elements, use the `inline` function for *SVG* embedding] <svg-inline>
 
 = CLI (Command Line Interface)
 
@@ -124,6 +115,7 @@ Options:
   -i, --input <INPUT>        Typst root dir, where your typst files are stored [default: ./root] [aliases: --i]
   -o, --output <OUTPUT>      Output dir [default: ./publish] [aliases: --o]
   -p, --packages <PACKAGES>  Packages dir, will be installed to @local and will be synced to @local in watch mode, skip if empty or not found [default: ] [aliases: --p]
+  -t, --typst <TYPST>        Typst executable path [default: typst]
       --no-pretty-url
       --no-short-slug
   -h, --help                 Print help
@@ -137,8 +129,11 @@ Clear cache and output directories
 Usage: typsite clean [OPTIONS]
 
 Options:
+      --input <INPUT>    Protected Typst source directory [default: ./root]
+      --config <CONFIG>  Protected configuration directory [default: ./.typsite]
+      --force            Allow cleaning unmarked legacy directories after path checks
   -o, --output <OUTPUT>  Output directory [default: ./publish]
-  -c, --cache <CACHE>    Cache directory for typst_html_export content [default: ./.cache]
+  -c, --cache <CACHE>    Cache directory for raw Typst HTML [default: ./.cache]
   -h, --help             Print help
 ```
 
@@ -157,6 +152,11 @@ Options:
 = Architecture & Flow
 
 #get-metacontent("process", from: "/index.typ")
+
+The cache stores raw Typst HTML and actual dependency hashes, not old relationships or rendered fragments.
+Dirty builds recompose all pages but write only changed bytes; true no-ops neither write output nor reload preview clients.
+Publication is atomic per file, not for the whole site; fix a reported failure and rerun to recover.
+See #cite-title("./migrate-to-018.typ") for migration and output-ownership details.
 
 = Configuration
 

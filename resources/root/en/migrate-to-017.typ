@@ -130,7 +130,7 @@ In `.vscode/settings.json`:
 
 = 0.1.6 Migration Link
 
-If you're migrating from version #link("migrate-to-016.typ")[0.1.6], make sure you've also completed the 0.1.6 migration steps:
+If you're migrating from version #cite("migrate-to-016.typ")[0.1.6], make sure you've also completed the 0.1.6 migration steps:
 
 - `import "lib.typ"` |-> `import "/lib/lib.typ"`
 - `html-text` |-> `html.text`

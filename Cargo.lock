@@ -822,7 +822,7 @@ checksum = "bfb942dfe1d8e29a7ee7fcbde5bd2b9a25fb89aa70caea2eba3bee836ff41076"
 
 [[package]]
 name = "typsite"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "aho-corasick",
  "anyhow",

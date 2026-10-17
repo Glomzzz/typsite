@@ -1,5 +1,14 @@
 # Build-pipeline refactor
 
+Delivered in **Typsite 0.1.8**. User-facing migration guides are bundled as Typst
+pages in the initialized demo:
+
+- [English: Migrating to Typsite 0.1.8](../resources/root/en/migrate-to-018.typ)
+- [中文：迁移到 Typsite 0.1.8](../resources/root/migrate-to-018.typ)
+
+The executable version is 0.1.8; the bundled Typst package keeps the existing
+`@local/typsite:0.1.0` import identity.
+
 ## Contract
 
 This is a behavior-preserving refactor on `dev`, not a new authoring API.
@@ -163,14 +172,27 @@ cargo test --workspace --doc --locked --offline
 cargo build --release --locked --offline
 ```
 
-The default suite passes **90 unit/integration tests**; the two real-Typst
-smoke tests are ignored by default and both pass when explicitly enabled. The
-fixtures compare full incremental/clean output snapshots, include independent
-compiler instances, and never change process cwd, HOME, or installed packages.
+The default suite passes **90 unit/integration tests**; the three real-Typst
+tests are ignored by default and pass when explicitly enabled. The fixtures
+compare full incremental/clean output snapshots, include independent compiler
+instances, and never change process cwd, HOME, or normal installed packages.
 CLI fixtures use child-only environment variables and a compiled native stub;
 that stub validates invocation and exit behavior, not Typst compatibility.
 The Unix watch-process test verifies multi-client revisions, no-op polls,
 last-good pages during failure, repair, and graceful Ctrl-C shutdown.
+
+The complete-demo test uses the real CLI to initialize the embedded resources,
+compile **all 14 demo pages**, check local file links, same-page anchors, and
+assets, verify a warm no-op, edit an article, and compare the incremental site
+with a clean rebuild. It uses
+isolated package/cache namespaces, a fixed timestamp, and no system fonts. The
+updated flowchart uses built-in Typst drawing instead of a preview package, and
+unused `frame-it` setup was removed; no preview-package downloads are needed.
+The support table now uses real SVG footnote references rather than decorative
+superscripts, so its footnote return links have actual targets. A legacy `.typ`
+link in the English 0.1.7 guide now uses a site citation and resolves to HTML.
+The demo includes both 0.1.8 migration guides and links them from each homepage.
+External web fonts and music embeds are browser dependencies, not build inputs.
 
 CI includes strict formatting/Clippy, an MSRV 1.89 compile check, and real-Typst
 Linux/Windows/macOS jobs. Remote CI, Windows/macOS execution, and the MSRV toolchain

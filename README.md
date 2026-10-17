@@ -6,7 +6,10 @@
 <img src="./icon.png" width="37.5%"/>
 </div>
 <div style="text-align: center;">
-<a href="https://typ.rowlib.com/en/migrate-to-017" title="Migrating to Typsite 0.1.7 [https://typ.rowlib.com/en/migrate-to-017]">Migrating to Typsite <span style="color: #22d3ee;">0.1.7</span></a>
+<a href="resources/root/en/migrate-to-018.typ" title="Migrating to Typsite 0.1.8">Migrating to Typsite <span style="color: #22d3ee;">0.1.8</span></a>
+</div>
+<div style="text-align: center;">
+<a href="https://typ.rowlib.com/en/migrate-to-017" title="Migrating to Typsite 0.1.7">Migrating to Typsite <span style="color: #22d3ee;">0.1.7</span></a>
 </div>
 <div style="text-align: center;">
 <a href="https://typ.rowlib.com/en/migrate-to-016" title="Migrating to Typsite 0.1.6 [https://typ.rowlib.com/en/migrate-to-016]">Migrating to Typsite <span style="color: #22d3ee;">0.1.6</span></a>
@@ -77,7 +80,7 @@ Use stable Rust **1.89 or newer** and the latest stable Typst:
 ```sh
 cargo build --release --locked
 cargo test --workspace --all-targets --locked
-# Real Typst smoke tests (isolated packages, bundled helpers and templates):
+# Real Typst tests (isolated packages, helpers, templates, and the entire demo):
 cargo test --test typst_latest --locked -- --ignored
 ```
 
@@ -91,7 +94,33 @@ Cache formats are disposable. Output ownership is tracked separately in
 `clean` protects project source/configuration paths. For unmarked legacy
 cache/output directories, use `clean --force` only after checking the paths;
 pass `--input` / `--config` when those protected directories are nondefault.
-See [build architecture, validation changes, and limitations](docs/refactor.md).
+See the [0.1.8 migration guide](resources/root/en/migrate-to-018.typ) and
+[build architecture, validation changes, and limitations](docs/refactor.md).
+
+### 4.2 Run the bundled demo
+
+`init` copies the complete bilingual demo, including migration guides, into a new
+directory. No preview-package downloads are required to build it:
+
+```sh
+typsite init --dir ./demo
+cd demo
+typsite compile
+typsite compile --port 8080
+```
+
+Open `http://localhost:8080/` or `http://localhost:8080/en/`. To build the demo
+straight from the repository without initializing another project:
+
+```sh
+cargo run --locked -- compile --input ./resources/root \
+  --config ./resources/.typsite --cache ./target/demo-cache \
+  --output ./target/demo-site
+```
+
+Keep `publish/.typsite-outputs.json` (or the journal in your custom output root).
+External music players and web fonts in the examples need browser network access,
+but are not build dependencies.
 
 ## 5. Architecture & Flow
 
