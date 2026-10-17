@@ -2,7 +2,7 @@ mod common;
 
 use common::Project;
 use std::collections::HashMap;
-use typsite::compile::options::CompileOptions;
+use typsite::compile::options::{CompileOptions, RssContent};
 use typsite::ir::metadata::content::MetaContents;
 
 #[test]
@@ -56,4 +56,5 @@ fn missing_site_section_uses_the_same_defaults_as_an_empty_section() {
     assert_eq!(absent.project.site, empty.project.site);
     assert_eq!(absent.project.site.rss_limit, 20);
     assert_eq!(absent.project.site.rss_path, "/rss.xml");
+    assert_eq!(absent.project.site.rss_content, RssContent::Summary);
 }

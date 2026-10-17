@@ -9,6 +9,7 @@
 #date[2026-10-18]
 #author[Glomzzz]
 #parent("index.typ")
+#metacontent("summary")[升级辅助函数、配置 RSS，并安全迁移到 Typsite 0.1.8 的可恢复构建引擎。]
 
 Typsite #version 更换了构建引擎，修复了增量构建残留旧输出的问题，并支持 Typst 最新稳定版。已有的合法文章、模板、配置项和命令行选项继续受支持。本文说明从 0.1.7 升级时需要检查的变化。
 
@@ -126,6 +127,12 @@ typsite compile
 ```
 
 这些目录应与源文件、配置、构建缓存和输出目录分开。没有指定路径时，仍保留默认的共享包安装行为。需要可复现导出时，请使用项目字体和固定的 `SOURCE_DATE_EPOCH`；系统字体或未声明的外部输入发生变化后，可能需要丢弃构建缓存。
+
+= RSS 订阅配置
+
+RSS 仍需手动开启：把 `[site].base_url` 设为站点公开的 HTTP(S) 地址。默认的 `rss_path = "/rss.xml"` 和 `rss_limit = 20` 不变。新增 `rss_content = "summary"` 保留摘要和链接；选择 `"full"` 时，还会输出组合后的文章 HTML。开启后，每个生成页面都会加入 RSS 自动发现链接。完整示例见 #cite("index.typ")[首页的 RSS 配置章节]。
+
+RSS 日期改为符合规范的 RFC 2822，不再使用 ISO 时间戳。纯日期及 `YYYY-MM-DD HH:MM[:SS]` 元数据按 UTC 处理，RFC 3339/RFC 2822 的时区偏移会转换为 UTC。无效日期会被省略；标题和摘要从 Typst 元数据中提取文本，不会直接显示 HTML 标签。非空但无效的站点 URL 现在会导致配置校验失败。
 
 = 预览与失败恢复
 

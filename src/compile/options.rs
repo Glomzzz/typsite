@@ -86,6 +86,16 @@ pub struct SiteOptions {
     pub sitemap_path: String,
     #[serde(default = "default_rss_limit")]
     pub rss_limit: usize,
+    #[serde(default)]
+    pub rss_content: RssContent,
+}
+
+#[derive(Debug, Default, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RssContent {
+    #[default]
+    Summary,
+    Full,
 }
 
 impl Default for SiteOptions {
@@ -97,6 +107,7 @@ impl Default for SiteOptions {
             rss_path: default_rss_path(),
             sitemap_path: default_sitemap_path(),
             rss_limit: default_rss_limit(),
+            rss_content: RssContent::default(),
         }
     }
 }

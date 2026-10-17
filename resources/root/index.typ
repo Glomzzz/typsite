@@ -221,6 +221,39 @@ Typsite 兼容绝大部分 typst 的原生表达:
   -h, --help             打印帮助
 ```
 
+= RSS 订阅与站点地图
+
+在 `.typsite/options.toml` 中填写站点公开地址，即可生成 RSS 2.0 和站点地图：
+
+```toml
+[site]
+base_url = "https://example.org"
+title = "我的站点"
+description = "笔记与文章"
+rss_path = "/rss.xml"
+sitemap_path = "/sitemap.xml"
+rss_limit = 20
+rss_content = "summary" # 可选 "summary" 或 "full"
+```
+
+请修改已有的 `[site]`，不要重复添加。把示例地址换成自己的公开地址后，运行 `typsite compile`。文件写入输出目录；每个生成页面的 HTML head 中都会加入 RSS 自动发现链接，读者可订阅 `https://example.org/rss.xml`。
+
+- `summary` 输出纯文本摘要，依次取非空的 `description`、`summary`、`abstract` 元数据。没有这些元数据时，不会自动截取正文。
+- `full` 还会在 `content:encoded` 中包含组合后的文章 HTML，包括嵌入文章，但不包含页面模板、导航、侧边栏或引用与反向链接页脚。普通链接和图片地址会转为绝对 URL。脚本会被移除；RSS 阅读器可能无法像网页一样显示 SVG、MathML、交互元素或站点专用 CSS。
+- 标题优先使用 `page-title`，其次为 `title`。排序时间依次取 `updated`、`lastmod`、`date`，由新到旧；时间相同时按 URL 排序。`pubDate` 使用发表 `date`，缺失时回退到修改时间。
+- 日期支持 `YYYY-MM-DD`、`YYYY-MM-DD HH:MM[:SS]`（按 UTC）、RFC 3339 和 RFC 2822。无效或未知日期会被省略，不会写出不合法的 RSS 日期。
+- `base_url` 留空会关闭两种输出。`rss_path` 留空或 `rss_limit = 0` 只关闭 RSS；`sitemap_path` 留空只关闭站点地图。关闭或改名后，旧生成文件通过归属记录清理。
+- 修改订阅配置只重新组合输出，不会让未变更文章重新经过 Typst 导出。`--no-pretty-url` 会反映在文章链接中。
+
+文章可以使用现有辅助函数提供元数据：
+
+```typ
+#title[一篇文章]
+#date[2026-03-02 18:25]
+#metacontent("summary")[写给订阅阅读器的简短介绍。]
+#metacontent("updated")[2026-03-03T09:00:00Z]
+```
+
 = 架构 & 流程
 
 #get-metacontent("process")

@@ -89,6 +89,7 @@ impl Compiler {
             self.options,
         )
         .context("Cannot load project configuration")?;
+        let site_outputs = super::site_output::SiteOutputs::new(&config.options)?;
         let input = scan(&paths.input)?;
         let configuration = scan(&paths.config)?;
         let packages = paths
@@ -286,14 +287,20 @@ impl Compiler {
                 return Ok(report);
             }
         };
-        let pages = super::render::render(&config, &site, &mut report);
+        let feed_link = site_outputs.discovery_link();
+        let pages = super::render::render(&config, &site, &mut report, feed_link.as_deref());
         if !report.is_success() {
             return Ok(report);
         }
+        let generated = site_outputs.generate(&site.articles, &pages)?;
         let mut output = OutputPlan::default();
-        for (source, content) in pages {
-            let relative = source.strip_prefix(&paths.input)?.with_extension("html");
-            output.insert(relative, content.into_bytes(), source.display().to_string())?;
+        for page in pages {
+            let relative = page.path.strip_prefix(&paths.input)?.with_extension("html");
+            output.insert(
+                relative,
+                page.html.into_bytes(),
+                page.path.display().to_string(),
+            )?;
         }
         for relative in input
             .keys()
@@ -316,8 +323,7 @@ impl Compiler {
                 format!("config asset {}", relative.display()),
             )?;
         }
-        for generated in super::site_output::generate_site_outputs(&site.articles, &config.options)?
-        {
+        for generated in generated {
             output.insert(
                 generated.path,
                 generated.content.into_bytes(),
