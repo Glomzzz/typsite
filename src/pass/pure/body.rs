@@ -2,9 +2,9 @@ use crate::compile::error::TypError;
 use crate::ir::article::sidebar::{SidebarIndexes, SidebarPos};
 use crate::ir::embed::Embed;
 use crate::ir::rewriter::BodyRewriter;
+use crate::pass::pure::PurePassData;
 use crate::pass::pure::embed::EmbedBuilder;
 use crate::pass::pure::rewriter::RewriterBuilder;
-use crate::pass::pure::PurePassData;
 
 #[derive(Default)]
 pub struct BodyBuilder<'a> {

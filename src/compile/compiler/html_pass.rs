@@ -8,8 +8,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::result::Result::Ok;
 
-use super::cache::article::ArticleCache;
 use super::ErrorArticles;
+use super::cache::article::ArticleCache;
 
 pub fn pass_html<'b, 'a: 'b>(
     config: &'a TypsiteConfig<'a>,

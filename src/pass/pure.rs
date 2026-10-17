@@ -1,11 +1,11 @@
 use crate::compile::registry::{Key, KeyRegistry, SlugPath};
+use crate::config::TypsiteConfig;
 use crate::config::rewrite::TagRewriteRule;
 use crate::config::schema::Schema;
-use crate::config::TypsiteConfig;
+use crate::ir::article::Article;
 use crate::ir::article::body::Body;
 use crate::ir::article::dep::{Dependency, Source, UpdatedIndex};
 use crate::ir::article::sidebar::{Pos, Sidebar, SidebarIndexes, SidebarPos};
-use crate::ir::article::Article;
 use crate::ir::embed::{EmbedVariables, SectionType};
 use crate::ir::pending::{AnchorData, AnchorKind};
 use crate::ir::rewriter::RewriterType;
@@ -16,7 +16,7 @@ use crate::pass::pure::metadata::MetadataBuilder;
 use crate::pass::pure::rewriter::RewriterBuilder;
 use crate::pass::pure::sidebar::PureSidebarBuilder;
 use crate::util::html::write_token;
-use crate::util::html::{expect_start, Attributes};
+use crate::util::html::{Attributes, expect_start};
 use crate::util::path::resolve_path;
 use crate::util::str::SectionElem;
 use anyhow::*;
@@ -825,7 +825,7 @@ impl<'a, 'b, 'c, 'k> PurePass<'a, 'k> {
 pub(crate) mod tests {
     use super::metadata::MetadataBuilder;
     use super::sidebar::{Section, SidebarBuilder};
-    use super::{take_sidebar_title_indexes, TITLE_POS};
+    use super::{TITLE_POS, take_sidebar_title_indexes};
     use crate::compile::error::TypError;
     use crate::compile::{init_proj_options, options::ProjOptions, registry::Key};
     use anyhow::anyhow;

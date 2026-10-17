@@ -1,15 +1,15 @@
-use crate::config::{TypsiteConfig, RULES_DIR};
+use crate::config::{RULES_DIR, TypsiteConfig};
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::Source;
 use crate::pass::pure::PurePass;
 use crate::pass::rewrite::*;
 use crate::util::error::log_err_or_ok;
-use crate::util::html::parse_first_tag;
 use crate::util::html::Attributes;
 use crate::util::html::HtmlWithTail;
+use crate::util::html::parse_first_tag;
 use crate::util::path::file_stem;
 use crate::walk_glob;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use glob::glob;
 use html5gum::{Token, Tokenizer};
 use rayon::prelude::*;

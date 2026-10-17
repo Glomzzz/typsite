@@ -1,10 +1,10 @@
 use crate::compile::proj_options;
 use crate::compile::registry::Key;
 use crate::ir::article::sidebar::{HeadingNumberingStyle, SidebarType};
+use crate::ir::metadata::Metadata;
 use crate::ir::metadata::content::{MetaContent, MetaContents};
 use crate::ir::metadata::graph::MetaNode;
 use crate::ir::metadata::options::MetaOptions;
-use crate::ir::metadata::Metadata;
 use crate::ir::rewriter::MetaRewriter;
 use crate::pass::pure::rewriter::RewriterBuilder;
 use anyhow::anyhow;

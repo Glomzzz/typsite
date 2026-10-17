@@ -183,14 +183,12 @@ fn cache_dir() -> Result<PathBuf> {
 }
 
 impl PackageInfo {
-
     pub fn get_local_dir(&self) -> Result<PathBuf> {
         let cache_path = cache_dir().with_context(|| {
             format!("Failed to get cache directory while installing {self} into @local")
         })?;
         let PackageInfo { name, version } = self;
-        let local_package =
-            cache_path.join(format!("typst/packages/local/{name}/{version}/"));
+        let local_package = cache_path.join(format!("typst/packages/local/{name}/{version}/"));
         Ok(local_package)
     }
 }

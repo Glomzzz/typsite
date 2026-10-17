@@ -1,5 +1,5 @@
 use syntect::highlighting::{HighlightIterator, HighlightState, Highlighter, Theme};
-use syntect::html::{append_highlighted_html_for_styled_line, IncludeBackground};
+use syntect::html::{IncludeBackground, append_highlighted_html_for_styled_line};
 use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 

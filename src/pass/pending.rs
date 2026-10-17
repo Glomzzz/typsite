@@ -167,15 +167,15 @@ pub(crate) mod tests {
     use super::*;
     use crate::compile::registry::{Key, SlugPath};
     use crate::config::TypsiteConfig;
+    use crate::ir::article::Article;
     use crate::ir::article::body::Body;
     use crate::ir::article::dep::{Dependency, Indexes};
     use crate::ir::article::sidebar::{HeadingNumberingStyle, Sidebar, SidebarPos, SidebarType};
-    use crate::ir::article::Article;
     use crate::ir::embed::SectionType;
+    use crate::ir::metadata::Metadata;
     use crate::ir::metadata::content::{MetaContent, MetaContents, TITLE_KEY};
     use crate::ir::metadata::graph::MetaNode;
     use crate::ir::metadata::options::MetaOptions;
-    use crate::ir::metadata::Metadata;
     use crate::ir::pending::AnchorData;
     use std::collections::{HashMap, HashSet};
     use std::fs;

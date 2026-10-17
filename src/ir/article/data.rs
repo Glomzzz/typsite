@@ -4,8 +4,8 @@ use crate::compile::compile_options;
 use crate::compile::error::{TypError, TypResult};
 use crate::compile::registry::Key;
 use crate::compile::watch::WATCH_AUTO_RELOAD_SCRIPT;
-use crate::config::schema::{BACKLINK_KEY, REFERENCE_KEY};
 use crate::config::TypsiteConfig;
+use crate::config::schema::{BACKLINK_KEY, REFERENCE_KEY};
 use crate::ir::article::sidebar::HeadingNumberingStyle;
 use crate::ir::metadata::Metadata;
 use crate::ir::pending::Pending;
@@ -14,8 +14,8 @@ use crate::util::html::{OutputHead, OutputHtml};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
-use super::dep::Indexes;
 use super::Article;
+use super::dep::Indexes;
 
 pub struct GlobalData<'a, 'b, 'c> {
     pub config: &'a TypsiteConfig<'a>,
@@ -329,14 +329,14 @@ pub(crate) mod tests {
     use super::*;
     use crate::compile::registry::{Key, SlugPath};
     use crate::config::TypsiteConfig;
+    use crate::ir::article::Article;
     use crate::ir::article::body::Body;
     use crate::ir::article::dep::Dependency;
     use crate::ir::article::sidebar::{HeadingNumberingStyle, Sidebar, SidebarType};
-    use crate::ir::article::Article;
+    use crate::ir::metadata::Metadata;
     use crate::ir::metadata::content::{MetaContent, MetaContents, TITLE_KEY};
     use crate::ir::metadata::graph::MetaNode;
     use crate::ir::metadata::options::MetaOptions;
-    use crate::ir::metadata::Metadata;
     use crate::ir::pending::AnchorData;
     use std::collections::{HashMap, HashSet};
     use std::fs;
@@ -717,9 +717,11 @@ pub(crate) mod tests {
                 .map(Key::from)
                 .collect(),
         );
-        assert!(global_data
-            .descendant_slugs(articles.get("/leaf").expect("leaf"))
-            .is_empty());
+        assert!(
+            global_data
+                .descendant_slugs(articles.get("/leaf").expect("leaf"))
+                .is_empty()
+        );
 
         fs::remove_dir_all(root).expect("descendant test cleanup");
     }

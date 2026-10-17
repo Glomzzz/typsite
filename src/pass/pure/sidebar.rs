@@ -3,7 +3,7 @@ use crate::config::sidebar::SidebarConfig;
 use crate::ir::article::sidebar::{HeadingNumberingStyle, Pos, SidebarIndexes, SidebarPos};
 use crate::util::pos_slug;
 use crate::util::str::SidebarElem;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 

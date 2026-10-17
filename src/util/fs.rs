@@ -1,5 +1,5 @@
 use crate::util::error::TypsiteError;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use std::fs;
 use std::path::Path;
 

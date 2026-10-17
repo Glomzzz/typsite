@@ -34,9 +34,10 @@ impl SchemaConfig {
     }
 
     pub fn get(&self, id: &str) -> Result<&Schema> {
-        self.schemas.get(id).with_context(|| format!("No schema named {id}"))
+        self.schemas
+            .get(id)
+            .with_context(|| format!("No schema named {id}"))
     }
-
 }
 
 const PARENT_KEYWORD: &str = "@parent}";
@@ -91,7 +92,7 @@ impl Schema {
         };
         Ok((schema.id.clone(), schema))
     }
-    pub fn component_paths(&self, config:&TypsiteConfig<'_>) -> HashSet<Arc<Path>> {
+    pub fn component_paths(&self, config: &TypsiteConfig<'_>) -> HashSet<Arc<Path>> {
         let mut files: HashSet<Arc<Path>> = HashSet::new();
         files.insert(self.path.clone());
         if self.content {

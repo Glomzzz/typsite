@@ -19,7 +19,9 @@ fn test_lock() -> std::sync::MutexGuard<'static, ()> {
     use std::sync::{Mutex, OnceLock};
 
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().expect("test lock should not be poisoned")
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("test lock should not be poisoned")
 }
 
 #[cfg(test)]
@@ -110,7 +112,8 @@ fn pass_html_collects_registry_errors_without_unreachable_panics() {
 #[test]
 fn compile_typsts_reports_missing_cache_parent_without_panic() {
     let _guard = test_lock();
-    crate::compile::compiler::tests::run_compile_typsts_reports_missing_cache_parent_without_panic();
+    crate::compile::compiler::tests::run_compile_typsts_reports_missing_cache_parent_without_panic(
+    );
 }
 
 #[cfg(test)]
@@ -124,7 +127,8 @@ fn watch_response_errors_are_logged_not_panicked() {
 #[test]
 fn initialize_reports_packages_path_and_strip_prefix_failures() {
     let _guard = test_lock();
-    crate::compile::compiler::tests::run_initialize_reports_packages_path_and_strip_prefix_failures();
+    crate::compile::compiler::tests::run_initialize_reports_packages_path_and_strip_prefix_failures(
+    );
 }
 
 #[cfg(test)]

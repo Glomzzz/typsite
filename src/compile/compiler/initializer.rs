@@ -1,4 +1,4 @@
-use super::{cache::monitor::Monitor, PathBufs};
+use super::{PathBufs, cache::monitor::Monitor};
 use crate::{
     compile::{compile_options, init_proj_options, options::ProjOptions, proj_options},
     resource::package::install_packages,

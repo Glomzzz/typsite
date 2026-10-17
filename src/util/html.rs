@@ -1,7 +1,7 @@
 use crate::pass::tokenizer::PeekableTokenizer;
 use crate::util::error::TypsiteError;
 use crate::util::str::ElemTokenizerTrait;
-use crate::util::str::{ac_replace, Elem, ElemTokenizer};
+use crate::util::str::{Elem, ElemTokenizer, ac_replace};
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::*;
@@ -15,7 +15,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::fmt::Write;
 use std::fs::File;
-use std::io::{read_to_string, BufReader};
+use std::io::{BufReader, read_to_string};
 use std::path::Path;
 use std::result::Result::Ok;
 

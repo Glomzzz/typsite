@@ -1,8 +1,8 @@
 use crate::compile::compiler::PathBufs;
 use crate::compile::registry::{Key, KeyRegistry};
 use crate::config::TypsiteConfig;
-use crate::ir::article::dep::UpdatedIndex;
 use crate::ir::article::Article;
+use crate::ir::article::dep::UpdatedIndex;
 use crate::util::error::{log_err, log_err_or_ok};
 use crate::util::fs::{remove_file_ignore, write_into_file};
 use crate::util::path::relative_path;
