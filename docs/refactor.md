@@ -225,6 +225,11 @@ with a clean rebuild. It uses
 isolated package/cache namespaces, a fixed timestamp, and no system fonts. The
 updated flowchart uses built-in Typst drawing instead of a preview package, and
 unused `frame-it` setup was removed; no preview-package downloads are needed.
+The detailed process diagram in `resources/root/lib/process.typ` uses a square
+660 pt canvas, nine stages in a three-row snake, cache/no-op decisions, independent
+checkpoints, and a separate failure-recovery band. Its scoped stylesheet keeps
+small-screen scrolling inside the diagram; real-Typst tests check the exported
+square dimensions and stylesheet on both homepages and content-example pages.
 The support table now uses real SVG footnote references rather than decorative
 superscripts, so its footnote return links have actual targets. A legacy `.typ`
 link in the English 0.1.7 guide now uses a site citation and resolves to HTML.

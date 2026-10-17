@@ -247,6 +247,51 @@ fn check_demo_links(project: &Project, page: &Path, html: &str) {
     }
 }
 
+fn check_process_diagram(project: &Project, page: &str) {
+    let html = std::fs::read_to_string(project.output.join(page)).unwrap();
+    assert!(
+        html.contains("href=\"/process.css\""),
+        "{page}: missing diagram styling"
+    );
+    let mut in_diagram = false;
+    let mut diagrams = 0;
+    for token in html5gum::Tokenizer::new(&html).map(Result::unwrap) {
+        match token {
+            html5gum::Token::StartTag(tag)
+                if tag.name == b"div"
+                    && tag
+                        .attributes
+                        .get(b"class".as_slice())
+                        .is_some_and(|class| class.as_slice() == b"process-diagram") =>
+            {
+                assert!(!in_diagram, "{page}: nested process diagrams");
+                assert_eq!(
+                    tag.attributes.get(b"role".as_slice()).unwrap().as_slice(),
+                    b"img"
+                );
+                assert!(
+                    !tag.attributes
+                        .get(b"aria-label".as_slice())
+                        .unwrap()
+                        .is_empty()
+                );
+                in_diagram = true;
+            }
+            html5gum::Token::StartTag(tag) if tag.name == b"svg" && in_diagram => {
+                let value =
+                    |name: &[u8]| std::str::from_utf8(tag.attributes.get(name).unwrap()).unwrap();
+                assert_eq!(value(b"width"), "660pt", "{page}");
+                assert_eq!(value(b"height"), "660pt", "{page}");
+                assert_eq!(value(b"viewbox"), "0 0 660 660", "{page}");
+                diagrams += 1;
+            }
+            html5gum::Token::EndTag(tag) if tag.name == b"div" => in_diagram = false,
+            _ => {}
+        }
+    }
+    assert!(diagrams > 0, "{page}: missing square process diagram");
+}
+
 #[test]
 #[ignore = "requires the latest stable Typst executable; CI runs this explicitly"]
 fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
@@ -399,6 +444,21 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
                 "missing RSS instruction {instruction} in {path}"
             );
         }
+    }
+    for page in [
+        "index.html",
+        "en/index.html",
+        "example.html",
+        "en/example.html",
+    ] {
+        check_process_diagram(&project, page);
+    }
+    let diagram_css = std::fs::read_to_string(project.output.join("process.css")).unwrap();
+    for rule in ["overflow-x: auto", "aspect-ratio: 1", "height: auto"] {
+        assert!(
+            diagram_css.contains(rule),
+            "missing responsive diagram rule {rule}"
+        );
     }
     assert!(project.output.join("fonts/Inria Sans.ttf").exists());
     assert!(project.output.join("icon.png").exists());
