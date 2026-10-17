@@ -167,7 +167,7 @@ impl<'a> TypsiteConfig<'a> {
 
     pub fn path_to_slug(&self, path: &Path) -> Result<String> {
         let path = if path.starts_with(self.typst_path) {
-            path
+            path.strip_prefix(self.typst_path)?
         } else if path.starts_with(self.html_path) {
             path.strip_prefix(self.html_path)?
         } else {
@@ -178,7 +178,8 @@ impl<'a> TypsiteConfig<'a> {
 
     pub fn format_slug(&self, slug: &str) -> String {
         let slug = slug.replace("\\", "/");
-        let slug = slug.trim_start_matches(self.typst_root_name.as_str());
+        let prefix = format!("{}/", self.typst_root_name);
+        let slug = slug.strip_prefix(&prefix).unwrap_or(&slug);
         let slug = slug
             .strip_suffix(".typ")
             .or_else(|| slug.strip_suffix(".html"))

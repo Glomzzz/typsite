@@ -4,10 +4,8 @@ use rayon::prelude::*;
 use std::sync::Arc;
 use std::{path::Path, result::Result::Ok};
 
-use crate::util::error::TypsiteError;
+use crate::compile::typst::{CommandTypst, ExportRequest, TypstRunner};
 use crate::util::fs::create_all_parent_dir;
-use anyhow::{Context, Error};
-use std::process::Command;
 
 use super::cache::monitor::Monitor;
 use super::{ErrorArticles, PathBufs};
@@ -20,42 +18,14 @@ pub fn compile_typst(
     output: &Path,
 ) -> anyhow::Result<()> {
     let font_path = config.join("assets/fonts");
-    let font_path = font_path.as_path();
-    let output = if cfg!(target_os = "windows") {
-        Command::new("powershell")
-            .arg(format!(
-                "{typst} c {} --root {} -f=html --features html  {} --font-path {}",
-                input.display(),
-                root.display(),
-                output.display(),
-                font_path.display()
-            ))
-            .output()
-            .with_context(|| format!("Typst compile to HTML failed: {}", input.display()))?
-    } else {
-        create_all_parent_dir(output)?;
-        Command::new(typst)
-            .arg("c")
-            .arg(input)
-            .arg("--root")
-            .arg("root")
-            .arg("-f=html")
-            .arg("--features")
-            .arg("html")
-            .arg("--input")
-            .arg("html-frames=true")
-            .arg("--font-path")
-            .arg(font_path.display().to_string())
-            .arg(output)
-            .output()
-            .with_context(|| format!("Typst compile to HTML failed: {}", input.display()))?
-    };
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(Error::new(TypsiteError::Typst(stderr.to_string())))
-    }
+    CommandTypst::new(typst)
+        .export(&ExportRequest {
+            root,
+            input,
+            output,
+            font_path: &font_path,
+        })
+        .map(|_| ())
 }
 
 pub fn compile_typsts(
@@ -73,14 +43,15 @@ pub fn compile_typsts(
         .chain(&retry_typst_paths)
         .map(|typ_path| {
             let slug = config.path_to_slug(typ_path);
-            let mut html_path = typ_path.clone();
-            html_path.set_extension("html");
-            let cache_output = html_cache_path.join(&html_path);
-            let prepare_output = create_all_parent_dir(&cache_output);
+            let cache_output = typ_path
+                .strip_prefix(typst_path)
+                .map(|path| html_cache_path.join(path).with_extension("html"))
+                .map_err(anyhow::Error::from);
             (
                 slug,
                 typ_path.clone(),
-                prepare_output.and_then(|_| {
+                cache_output.and_then(|cache_output| {
+                    create_all_parent_dir(&cache_output)?;
                     compile_typst(typst, typst_path, config_path, typ_path, &cache_output)
                 }),
             )

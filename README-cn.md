@@ -62,7 +62,7 @@ Typst 于 `0.13` 增加了 HTML 导出功能，包括 `html-export` 模式以及
 
 - 通过模板: [Typsite Template](https://github.com/Glomzzz/typsite-template) (推荐, for linux / macos)
 - 通过 [Release 页面](https://github.com/Glomzzz/typsite/releases/latest)下载二进制文件
-    - 请确保你已安装了**0.13+**的typst
+    - 请使用 **Typst 最新稳定版**（当前已测试 **0.15.1**）。CI 同时检查 0.15.1 和最新稳定版。
 - 通过 Nix & Flakes 构建
     - 请确保你已经开启了 `experimental-features = nix-command flakes`
 
