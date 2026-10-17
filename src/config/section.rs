@@ -83,7 +83,7 @@ pub(crate) mod tests {
         fs::create_dir_all(&components).expect("test components directory should be created");
         fs::write(
             components.join("section.html"),
-            "<html><body><div>{title}</div></body></html>",
+            "<head></head><body><div>{title}</div></body>",
         )
         .expect("test section config should be written");
 

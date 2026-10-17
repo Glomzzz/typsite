@@ -7,3 +7,6 @@ pub mod ir;
 pub mod pass;
 pub mod resource;
 pub mod util;
+
+#[cfg(test)]
+mod test_support;

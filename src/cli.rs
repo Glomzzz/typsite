@@ -143,7 +143,7 @@ impl Executor {
 
     fn execute_syntect(syntect_cmd: SyntectCmd) -> Result<()> {
         let config_path = Path::new(&syntect_cmd.config);
-        let config = CodeHightlightConfig::load(config_path);
+        let config = CodeHightlightConfig::load(config_path)?;
         println!("{config}");
 
         Ok(())

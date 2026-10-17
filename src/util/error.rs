@@ -16,22 +16,6 @@ pub enum TypsiteError {
     HtmlParse(#[from] Infallible),
 }
 
-pub fn log_err_or_ok<T, E: std::fmt::Debug>(result: anyhow::Result<T, E>) -> Option<T> {
-    match result {
-        Ok(v) => Some(v),
-        Err(e) => {
-            eprintln!("[WARN] {e:?}");
-            None
-        }
-    }
-}
-pub fn log_err<T, E: std::fmt::Debug>(result: anyhow::Result<T, E>) {
-    match result {
-        Ok(_) => {}
-        Err(e) => eprintln!("[WARN] {e:?}"),
-    }
-}
-
 pub fn padding_error(error: &anyhow::Error, padding: &str) -> String {
     error
         .to_string()

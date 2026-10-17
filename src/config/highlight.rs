@@ -1,16 +1,13 @@
 use crate::config::THEMES_DIR;
-use crate::util::error::log_err_or_ok;
+use crate::util::fs::files_with_extension;
 use crate::util::path::file_stem;
-use crate::walk_glob;
-use anyhow::Context;
-use glob::glob;
+use anyhow::{Context, Result, ensure};
 use metadata::{LoadMetadata, RawMetadataEntry};
-use rayon::iter::{ParallelBridge, ParallelIterator};
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
-use std::{collections::BTreeMap, path::PathBuf};
 use syntect::dumps::from_binary;
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::{Metadata, SyntaxDefinition, SyntaxReference, SyntaxSet, SyntaxSetBuilder};
@@ -42,12 +39,10 @@ pub struct CodeHightlightConfig {
 }
 
 impl CodeHightlightConfig {
-    pub fn load(config_path: &Path) -> Self {
-        let themes_path = config_path.join(THEMES_DIR);
-        let themes = load_themes(themes_path);
-        let syntaxes_path = config_path.join(SYNTAXES_DIR);
-        let syntaxes = Syntaxes::load(syntaxes_path);
-        Self { themes, syntaxes }
+    pub fn load(config_path: &Path) -> Result<Self> {
+        let themes = load_themes(&config_path.join(THEMES_DIR))?;
+        let syntaxes = Syntaxes::load(&config_path.join(SYNTAXES_DIR))?;
+        Ok(Self { themes, syntaxes })
     }
 
     fn find_theme_pair(&self, name: &str, scheme: ColorScheme) -> Option<&(Arc<Path>, Theme)> {
@@ -144,86 +139,71 @@ impl Display for CodeHightlightConfig {
     }
 }
 
-fn load_themes(themes_path: PathBuf) -> ThemePaths {
-    walk_glob!("{}/**/*.tmTheme", themes_path.display())
-        .filter(|entry| entry.is_file())
-        .map(|path| {
-            let name = file_stem(&path)
-                .map(|s| s.to_string())
-                .with_context(|| format!("Failed to load theme {}", path.display()));
-            let theme = ThemeSet::get_theme(&path)
-                .with_context(|| format!("Failed to load theme {}", path.display()));
-            name.and_then(|name| theme.map(|theme| (name, (Arc::from(path), theme))))
-        })
-        .filter_map(log_err_or_ok)
-        .collect()
+fn load_themes(themes_path: &Path) -> Result<ThemePaths> {
+    let mut themes = BTreeMap::new();
+    for path in files_with_extension(themes_path, "tmTheme")? {
+        let name = file_stem(&path).context("Theme has no name")?.to_string();
+        let theme = ThemeSet::get_theme(&path)
+            .with_context(|| format!("Failed to load theme {}", path.display()))?;
+        ensure!(
+            !themes.contains_key(&name),
+            "Duplicate theme {name} in {}",
+            path.display()
+        );
+        themes.insert(name, (Arc::from(path), theme));
+    }
+    Ok(themes)
 }
 
 impl Syntaxes {
-    fn load(syntaxes_path: PathBuf) -> Self {
-        let mut syntax_set = SyntaxSetBuilder::new();
+    fn load(syntaxes_path: &Path) -> Result<Self> {
+        let mut builder = SyntaxSetBuilder::new();
         let mut syntax_paths_by_name = BTreeMap::new();
         let mut syntax_paths_by_stem = BTreeMap::new();
-        walk_glob!("{}/**/*.sublime-syntax", syntaxes_path.display())
-            .par_bridge()
-            .filter(|entry| entry.is_file())
-            .map(|path| {
-                fs::read_to_string(&path)
-                    .with_context(|| format!("Failed to load syntax {}", path.display()))
-                    .and_then(|content| {
-                        SyntaxDefinition::load_from_str(&content, true, None)
-                            .with_context(|| format!("Failed to load syntax {}", path.display()))
-                    })
-                    .map(|syntax| (syntax.name.clone(), (path, syntax)))
-            })
-            .filter_map(log_err_or_ok)
-            .collect::<Vec<(String, (PathBuf, SyntaxDefinition))>>()
-            .into_iter()
-            .for_each(|(name, (path, syntax))| {
-                syntax_set.add(syntax);
-                let path: Arc<Path> = Arc::from(path);
-                syntax_paths_by_name.insert(name, path.clone());
-                let stem = file_stem(&path).expect(
-                    "syntax files matched by *.sublime-syntax should always have a file stem",
-                );
-                syntax_paths_by_stem.insert(stem.to_string(), path.clone());
-            });
-        let mut syntax_set = syntax_set.build();
+        for path in files_with_extension(syntaxes_path, "sublime-syntax")? {
+            let content = fs::read_to_string(&path)
+                .with_context(|| format!("Failed to load syntax {}", path.display()))?;
+            let syntax = SyntaxDefinition::load_from_str(&content, true, None)
+                .with_context(|| format!("Failed to load syntax {}", path.display()))?;
+            let stem = file_stem(&path).context("Syntax has no name")?.to_string();
+            ensure!(
+                !syntax_paths_by_name.contains_key(&syntax.name),
+                "Duplicate syntax {} in {}",
+                syntax.name,
+                path.display()
+            );
+            ensure!(
+                !syntax_paths_by_stem.contains_key(&stem),
+                "Duplicate syntax filename {stem}"
+            );
+            let path: Arc<Path> = Arc::from(path);
+            syntax_paths_by_name.insert(syntax.name.clone(), path.clone());
+            syntax_paths_by_stem.insert(stem, path);
+            builder.add(syntax);
+        }
+        let mut syntax_set = builder.build();
         let mut raw_metadata = LoadMetadata::default();
-        // if entry.path().extension() == Some("tmPreferences".as_ref()) {
-        //     match RawMetadataEntry::load(entry.path()) {
-        //         Ok(meta) => self.raw_metadata.add_raw(meta),
-        //         Err(_err) => (),
-        //     }
-        // }
         let mut metadata_paths_by_stem = BTreeMap::new();
-        walk_glob!("{}/**/*.tmPreferences", syntaxes_path.display())
-            .par_bridge()
-            .filter(|entry| entry.is_file())
-            .map(|path| {
-                RawMetadataEntry::load(&path)
-                    .with_context(|| format!("Failed to load tmPreferences {}", path.display()))
-                    .map(|metadata| (path, metadata))
-            })
-            .filter_map(log_err_or_ok)
-            .collect::<Vec<(PathBuf, RawMetadataEntry)>>()
-            .into_iter()
-            .for_each(|(path, metadata)| {
-                raw_metadata.add_raw(metadata);
-                let path: Arc<Path> = Arc::from(path);
-                let stem = file_stem(&path).expect(
-                    "metadata files matched by *.tmPreferences should always have a file stem",
-                );
-                metadata_paths_by_stem.insert(stem.to_string(), path);
-            });
-        syntax_set.set_metadata(Metadata::from(raw_metadata));
-
-        Self {
+        for path in files_with_extension(syntaxes_path, "tmPreferences")? {
+            let metadata = RawMetadataEntry::load(&path)
+                .with_context(|| format!("Failed to load tmPreferences {}", path.display()))?;
+            let stem = file_stem(&path)
+                .context("Syntax metadata has no name")?
+                .to_string();
+            ensure!(
+                !metadata_paths_by_stem.contains_key(&stem),
+                "Duplicate syntax metadata filename {stem}"
+            );
+            metadata_paths_by_stem.insert(stem, Arc::from(path));
+            raw_metadata.add_raw(metadata);
+        }
+        syntax_set.set_metadata(Metadata::try_from(raw_metadata)?);
+        Ok(Self {
             syntax_set,
             syntax_paths_by_name,
             syntax_paths_by_stem,
             metadata_paths_by_stem,
-        }
+        })
     }
     fn find(&self, token: &str) -> Option<&SyntaxReference> {
         default_syntax_set()

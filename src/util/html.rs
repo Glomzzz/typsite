@@ -422,15 +422,19 @@ pub fn parse_within_first<F>(
 where
     F: FnMut(Token) -> Result<()>,
 {
-    // skip until the first target tag
     for token in tokenizer.by_ref() {
         match token {
-            Ok(Token::StartTag(tag)) if tag.name == target => break,
+            Ok(Token::StartTag(tag)) if tag.name == target => {
+                if tag.self_closing {
+                    return Ok(());
+                }
+                return parse_until_end(tokenizer, target, f);
+            }
             Ok(_) => {}
-            Err(e) => return Err(TypsiteError::HtmlParse(e).into()),
+            Err(error) => return Err(TypsiteError::HtmlParse(error).into()),
         }
     }
-    parse_until_end(tokenizer, target, f)
+    Err(anyhow!("Missing <{}> tag", String::from_utf8_lossy(target)))
 }
 
 pub fn parse_first_tag<F>(
@@ -441,41 +445,20 @@ pub fn parse_first_tag<F>(
 where
     F: FnMut(Token) -> Result<()>,
 {
-    // skip until the first target tag
     for result in tokenizer.by_ref() {
-        match result {
-            Ok(token) => match &token {
-                Token::StartTag(tag) if tag.name == target => {
-                    if tag.self_closing {
-                        return f(token);
-                    } else {
-                        f(token)?;
-                        break;
-                    }
-                }
-                _ => {}
-            },
-            Err(e) => return Err(TypsiteError::HtmlParse(e).into()),
-        }
-    }
-    let mut count = 0;
-    for token in tokenizer {
-        match token {
-            // count the number of target start tag
-            Ok(Token::StartTag(tag)) if !tag.self_closing && tag.name == target => count += 1,
-            // stop when reach the end of the first target tag
-            Ok(Token::EndTag(tag)) if tag.name == target => {
-                if count == 0 {
-                    break;
-                } else {
-                    count -= 1
-                }
+        let token = result.map_err(TypsiteError::HtmlParse)?;
+        if let Token::StartTag(tag) = &token
+            && tag.name == target
+        {
+            let self_closing = tag.self_closing;
+            f(token)?;
+            if self_closing {
+                return Ok(());
             }
-            Ok(_) => {}
-            Err(e) => return Err(TypsiteError::HtmlParse(e).into()),
+            return parse_until_end(tokenizer, target, |_| Ok(()));
         }
     }
-    Ok(())
+    Err(anyhow!("Missing <{}> tag", String::from_utf8_lossy(target)))
 }
 
 pub fn parse_until_end<F>(
@@ -495,16 +478,18 @@ where
             // stop when reach the end of the first target tag
             Token::EndTag(tag) if tag.name == target => {
                 if count == 0 {
-                    break;
-                } else {
-                    count -= 1
+                    return Ok(());
                 }
+                count -= 1;
             }
             _ => {}
         }
         f(result)?;
     }
-    Ok(())
+    Err(anyhow!(
+        "Missing </{}> tag",
+        String::from_utf8_lossy(target)
+    ))
 }
 
 pub fn html(head: &str, body: &str) -> String {
@@ -516,6 +501,21 @@ pub fn html(head: &str, body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn template_envelopes_cannot_silently_become_empty() {
+        for html in [
+            "",
+            "<head></head>",
+            "<head>Unclosed",
+            "<head></head><body>Unclosed",
+        ] {
+            assert!(Html::load_by_tokenizer(Tokenizer::new(html)).is_err());
+        }
+        let empty = Html::load_by_tokenizer(Tokenizer::new("<head/><body/>")).unwrap();
+        assert!(empty.head.is_empty());
+        assert!(empty.body.is_empty());
+    }
 
     #[test]
     fn attributes_serialize() {
