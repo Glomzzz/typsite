@@ -55,11 +55,11 @@ entries without a manual clean.
    manual `Send` implementation; the compiler now verifies thread safety.
    Also made an absent `[site]` section use the documented field defaults.
 4. Introduce a testable Typst runner and truthful structured build reports.
-   **Done.** The runner now uses direct, portable argument passing and current Typst JSON
-   dependency metadata. Latest stable Typst compatibility is a requirement, not
+   **Done.** The runner uses direct, portable argument passing and current Typst
+   JSON dependency metadata. Latest stable Typst compatibility is a requirement, not
    a best-effort extra; 0.15.1 was verified against GitHub's latest stable release
-   and tested locally with the real executable. CI tests both 0.15.1 and rolling
-   latest stable on Linux, and latest stable on Windows/macOS. The offline
+   and tested locally with the real executable. CI is configured for both 0.15.1
+   and rolling latest stable on Linux, and latest stable on Windows/macOS. The offline
    compatibility fixture uses isolated bundled packages and exercises metadata,
    headings, footnotes, code, MathML, SVG frames, and both inline/block math
    fallback. Fixed the bundled fallback helper's outdated inline call.
@@ -75,7 +75,8 @@ entries without a manual clean.
 
    Publication uses atomic per-file replacement and an ownership journal in
    `.typsite-outputs.json`; this survives cache deletion and safely removes stale
-   generated files without deleting unrelated output files. `.typsite.lock`
+   generated files without deleting unrelated output files. Its paths use `/`
+   separators on all platforms; legacy Windows-native manifests are readable. `.typsite.lock`
    files provide cross-process build exclusion (Rust 1.89+). These names are
    reserved. Exports and publication have independent cache checkpoints.
    Failed export/parse/resolve/render stages retain the last successful site;
@@ -101,7 +102,9 @@ entries without a manual clean.
    increasing revision is visible to every browser rather than consumed by one
    client. The preview server handles decoded paths, query strings, pretty
    URLs, MIME types, HEAD requests, disconnected clients, and output symlinks.
-   No-op and failed builds do not increment revisions. Polling remains
+   No-op and failed builds do not increment revisions. Changes from a partial
+   failed publication stay pending until a successful repair, including a repair
+   that only fixes the cache checkpoint and rewrites no page bytes. Polling remains
    intentionally simple (500 ms); no filesystem watcher or dependency task
    scheduler is introduced. Tokio's unstable APIs and custom compiler flags
    are no longer needed; release/deploy workflows use stable Rust.
@@ -127,15 +130,75 @@ tests. The default CLI keeps installing bundled/custom `@local` packages for
 compatibility, but honors `TYPST_PACKAGE_PATH` / `TYPST_PACKAGE_CACHE_PATH`.
 Package names/versions cannot traverse directories; duplicate identities and
 filesystem errors are failures rather than skipped entries. Namespace locks
-prevent concurrent installers from corrupting one another.
+prevent concurrent installers from corrupting one another. Missing local
+package installations are repaired before an invalid export is retried.
 
 CLI paths may be absolute or relative, including paths/executable names with
-spaces. Root resolution follows symlinks before interpreting parent components.
+spaces. Relative executable, font, and package environment paths are resolved
+before changing Typst's working directory. Root resolution follows symlinks
+before interpreting parent components.
 `clean` validates both roots before deleting, protects source/configuration and
 repository roots, and shares build locks without unlinking their inodes.
 Unmarked legacy cache/output directories require `clean --force`; `--input` and
 `--config` identify protected roots when using nondefault project directories.
 These safeguards intentionally reject previously unsafe cleanup commands.
+
+Self-parent relationships and recursive metadata are errors; ordinary citation
+cycles (including a self-citation) remain valid. Deleting the last article still
+cleans its output when a default parent is configured. Malformed SVG scaling
+produces a diagnostic instead of a slicing panic. The latest-Typst smoke test
+includes SVG links and footnote references as well as shipped page templates.
+
+## Verification
+
+Verified locally on Linux with Rust 1.94.0 and real Typst 0.15.1 (`9dfd3a08`):
+
+```sh
+cargo fmt --all -- --check
+cargo check --workspace --all-targets --locked --offline
+cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+cargo test --workspace --all-targets --locked --offline
+cargo test --test typst_latest --locked --offline -- --ignored
+cargo test --workspace --doc --locked --offline
+cargo build --release --locked --offline
+```
+
+The default suite passes **90 unit/integration tests**; the two real-Typst
+smoke tests are ignored by default and both pass when explicitly enabled. The
+fixtures compare full incremental/clean output snapshots, include independent
+compiler instances, and never change process cwd, HOME, or installed packages.
+CLI fixtures use child-only environment variables and a compiled native stub;
+that stub validates invocation and exit behavior, not Typst compatibility.
+The Unix watch-process test verifies multi-client revisions, no-op polls,
+last-good pages during failure, repair, and graceful Ctrl-C shutdown.
+
+CI includes strict formatting/Clippy, an MSRV 1.89 compile check, and real-Typst
+Linux/Windows/macOS jobs. Remote CI, Windows/macOS execution, and the MSRV toolchain
+have **not** been run locally; no remote push was made to trigger those jobs.
+
+## Deliberate limitations
+
+- Dirty builds reparse cached raw Typst HTML and recompose **all** pages. This
+  conservatively handles removed dependency edges; affected-page minimization
+  and owned parsed-IR persistence remain future work. Existing borrowed IR and
+  serializer types are retained, but the engine never reloads derived graph or
+  rendered-fragment caches from them.
+- Publication is atomic per file, not a whole-site or power-loss transaction.
+  Ownership metadata is not disposable: corrupt metadata refuses unsafe guesses;
+  deleting it explicitly gives up ownership of old files. Normal builds never
+  remove unowned files, while an explicit `clean` clears selected root contents.
+- Watch polls every 500 ms. Shutdown waits for the current Typst export; there is
+  no export timeout or child-process cancellation policy yet.
+- Fingerprint checks and bounded verification exports detect ordinary racing
+  edits, but do not provide an atomic snapshot of an actively changing project.
+- Reproducibility assumes stable external inputs. Use project fonts, isolated
+  package paths, and `SOURCE_DATE_EPOCH` for hermetic builds. System-font installs,
+  time-dependent source, and undeclared environment/network effects are not a
+  general hermetic dependency model; discard the build cache when necessary.
+- The default CLI package namespace remains shared for compatibility. Use
+  per-project `TYPST_PACKAGE_PATH` or the runner's explicit namespace for isolation.
+- Older Typst releases are not a compatibility target. Latest stable is required
+  and the rolling CI job is intended to catch future CLI/export changes.
 
 ## Baseline
 

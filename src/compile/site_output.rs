@@ -43,11 +43,11 @@ pub fn generate_site_outputs(
         });
     }
 
-    if let Some(path) = rss_path {
-        if site.rss_limit != 0 {
-            let rss = build_rss(&mut entries, &base_url, site);
-            files.push(GeneratedFile { path, content: rss });
-        }
+    if let Some(path) = rss_path
+        && site.rss_limit != 0
+    {
+        let rss = build_rss(&mut entries, &base_url, site);
+        files.push(GeneratedFile { path, content: rss });
     }
 
     Ok(files)

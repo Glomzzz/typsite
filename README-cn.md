@@ -73,6 +73,27 @@ cd typsite
 nix build .
 ```
 
+### 4.1 从源码构建与检查
+
+请使用 **Rust 稳定版 1.89 或更新版本**，以及 Typst 最新稳定版：
+
+```sh
+cargo build --release --locked
+cargo test --workspace --all-targets --locked
+# 真实 Typst 测试，使用隔离的包目录，覆盖内置辅助函数和模板：
+cargo test --test typst_latest --locked -- --ignored
+```
+
+现有写作辅助函数、模板和命令行选项保持支持。构建过程现在会报告导出、渲染和写入失败，
+不再把保留了过期输出的失败构建当作成功。增量导出跟踪 Typst 实际读取的文件；
+需要更新时重新组合完整页面，但只写入内容发生变化的文件。
+
+内部缓存可以重建。输出目录中的 `.typsite-outputs.json` 记录文件归属，
+请保留它，以便安全清理已删除页面的输出。`clean` 会保护源文件和配置目录。
+清理没有归属标记的旧缓存或输出目录时，先检查路径，再使用 `clean --force`；
+源文件或配置目录不是默认位置时，请同时传入 `--input` / `--config`。
+详见[构建架构、校验变化及限制](docs/refactor.md)。
+
 ## 5. 架构 & 流程
 
 ![](./process.png)

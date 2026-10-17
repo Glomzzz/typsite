@@ -89,8 +89,9 @@ impl From<&str> for SidebarType {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum HeadingNumberingStyle {
+    #[default]
     Bullet,
     Roman,
     Alphabet,
@@ -104,11 +105,6 @@ impl From<&str> for HeadingNumberingStyle {
             "alphabet" => Self::Alphabet,
             _ => Self::Bullet,
         }
-    }
-}
-impl Default for HeadingNumberingStyle {
-    fn default() -> Self {
-        Self::Bullet
     }
 }
 
