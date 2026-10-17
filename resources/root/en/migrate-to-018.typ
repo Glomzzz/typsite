@@ -130,11 +130,62 @@ Keep these directories separate from the source, configuration, build cache, and
 
 = RSS feed configuration
 
-RSS remains opt-in: set `[site].base_url` to your public HTTP(S) URL. The default `rss_path = "/rss.xml"` and `rss_limit = 20` are unchanged. New `rss_content = "summary"` retains summaries and links; choose `"full"` to include composed article HTML as well. Every generated page receives an RSS autodiscovery link when enabled. See #cite("index.typ")[the RSS configuration section on the homepage] for a complete example.
+RSS 2.0 supports summaries or full article content. Setup has *two separate parts*: enable feed generation in the site configuration, then choose articles through a marked collection. The article metadata `rss` *defaults to false*; setting the site URL alone does not select any articles.
 
-RSS no longer includes every compiled article. Add `#rss(true)` to a collection page: only its direct embeds become items, and marked containers themselves are always excluded. Multiple containers are deduplicated; the boolean defaults to false and is not inherited. Nested embeds, citations, or parent relationships do not select separate items. Without a marked container, the enabled feed is empty. Import `rss` from `@local/typsite:0.1.0`, or merge the import list from the new `root/lib/lib.typ`. `#rss(false)` removes the container marker; it is not an item opt-out. The sitemap remains independent and includes all compiled pages.
+== Step 1: Configure the site
 
-RSS dates now use RFC 2822 rather than ISO timestamps. Date-only and `YYYY-MM-DD HH:MM[:SS]` metadata are treated as UTC; RFC 3339/RFC 2822 offsets are normalized to UTC. Invalid calendar dates are omitted. Titles and summaries are extracted as text from Typst metadata instead of exposing literal HTML tags. Invalid nonempty site URLs now fail configuration validation.
+Edit the existing `[site]` section in `.typsite/options.toml`; do not append a duplicate section. Replace the example URL with the public address where your site will be deployed:
+
+```toml
+[site]
+base_url = "https://example.org"
+title = "My site"
+description = "Notes and articles"
+rss_path = "/rss.xml"
+rss_limit = 20
+rss_content = "summary" # "summary" or "full"
+sitemap_path = "/sitemap.xml"
+```
+
+Keep `rss = false` under `[default_metadata.options]` (or omit it). This is the per-article default, not a switch under `[site]`. Opt in on individual collection pages instead of setting every article to true.
+
+== Step 2: Mark a collection and embed its entries
+
+Merge the new `rss` import in `root/lib/lib.typ`, or import it directly from the bundled package as below. For example, create `root/feed.typ` using two existing demo articles:
+
+```typ
+#import "/lib/lib.typ": *
+#import "@local/typsite:0.1.0": rss
+#show: schema.with("page")
+#title[Feed collection]
+#rss(true)
+
+= #embed("./typst.typ")
+= #embed("./article.typ")
+```
+
+This selects `typst.typ` and `article.typ`, *not* `feed.typ`. In your own site, replace these paths with your articles. Only direct embeds are selected; nested embeds, citations, parent links, and graph-only child declarations do not add entries. Multiple containers contribute a deduplicated union. Marked containers are always excluded, even when embedded by another container; their marker is not inherited by their children. `#rss(false)` removes a container marker, not an item selected by another container.
+
+== Step 3: Build and subscribe
+
+```sh
+typsite compile
+typsite compile --port 8080
+```
+
+The first command writes `publish/rss.xml` (or your configured output/path). The second serves it at `http://localhost:8080/rss.xml` for inspection. Readers should subscribe to your deployed public URL, such as `https://example.org/rss.xml`, not the localhost preview address. Each generated HTML page includes an RSS autodiscovery link.
+
+The demo's two homepages already use `#rss(true)`. With `base_url` set, their direct embeds produce four entries: the article guide and Typst introduction in both languages. The additional `feed.typ` above selects existing entries again, without duplicating them. Homepages, migrations, and example pages are not automatically included. The sitemap still includes all compiled articles.
+
+== Content mode and common setup problems
+
+- `rss_content = "summary"` is the default: use the first nonempty `description`, `summary`, or `abstract` metadata. Add `#metacontent("summary")[A short introduction.]` in the selected article; missing summaries do not exclude it.
+- `rss_content = "full"` additionally includes composed article HTML without page navigation, sidebars, or reference/backlink footers. Embedded content remains within its selected article. Feed-reader support for SVG, MathML, and site-specific CSS varies.
+- No `rss.xml`: check that `base_url` is nonempty, `rss_path` is nonempty, and `rss_limit` is greater than zero. The default path and limit remain `/rss.xml` and 20. An invalid nonempty site URL fails validation.
+- An empty feed: check `#rss(true)` and actual direct `#embed(...)` calls. Setting only `[site].base_url` is not enough, and `rss = false` is not an item opt-out.
+- RSS dates use RFC 2822, not ISO timestamps. Date-only and `YYYY-MM-DD HH:MM[:SS]` metadata use UTC; RFC 3339/RFC 2822 offsets are normalized to UTC. Invalid dates are omitted, and titles/summaries are extracted as text rather than exposing HTML tags.
+
+More settings and article metadata examples are in #cite("index.typ")[the homepage's RSS section].
 
 = Preview and failure recovery
 

@@ -237,6 +237,10 @@ articles, parses generated XML, and includes feeds in incremental/clean checks.
 The real-Typst helper fixture checks both the false marker and rejection of
 non-boolean arguments. Portable RSS tests cover deduplication, nested embeds,
 marked-container exclusion, stale selections, metadata validation, and recovery.
+The bilingual migration guides include self-contained TOML/Typst setup examples;
+the full-demo test executes those snippets against real demo articles and checks
+that they keep the feed deduplicated. Rendered homepages and guides are checked
+for the configuration/defaults, selection, output path, and preview instructions.
 External web fonts and music embeds are browser dependencies, not build inputs.
 
 CI includes strict formatting/Clippy, an MSRV 1.89 compile check, and real-Typst
