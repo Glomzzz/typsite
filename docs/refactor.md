@@ -87,7 +87,14 @@ entries without a manual clean.
    build-level coverage: citation removal, footer template isolation, malformed
    HTML, invalid roots, cache recovery, and publication failures, plus graph,
    asset, feed, dependency, rename, and no-op cases. The real latest-Typst test
-   now exercises the complete engine as well as raw export.
+   now exercises the complete engine as well as raw export. Follow-up recovery
+   tests exercise concurrent compiler instances, build locks, corrupt ownership
+   metadata, file/directory transitions, and edits racing Typst export. Dependency
+   fingerprints are checked on both sides of export; newly discovered external
+   dependencies require one verification export. Input-generation races discard
+   their export checkpoint rather than leaving incorrectly current cached HTML.
+   Engine-binary changes invalidate publication, and true no-ops do not even
+   rewrite the cache manifest.
 6. Isolate blocking preview work, broadcast revisions, validate request paths,
    and add portable integration tests and CI. **Done.** Build and HTTP work use
    blocking workers, shutdown awaits in-flight work, and a monotonically

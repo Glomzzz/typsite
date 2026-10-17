@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Manifest {

@@ -1,33 +1,12 @@
 mod common;
 
-use common::{FakeTypst, Project, html};
+use common::{FakeTypst, Project, clean_equivalent, html, successful};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use typsite::compile::compiler::Compiler;
 use typsite::compile::project::ProjectPaths;
-use typsite::compile::report::{BuildReport, Stage};
-
-fn successful(compiler: &Compiler) -> BuildReport {
-    let report = compiler
-        .compile()
-        .expect("build infrastructure should succeed");
-    assert!(report.is_success(), "{:#?}", report.diagnostics);
-    report
-}
-
-fn clean_equivalent(project: &Project, compiler: &Compiler) {
-    let incremental = project.snapshot();
-    fs::remove_dir_all(&project.cache).unwrap();
-    fs::remove_dir_all(&project.output).unwrap();
-    successful(compiler);
-    assert_eq!(
-        incremental,
-        project.snapshot(),
-        "incremental output must equal a clean build"
-    );
-}
+use typsite::compile::report::Stage;
 
 #[test]
 fn cold_build_and_true_noop_build() {
@@ -44,6 +23,10 @@ fn cold_build_and_true_noop_build() {
     assert_eq!(first.rendered, 2);
     assert!(first.changed());
     let before = project.snapshot();
+    let cache_modified = fs::metadata(project.cache.join("manifest.json"))
+        .unwrap()
+        .modified()
+        .unwrap();
     let modified = fs::metadata(project.output.join("a.html"))
         .unwrap()
         .modified()
@@ -53,6 +36,13 @@ fn cold_build_and_true_noop_build() {
     assert_eq!(second.rendered, 0);
     assert!(second.exported.is_empty());
     assert_eq!(runner.calls().len(), 2);
+    assert_eq!(
+        cache_modified,
+        fs::metadata(project.cache.join("manifest.json"))
+            .unwrap()
+            .modified()
+            .unwrap()
+    );
     assert_eq!(before, project.snapshot());
     assert_eq!(
         modified,
@@ -199,12 +189,15 @@ fn inherited_metadata_updates_from_the_parent() {
 fn output_write_failures_are_reported_and_retried_without_cleaning() {
     let project = Project::new();
     project.source("a.typ", &html("A"));
-    fs::create_dir_all(project.output.join("a.html")).unwrap();
+    project.write(
+        project.output.join("a.html/blocking.txt"),
+        "blocks publication",
+    );
     let compiler = project.compiler(Arc::new(FakeTypst::default()));
     let failed = compiler.compile().unwrap();
     assert!(!failed.is_success());
     assert!(failed.diagnostics.iter().any(|d| d.stage == Stage::Publish));
-    fs::remove_dir(project.output.join("a.html")).unwrap();
+    fs::remove_dir_all(project.output.join("a.html")).unwrap();
     let repaired = successful(&compiler);
     assert!(
         repaired.exported.is_empty(),
@@ -490,9 +483,8 @@ fn output_symlinks_cannot_write_or_delete_outside_the_managed_root() {
     let outside = project.root.join("outside");
     fs::create_dir(&outside).unwrap();
     std::os::unix::fs::symlink(&outside, project.output.join("nested")).unwrap();
-    match compiler.compile() {
-        Ok(report) => assert!(!report.is_success()),
-        Err(_) => {}
+    if let Ok(report) = compiler.compile() {
+        assert!(!report.is_success());
     }
     assert!(!outside.join("a.html").exists());
 }

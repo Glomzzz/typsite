@@ -21,6 +21,7 @@ pub struct Compiler {
     paths: ProjectPaths,
     options: CompileOptions,
     runner: Arc<dyn TypstRunner>,
+    engine_identity: String,
 }
 
 impl Compiler {
@@ -50,6 +51,9 @@ impl Compiler {
             paths,
             options,
             runner,
+            engine_identity: digest(
+                &std::env::current_exe().context("Cannot locate build engine")?,
+            )?,
         })
     }
 
@@ -125,6 +129,25 @@ impl Compiler {
             &fonts,
         ))?;
         let mut cache = Manifest::load(&paths.cache);
+        let previous_manifest = fingerprint(&cache)?;
+        // Hash known external dependencies before exporting, not just after.
+        // New dependencies discovered by Typst require a verification export.
+        let mut expected: Snapshot = cache
+            .exports
+            .values()
+            .flat_map(|entry| entry.dependencies.keys())
+            .filter_map(|path| digest(path).ok().map(|hash| (path.clone(), hash)))
+            .collect();
+        for (root, snapshot) in [(&paths.input, &input), (&paths.config, &configuration)] {
+            for (relative, hash) in snapshot {
+                expected.insert(fs::canonicalize(root.join(relative))?, hash.clone());
+            }
+        }
+        if let Some(root) = &paths.packages {
+            for (relative, hash) in &packages {
+                expected.insert(fs::canonicalize(root.join(relative))?, hash.clone());
+            }
+        }
         if cache.export_key != export_key {
             if let Some(packages) = &paths.packages {
                 crate::resource::package::install_packages(packages)?;
@@ -151,32 +174,52 @@ impl Compiler {
             cache.exports.remove(relative);
             let source = paths.input.join(relative);
             let result = (|| {
-                let pending = crate::util::atomic::PendingFile::new(&artifact)?;
-                let mut dependencies = self.runner.export(&ExportRequest {
-                    root: &paths.input,
-                    input: &source,
-                    output: pending.path(),
-                    font_path: &paths.config.join("assets/fonts"),
-                })?;
-                dependencies.push(source.clone());
-                let dependencies = dependencies
-                    .into_iter()
-                    .map(|path| {
-                        let path = if path.is_absolute() {
-                            path
-                        } else {
-                            paths.input.join(path)
-                        };
-                        Ok((path.clone(), digest(&path)?))
-                    })
-                    .collect::<Result<Snapshot>>()?;
-                let html_hash = digest(pending.path())?;
-                pending.commit(&artifact)?;
-                Ok::<_, anyhow::Error>(Export {
-                    source_hash: source_hash.clone(),
-                    html_hash,
-                    dependencies,
-                })
+                let mut before = expected.clone();
+                for _ in 0..3 {
+                    let pending = crate::util::atomic::PendingFile::new(&artifact)?;
+                    let mut dependencies = self.runner.export(&ExportRequest {
+                        root: &paths.input,
+                        input: &source,
+                        output: pending.path(),
+                        font_path: &paths.config.join("assets/fonts"),
+                    })?;
+                    dependencies.push(source.clone());
+                    let dependencies = dependencies
+                        .into_iter()
+                        .map(|path| {
+                            let path = if path.is_absolute() {
+                                path
+                            } else {
+                                paths.input.join(path)
+                            };
+                            let path = fs::canonicalize(&path).with_context(|| {
+                                format!("Cannot resolve Typst dependency {}", path.display())
+                            })?;
+                            Ok((path.clone(), digest(&path)?))
+                        })
+                        .collect::<Result<Snapshot>>()?;
+                    ensure!(
+                        dependencies.get(&fs::canonicalize(&source)?) == Some(source_hash),
+                        "Source changed during export: {}",
+                        source.display()
+                    );
+                    if dependencies
+                        .iter()
+                        .all(|(path, hash)| before.get(path) == Some(hash))
+                    {
+                        let html_hash = digest(pending.path())?;
+                        pending.commit(&artifact)?;
+                        return Ok::<_, anyhow::Error>(Export {
+                            source_hash: source_hash.clone(),
+                            html_hash,
+                            dependencies,
+                        });
+                    }
+                    // The first export discovered files we could not fingerprint
+                    // beforehand, or files changed while Typst was reading them.
+                    before = dependencies;
+                }
+                anyhow::bail!("Typst dependencies did not stabilize during export")
             })();
             match result {
                 Ok(entry) => {
@@ -190,24 +233,26 @@ impl Compiler {
         }
         // Export artifacts are durable independently of publication. Successful
         // exports survive a render/output failure; failed sources remain misses.
-        cache.save(&paths.cache)?;
+        if fingerprint(&cache)? != previous_manifest {
+            cache.save(&paths.cache)?;
+        }
         if !report.is_success() {
             return Ok(report);
         }
         let build_key = fingerprint(&(
             env!("CARGO_PKG_VERSION"),
+            &self.engine_identity,
             &cache.export_key,
             &input,
             &configuration,
             &self.options,
             &cache.exports,
         ))?;
-        if let Some(published) = &cache.published {
-            if published.key == build_key
-                && OutputPlan::is_current(&paths.output, &published.outputs)?
-            {
-                return Ok(report);
-            }
+        if let Some(published) = &cache.published
+            && published.key == build_key
+            && OutputPlan::is_current(&paths.output, &published.outputs)?
+        {
+            return Ok(report);
         }
         let mut registry = KeyRegistry::new();
         let mut known = BTreeMap::new();
@@ -299,6 +344,10 @@ impl Compiler {
                     .is_current(hash, &exports_root.join(relative).with_extension("html"))
             })
         {
+            // Never retain exports whose post-export hashes may describe a
+            // different generation than the bytes Typst read during the build.
+            cache.exports.clear();
+            cache.save(&paths.cache)?;
             report.error(
                 Stage::Discover,
                 None,
