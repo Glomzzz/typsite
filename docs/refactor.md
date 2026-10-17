@@ -55,6 +55,14 @@ entries without a manual clean.
    manual `Send` implementation; the compiler now verifies thread safety.
    Also made an absent `[site]` section use the documented field defaults.
 4. Introduce a testable Typst runner and truthful structured build reports.
+   The runner now uses direct, portable argument passing and current Typst JSON
+   dependency metadata. Latest stable Typst compatibility is a requirement, not
+   a best-effort extra; 0.15.1 was verified against GitHub's latest stable release
+   and tested locally with the real executable. CI tests both 0.15.1 and rolling
+   latest stable on Linux, and latest stable on Windows/macOS. The offline
+   compatibility fixture uses isolated bundled packages and exercises metadata,
+   headings, footnotes, code, MathML, SVG frames, and both inline/block math
+   fallback. Fixed the bundled fallback helper's outdated inline call.
 5. Replace persistent rendered-fragment/dependency caches with conservative
    rebuild planning, validated graph resolution, and recoverable publication.
 6. Isolate blocking preview work, broadcast revisions, validate request paths,

@@ -60,7 +60,7 @@ While there are official plans for Typst to automatically convert styles to HTML
 
 -   Start with template: [Typsite Template](https://github.com/Glomzzz/typsite-template) (HIGHLY RECOMMENDED, for linux / macos)
 -   Download the binary from the [Release page](https://github.com/Glomzzz/typsite/releases/latest).
-    -   Ensure you have Typst **0.13+** installed.
+    -   Use the **latest stable Typst** (currently tested with **0.15.1**). CI checks both 0.15.1 and the latest stable release.
 -   Build using Nix & Flakes.
     -   Ensure you have enabled `experimental-features = nix-command flakes` in your Nix configuration.
 
