@@ -230,6 +230,9 @@ The detailed process diagram in `resources/root/lib/process.typ` uses a square
 checkpoints, and a separate failure-recovery band. Its scoped stylesheet keeps
 small-screen scrolling inside the diagram; real-Typst tests check the exported
 square dimensions and stylesheet on both homepages and content-example pages.
+Both READMEs embed `process.png`, regenerated from the same source through
+`docs/process.typ`; their migration checklists link the bilingual Typst guides.
+The README export command uses the bundled font and disables system fonts.
 The support table now uses real SVG footnote references rather than decorative
 superscripts, so its footnote return links have actual targets. A legacy `.typ`
 link in the English 0.1.7 guide now uses a site citation and resolves to HTML.

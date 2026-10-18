@@ -169,11 +169,55 @@ metadata, not the current build time, so no-op builds do not change the feed.
 See the [Typst documentation](resources/root/en/index.typ) for date formats,
 article metadata examples, and all settings.
 
+### 4.4 Migrating to 0.1.8
+
+Follow the [English migration guide](resources/root/en/migrate-to-018.typ)
+([中文](resources/root/migrate-to-018.typ)), bundled as a Typst page in the demo.
+The upgrade checklist is:
+
+1. Back up your articles, `root/lib`, and `.typsite`. Use the latest stable Typst
+   (tested with **0.15.1**); source builds need **Rust 1.89+**.
+2. Generate a reference project with `typsite init --dir ../typsite-018-reference`.
+   Compare and merge its helpers/configuration; do not initialize over your site.
+   Update `root/lib/site.typ` for math fallback and import `rss` in
+   `root/lib/lib.typ` if you want feed collections. The bundled Typst package
+   keeps the **`@local/typsite:0.1.0`** import identity.
+3. Keep `.typsite-outputs.json` in the output directory. Old internal caches
+   rebuild automatically; `clean --force` is only needed for explicitly cleaning
+   unmarked legacy directories after checking their paths.
+4. For RSS, set `[site].base_url` and mark collection pages with `#rss(true)`;
+   **`rss` defaults to false**. Only their direct embeds become items, not the
+   containers themselves. Choose `rss_content = "summary"` or `"full"`.
+5. Run `typsite compile` and check its exit status before deploying. Malformed
+   resources and recursive embed/parent/metadata graphs now fail instead of
+   being silently skipped or leaving a falsely successful build.
+
+See the migration guide for copyable configuration, safe cleanup, package
+isolation, RSS troubleshooting, and failure recovery.
+
 ## 5. Architecture & Flow
 
-![alt text](./process.png)
+[![Square Typsite build pipeline: nine stages, cache reuse, publication checkpoints, and failure recovery](./process.png)](./process.png)
 
-Here's more: [Typsite Documant](https://typ.rowlib.com/en/)
+Read the numbered snake left-to-right, then right-to-left, then left-to-right.
+The diagram shows selective Typst export/cache reuse, the true no-op exit,
+fresh article facts and relationships, whole-page/feed composition, and safe
+per-file publication. Independent export/publication checkpoints support retries;
+the red band distinguishes pre-publication failures from partial-publication
+repair. Click the image for the full-size square diagram.
+
+This preview and the demo share the same
+[Typst diagram source](resources/root/lib/process.typ). Regenerate the preview
+from the repository root with the bundled font:
+
+```sh
+typst compile --root . --font-path resources/.typsite/assets/fonts \
+  --ignore-system-fonts --ppi 144 docs/process.typ process.png
+```
+
+[Build guarantees and limitations](docs/refactor.md) ·
+[Demo documentation source](resources/root/en/index.typ) ·
+[Published documentation](https://typ.rowlib.com/en/)
 
 ## Contribution
 

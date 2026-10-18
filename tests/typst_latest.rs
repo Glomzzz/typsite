@@ -543,6 +543,43 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
     compile();
     assert_eq!(incremental, project.snapshot());
 
+    // The README raster preview uses the same Typst source as the demo SVG.
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let preview = project.root.join("readme-process.png");
+    demo_success(
+        Command::new(&executable)
+            .arg("compile")
+            .arg("--root")
+            .arg(repository)
+            .arg("--font-path")
+            .arg(repository.join("resources/.typsite/assets/fonts"))
+            .args(["--ignore-system-fonts", "--ppi", "144"])
+            .arg(repository.join("docs/process.typ"))
+            .arg(&preview)
+            .env_remove("TYPST_FONT_PATHS")
+            .env_remove("TYPST_IGNORE_EMBEDDED_FONTS")
+            .output()
+            .unwrap(),
+    );
+    for path in [&preview, &repository.join("process.png")] {
+        let png = std::fs::read(path).unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "{}", path.display());
+        let width = u32::from_be_bytes(png[16..20].try_into().unwrap());
+        let height = u32::from_be_bytes(png[20..24].try_into().unwrap());
+        assert_eq!((width, height), (1320, 1320), "{}", path.display());
+    }
+    for readme in ["README.md", "README-cn.md"] {
+        let text = std::fs::read_to_string(repository.join(readme)).unwrap();
+        for reference in [
+            "./process.png",
+            "resources/root/lib/process.typ",
+            "docs/process.typ process.png",
+            "migrate-to-018.typ",
+        ] {
+            assert!(text.contains(reference), "{readme}: missing {reference}");
+        }
+    }
+
     // Execute the copyable migration examples, not just the surrounding prose.
     // Both use real demo articles and must keep the feed deduplicated.
     for path in ["migrate-to-018.typ", "en/migrate-to-018.typ"] {
