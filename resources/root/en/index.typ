@@ -113,6 +113,7 @@ Options:
       --port <PORT>          Serve port, must be specified to watch mode [default: 0]
       --config <CONFIG>      Project config [default: ./.typsite]
       --cache <CACHE>        Cache dir [default: ./.cache]
+  -j, --jobs <JOBS>          Concurrent article exports [default: automatic, CPU-aware, at most 4]
   -i, --input <INPUT>        Typst root dir, where your typst files are stored [default: ./root] [aliases: --i]
   -o, --output <OUTPUT>      Output dir [default: ./publish] [aliases: --o]
   -p, --packages <PACKAGES>  Packages dir, will be installed to @local and will be synced to @local in watch mode, skip if empty or not found [default: ] [aliases: --p]
@@ -149,6 +150,20 @@ Options:
   -h, --help             Print help
 ```
 
+
+== Build parallelism
+
+Typsite uses Rayon to hash independent files, check export caches, parse article HTML, and render pages in parallel. Typst exports run in a separate bounded Rayon pool: the automatic limit is the available CPU budget (also respecting the Rayon pool size), capped at four simultaneous articles. Each Typst subprocess receives a share of that CPU budget through its own `--jobs` option, rather than letting every subprocess spawn a full machine's worth of workers.
+
+```sh
+typsite compile --jobs 4
+# Low-memory or export debugging: one article subprocess at a time.
+typsite compile --jobs 1
+```
+
+`-j` is an alias for `--jobs`; the value must be positive. This setting controls simultaneous *article exports*, not all Rayon work. Use `RAYON_NUM_THREADS` to tune Rayon hashing/parsing/rendering separately. An explicit high `--jobs` limit can increase memory use; it is still bounded by the number of dirty articles. No export pool is created for true no-ops.
+
+Packages are prepared before exports start. Workers produce independent artifacts, then the build joins them and records results in stable source order. Graph resolution, dependency-ordered metadata, cache checkpoints, and ownership/publication mutations stay ordered for correctness. Changing `--jobs` alone does not invalidate the cache or change site bytes.
 
 = RSS feed and sitemap
 
@@ -228,6 +243,7 @@ Add metadata to an article with the existing helpers:
 
 Follow the square diagram's numbered snake: left to right across the first row, right to left across the second, then left to right across the third. HIT reuses raw HTML; MISS invokes Typst. An unchanged published site exits at step 03; only dirty publication continues through parsing, graph resolution, and whole-page composition. Independent checkpoints preserve exports and publication state, and the bottom red band explains recovery. On small screens, scroll within the diagram to read the details.
 
+Rayon parallelizes independent hashes, article parsing, page rendering, and bounded Typst exports; package setup and publication checkpoints remain ordered.
 The cache stores raw Typst HTML and actual dependency hashes, not old relationships or rendered fragments.
 Dirty builds recompose all pages but write only changed bytes; true no-ops neither write output nor reload preview clients.
 Publication is atomic per file, not for the whole site; fix a reported failure and rerun to recover.

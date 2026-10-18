@@ -1,4 +1,5 @@
 use std::fs;
+use std::num::NonZeroUsize;
 
 use crate::compile::clean::clean_roots;
 use crate::compile::compiler::Compiler;
@@ -74,7 +75,7 @@ impl Executor {
             short_slug: !cmd.no_short_slug,
             pretty_url: !cmd.no_pretty_url,
         };
-        let compiler = Compiler::new(
+        let mut compiler = Compiler::new(
             config,
             cache_path,
             config_path,
@@ -83,6 +84,9 @@ impl Executor {
             packages_path,
             typst,
         )?;
+        if let Some(jobs) = cmd.jobs {
+            compiler = compiler.with_jobs(jobs);
+        }
         Ok(compiler)
     }
 
@@ -193,6 +197,10 @@ struct CompileCmd {
     /// Packages dir, will be installed to @local and will be synced to @local in watch mode, skip if empty or not found
     #[arg(short, long, default_value_t = format!(""), visible_alias = "p")]
     packages: String,
+
+    /// Maximum concurrent article exports (default: available CPUs, capped at 4).
+    #[arg(short = 'j', long)]
+    jobs: Option<NonZeroUsize>,
 
     /// Typst executable path
     #[arg(short, long, default_value_t = format!("typst"), visible_alias = "t")]

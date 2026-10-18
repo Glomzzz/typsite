@@ -169,6 +169,27 @@ metadata, not the current build time, so no-op builds do not change the feed.
 See the [Typst documentation](resources/root/en/index.typ) for date formats,
 article metadata examples, and all settings.
 
+### Build parallelism
+
+Typsite uses **Rayon** for independent file hashing, cache checks, article parsing,
+and page rendering. Typst article exports use a separate bounded Rayon pool:
+CPU-aware by default, capped at **4 concurrent articles**, with the CPU budget
+divided between Typst subprocesses rather than letting each use all cores.
+
+```sh
+typsite compile --jobs 4  # also: -j 4
+typsite compile --jobs 1  # sequential article export; lower peak memory
+```
+
+`--jobs` must be positive and controls article exports, not all Rayon work.
+`RAYON_NUM_THREADS` tunes hashing/parsing/rendering separately and influences the
+automatic export budget. Explicitly large job limits may increase memory use.
+Packages are prepared once before export workers start; results and cache updates
+are folded in source order. Graph/metadata dependencies and publication ownership
+stay ordered. Changing the job limit alone does not invalidate cached output.
+
+See [measured before/after results and the reproducible benchmark](docs/performance.md).
+
 ### 4.4 Migrating to 0.1.8
 
 Follow the [English migration guide](resources/root/en/migrate-to-018.typ)

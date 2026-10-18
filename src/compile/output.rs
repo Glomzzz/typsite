@@ -3,6 +3,7 @@
 use super::project::{Snapshot, digest, managed_path, validate_relative};
 use super::report::BuildReport;
 use anyhow::{Context, Result, ensure};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -92,12 +93,21 @@ impl OutputPlan {
                 path.display()
             );
         }
-        // Detect file/directory collisions too, on every platform, not just at IO.
-        for previous in self.names.keys() {
+        // Check ancestors and the first possible descendant rather than scanning
+        // the entire plan for each file (quadratic on large sites).
+        let mut ancestor = name.as_str();
+        while let Some((parent, _)) = ancestor.rsplit_once('/') {
             ensure!(
-                !name.starts_with(&format!("{previous}/"))
-                    && !previous.starts_with(&format!("{name}/")),
-                "Output file/directory collision: {name} and {previous}"
+                !self.names.contains_key(parent),
+                "Output file/directory collision: {name} and {parent}"
+            );
+            ancestor = parent;
+        }
+        let prefix = format!("{name}/");
+        if let Some((descendant, _)) = self.names.range(prefix.clone()..).next() {
+            ensure!(
+                !descendant.starts_with(&prefix),
+                "Output file/directory collision: {name} and {descendant}"
             );
         }
         self.names.insert(name, path.clone());
@@ -117,13 +127,15 @@ impl OutputPlan {
         if ownership.files != expected.keys().cloned().collect() {
             return Ok(false);
         }
-        for (relative, expected_hash) in expected {
-            let path = managed_path(root, relative)?;
-            if !digest(&path).is_ok_and(|hash| &hash == expected_hash) {
-                return Ok(false);
-            }
-        }
-        Ok(true)
+        // Validation stays deterministic and fail-closed; independent read-only
+        // hash checks may run concurrently without changing publication order.
+        let paths = expected
+            .iter()
+            .map(|(relative, hash)| Ok((managed_path(root, relative)?, hash)))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(paths
+            .par_iter()
+            .all(|(path, expected)| digest(path).is_ok_and(|hash| &hash == *expected)))
     }
 
     pub fn publish(self, root: &Path, report: &mut BuildReport) -> Result<Snapshot> {
@@ -202,4 +214,31 @@ fn prune_empty_parents(root: &Path, file: &Path) -> Result<()> {
         parent = path.parent();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordered_collision_checks_cover_ancestors_descendants_case_and_prefix_neighbors() {
+        for (first, second) in [
+            ("a", "a/b/c"),
+            ("a/b/c", "a"),
+            ("A", "a/B"),
+            ("a/B", "A"),
+            ("Page.html", "page.HTML"),
+        ] {
+            let mut plan = OutputPlan::default();
+            plan.insert(first.into(), Vec::new(), "first").unwrap();
+            assert!(
+                plan.insert(second.into(), Vec::new(), "second").is_err(),
+                "{first} vs {second}"
+            );
+        }
+        let mut plan = OutputPlan::default();
+        for name in ["a-b", "a.b", "a/b/c", "a/bb", "ab", "b/a", "a/b/c-d"] {
+            plan.insert(name.into(), Vec::new(), name).unwrap();
+        }
+    }
 }

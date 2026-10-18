@@ -61,13 +61,13 @@
     #at(14pt, 84pt, card("01", [Validate & discover], [
       Lock cache + output roots.\
       Load project-local config, schemas, rewrites, themes, and syntaxes.\
-      Hash articles, libraries, assets, fonts, and package sources.
+      Rayon: hash articles, libraries, assets, fonts, and package sources.
     ]))
     #arrow(212pt, 129pt, [→])
     #at(232pt, 84pt, card("02", [Export or reuse], [
       #note([HIT], tint: green) → reuse verified raw HTML.\
-      #note([MISS], tint: orange) → prepare packages; Typst HTML + JSON dependencies.\
-      Verify before/after input hashes.\
+      #note([MISS], tint: orange) → prepare packages once; bounded parallel Typst exports.\
+      JSON deps + before/after hashes.\
       #note([Checkpoint A: good raw exports])
     ], tint: orange))
     #arrow(430pt, 129pt, [→])
@@ -82,7 +82,7 @@
 
     // Row 2 ←: parse, resolve, then compose. Numbers still ascend leftwards.
     #at(450pt, 232pt, card("04", [Parse article facts], [
-      Parse every current raw export.\
+      Rayon: parse current raw exports.\
       Extract metadata, headings, anchors, citations, direct embeds, and rewrite
       instructions.\
       #note([No persisted parsed IR or graph])
@@ -96,7 +96,7 @@
     #arrow(212pt, 277pt, [←])
     #at(14pt, 232pt, card("06", [Compose pages & feeds], [
       Metadata → embeds → rewrites.\
-      Recompose every page: schemas, sidebars, headings, and footers.\
+      Rayon: recompose every page with schemas, sidebars, and footers.\
       RSS: direct embeds of marked containers. Sitemap + static assets.
     ]))
     #arrow(110pt, 344pt, [↓])

@@ -58,6 +58,7 @@ fn main() {}
             input: &input,
             output: &output,
             font_path: &fonts,
+            jobs: std::num::NonZeroUsize::MIN,
         })
         .unwrap();
     let html = std::fs::read_to_string(output).unwrap();
@@ -316,10 +317,11 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
     } else {
         executable.to_owned()
     };
+    let jobs = std::cell::Cell::new(2_usize);
     let compile = || {
         demo_success(
             demo_command(&project)
-                .args(["compile", "--typst"])
+                .args(["compile", "--jobs", &jobs.get().to_string(), "--typst"])
                 .arg(&executable)
                 .output()
                 .unwrap(),
@@ -514,6 +516,7 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
     let mut reader = quick_xml::Reader::from_str(&full_feed);
     while !matches!(reader.read_event().unwrap(), quick_xml::events::Event::Eof) {}
     let published = project.snapshot();
+    jobs.set(1);
     let warm = compile();
     assert!(
         warm.contains("0 exported, 0 rendered, 0 written, 0 removed"),
@@ -539,6 +542,7 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
             .contains("An incremental demo edit.")
     );
     let incremental = project.snapshot();
+    jobs.set(2);
     demo_success(demo_command(&project).arg("clean").output().unwrap());
     compile();
     assert_eq!(incremental, project.snapshot());

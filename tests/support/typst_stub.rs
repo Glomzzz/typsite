@@ -17,6 +17,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(input.starts_with(root));
     assert_eq!(option("--deps-format"), "json");
     assert_eq!(option("--format"), "html");
+    let jobs: usize = option("--jobs").parse()?;
+    assert!(jobs >= 1);
+    if let Some(log) = env::var_os("TYPSITE_TEST_JOB_LOG") {
+        fs::write(log, jobs.to_string())?;
+    }
     assert_eq!(fs::canonicalize(env::current_dir()?)?, fs::canonicalize(root)?);
     fs::copy(input, output)?;
     fs::write(option("--deps"), format!("{{\"inputs\":[{:?}]}}", args[1]))?;
