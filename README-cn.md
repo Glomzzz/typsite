@@ -22,6 +22,8 @@
 
 Typsite 是一个用于构建静态网站的工具，其文章内容由纯 `Typst` 编写，经由 `Typsite` 进行处理后，最终生成一个健全的静态站点。
 
+实际站点示例：[glomzzz.com](https://glomzzz.com/)（中文站点，[源代码](https://github.com/Glomzzz/OOM)）。
+
 
 ## 2. 功能
 

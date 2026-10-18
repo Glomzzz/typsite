@@ -19,6 +19,8 @@
 
 Typsite is a static site generator (SSG) that uses pure `Typst` for content creation. It processes these `Typst` files to generate a complete static website.
 
+For a real-world example, see [glomzzz.com](https://glomzzz.com/) ([source code](https://github.com/Glomzzz/OOM)). The site is in Chinese.
+
 ## 2. Features
 
 -   Core `Typst` expressions and syntax
