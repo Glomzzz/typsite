@@ -17,6 +17,7 @@ type-complexity = "allow"
 [package]
 name = "typsite"
 version = "0.1.8"
+description = "A Typst-based static site generator with incremental builds and live preview"
 edition = "2024"
 rust-version = "1.89"
 

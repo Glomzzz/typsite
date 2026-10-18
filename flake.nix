@@ -84,6 +84,10 @@
             aarch64-linux-static = pkgs.pkgsCross.aarch64-multiplatform.pkgsStatic;
 
             x86_64-windows = pkgs.pkgsCross.mingwW64;
+          }
+          // lib.optionalAttrs pkgs.stdenv.isDarwin {
+            # Apple's cctools are unavailable on Linux build hosts. Do not
+            # advertise an output that fails evaluation before it can build.
             aarch64-darwin = pkgs.pkgsCross.aarch64-darwin;
           };
 
@@ -99,6 +103,7 @@
           apps.default = {
             type = "app";
             program = "${self'.packages.default}/bin/typsite";
+            meta.description = packageDescription;
           };
 
           checks.default = packages.default;

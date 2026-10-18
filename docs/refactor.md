@@ -285,9 +285,18 @@ that they keep the feed deduplicated. Rendered homepages and guides are checked
 for the configuration/defaults, selection, output path, and preview instructions.
 External web fonts and music embeds are browser dependencies, not build inputs.
 
-CI includes strict formatting/Clippy, an MSRV 1.89 compile check, and real-Typst
-Linux/Windows/macOS jobs. Remote CI, Windows/macOS execution, and the MSRV toolchain
-have **not** been run locally; no remote push was made to trigger those jobs.
+CI includes workflow linting, strict formatting/Clippy, Rust 1.89 checks/tests,
+real-Typst Linux/Windows/macOS jobs, and the documented Nix build plus binary smoke
+check. The release workflow reuses these same exact-revision gates and leaves a
+draft pending native downloaded-asset verification and manual publication; see
+[release gates](releasing.md). Nix package metadata is sourced from Cargo, including
+the required package description. Darwin cross-builds are advertised only on
+Darwin hosts, where Apple's tooling is available. Rust 1.89 all-target compilation,
+the full test suite and real-Typst fixtures, and a Nix-built binary smoke test have
+passed locally on Linux. Remote final-revision CI,
+Windows/macOS execution, and real draft-release downloads remain **pending** until
+an authorized push and observed successful runs; local results do not establish
+those validations.
 
 ## Deliberate limitations
 

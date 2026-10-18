@@ -32,7 +32,7 @@ jobs:
       - name: Build Typsite
         run: |
           cd src
-          cargo build --release
+          cargo build --release --locked
       - name: Copy Typsite
         run: |
           cp ./target/release/typsite ./typsite
