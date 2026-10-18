@@ -165,11 +165,47 @@ CSS 的支持不同。
 条目按修改或发表时间元数据排序，不取当前构建时间，因此无变化的构建不会更新订阅文件。
 日期格式、文章元数据示例和完整设置见 [Typst 文档](resources/root/index.typ)。
 
+### 4.4 迁移到 0.1.8
+
+完整步骤见演示站点内置的 [Typst 中文迁移指南](resources/root/migrate-to-018.typ)
+（[English](resources/root/en/migrate-to-018.typ)）。升级时请检查：
+
+1. 备份文章、`root/lib` 和 `.typsite`。使用 Typst 最新稳定版（已测试 **0.15.1**）；
+   从源码构建需要 **Rust 1.89+**。
+2. 通过 `typsite init --dir ../typsite-018-reference` 生成参考项目，对照合并辅助函数与
+   配置，不要在现有站点上直接初始化。更新 `root/lib/site.typ` 的公式回退函数；
+   需要订阅集合时，在 `root/lib/lib.typ` 中导入 `rss`。内置 Typst 包仍使用
+   **`@local/typsite:0.1.0`**，不要改成 0.1.8。
+3. 保留输出目录里的 `.typsite-outputs.json`。旧内部缓存会自动重建；只有明确清理
+   没有标记的旧目录时，才应检查路径后使用 `clean --force`。
+4. 使用 RSS 时，填写 `[site].base_url`，并在集合页写 `#rss(true)`。
+   **`rss` 默认是 false**，只有集合页直接嵌入的文章成为条目，集合页自身排除；
+   通过 `rss_content = "summary"` 或 `"full"` 选择摘要或全文。
+5. 运行 `typsite compile`，部署前检查退出状态。损坏的资源、嵌入/父级/元数据循环
+   现在会明确失败，不再静默跳过或误报成功。
+
+迁移指南还包含可复制的配置、安全清理、包隔离、RSS 排错及失败恢复步骤。
+
 ## 5. 架构 & 流程
 
-![](./process.png)
+[![Typsite 方形构建流程图：九个阶段、缓存复用、发布检查点与失败恢复](./process.png)](./process.png)
 
-你可以在 [Typsite 文档](https://typ.rowlib.com) 查看更多教程与示例
+按编号蛇形阅读：第一行从左到右，第二行从右到左，第三行再从左到右。
+图中包含 Typst 增量导出与缓存复用、无变化时提前结束、当前文章与关系解析、完整页面及
+订阅组合，以及安全的单文件原子发布。导出与发布使用独立检查点，红色区域区分发布前
+失败和发布中途失败后的恢复。点击图片可查看完整尺寸的方形图。
+
+README 预览和演示站点共用同一份 [Typst 图表源文件](resources/root/lib/process.typ)。
+在仓库根目录使用内置字体重新生成预览：
+
+```sh
+typst compile --root . --font-path resources/.typsite/assets/fonts \
+  --ignore-system-fonts --ppi 144 docs/process.typ process.png
+```
+
+[构建保证与限制](docs/refactor.md) ·
+[演示文档源文件](resources/root/index.typ) ·
+[在线文档](https://typ.rowlib.com)
 
 ## 贡献 
 
