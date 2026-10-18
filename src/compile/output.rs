@@ -129,13 +129,18 @@ impl OutputPlan {
         }
         // Validation stays deterministic and fail-closed; independent read-only
         // hash checks may run concurrently without changing publication order.
-        let paths = expected
-            .iter()
-            .map(|(relative, hash)| Ok((managed_path(root, relative)?, hash)))
-            .collect::<Result<Vec<_>>>()?;
-        Ok(paths
-            .par_iter()
-            .all(|(path, expected)| digest(path).is_ok_and(|hash| &hash == *expected)))
+        let paths: Vec<_> = super::project::managed_paths(root, expected.keys())?
+            .into_iter()
+            .zip(expected.values())
+            .collect();
+        let current = |(path, expected): &(PathBuf, &String)| {
+            digest(path).is_ok_and(|hash| &hash == *expected)
+        };
+        Ok(if paths.len() < 512 {
+            paths.iter().all(current)
+        } else {
+            paths.par_iter().all(current)
+        })
     }
 
     pub fn publish(self, root: &Path, report: &mut BuildReport) -> Result<Snapshot> {
@@ -170,17 +175,47 @@ impl OutputPlan {
         }
         // Remove stale owned paths first so file<->directory transitions can
         // recover without cleaning. Non-owned children are never removed.
-        for (relative, (bytes, _)) in self.files {
-            let path = managed_path(root, &relative)?;
-            if fs::read(&path).is_ok_and(|existing| existing == bytes) {
-                continue;
+        // Plan validation and stale deletions are ordered; distinct file targets
+        // can be synced/renamed concurrently. Join every result before updating
+        // the ownership checkpoint, including successful siblings of failures.
+        let files: Vec<_> = self.files.into_iter().collect();
+        let results: Vec<_> = files
+            .par_iter()
+            .map(|(relative, (bytes, _))| {
+                let path = managed_path(root, relative)?;
+                if fs::read(&path).is_ok_and(|existing| existing == *bytes) {
+                    return Ok(false);
+                }
+                if path.is_dir() && fs::read_dir(&path)?.next().is_none() {
+                    fs::remove_dir(&path)?;
+                }
+                crate::util::atomic::write_file(&path, bytes)
+                    .with_context(|| format!("Cannot publish {}", path.display()))?;
+                Ok(true)
+            })
+            .collect::<Vec<Result<bool>>>();
+        let mut directories = BTreeSet::new();
+        let mut failure = None;
+        for ((relative, _), result) in files.into_iter().zip(results) {
+            match result {
+                Ok(true) => {
+                    directories.insert(root.join(&relative).parent().unwrap().to_owned());
+                    report.written.push(relative);
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    if failure.is_none() {
+                        failure = Some(error);
+                    }
+                }
             }
-            if path.is_dir() && fs::read_dir(&path)?.next().is_none() {
-                fs::remove_dir(&path)?;
-            }
-            crate::util::atomic::write(&path, &bytes)
-                .with_context(|| format!("Cannot publish {}", path.display()))?;
-            report.written.push(relative);
+        }
+        // Keep file fsync and per-file atomicity; only directory fsync is batched.
+        for directory in directories {
+            crate::util::atomic::sync_directory(&directory)?;
+        }
+        if let Some(error) = failure {
+            return Err(error);
         }
         Ownership { files: desired }.save(root)?;
         Ok(hashes)

@@ -103,7 +103,7 @@ entries without a manual clean.
    fingerprints are checked on both sides of export; newly discovered external
    dependencies require one verification export. Input-generation races discard
    their export checkpoint rather than leaving incorrectly current cached HTML.
-   Engine-binary changes invalidate publication, and true no-ops do not even
+   Engine build-fingerprint changes invalidate publication, and true no-ops do not even
    rewrite the cache manifest.
 6. Isolate blocking preview work, broadcast revisions, validate request paths,
    and add portable integration tests and CI. **Done.** Build and HTTP work use
@@ -163,11 +163,14 @@ includes SVG links and footnote references as well as shipped page templates.
 Rayon was already used for body/reference preparation and final page rendering.
 Independent file hashing, cache/artifact checks, and immutable-registry article
 parsing now use parallel iterators too. Dirty Typst exports run in a dedicated
-bounded Rayon pool (CPU-aware default, at most four concurrent articles), with
+bounded Rayon pool (CPU/Rayon-aware default), with
 `--jobs` / `-j` and `Compiler::with_jobs` as positive-limit overrides. Each Typst
 subprocess receives a share of the CPU budget. Package preparation precedes
 workers; ordered result folding and independent checkpoints follow their join.
-Metadata/graph dependencies and ownership/publication mutations remain ordered.
+Metadata/graph dependencies, stale deletions, and ownership checkpoints remain
+ordered. Independent publication writes run in parallel, retaining file data
+syncing/atomic renames and batching parent-directory syncing before the final
+ownership checkpoint. Publication remains per-file atomic, not whole-site atomic.
 Export targets are preflighted for portable collisions before workers start;
 output-plan collision checks use ordered lookups rather than an all-pairs scan.
 
@@ -176,7 +179,18 @@ is needed for job-count changes. Shared external dependency fingerprints are
 reused within the pre-export snapshot; before/after export and pre-publication
 generation checks remain in force. Concurrency tests cover overlap/limits,
 stable reports, partial-export failures/retries, racing imports, and sequential
-versus parallel output equality. See [benchmarks and resource limits](performance.md).
+versus parallel output equality. Verified no-ops skip configuration parsing;
+changed configurations are still strictly validated. Themes/syntaxes have a
+checksummed, content-keyed binary cache (including syntax metadata). A binary
+manifest interns shared export dependency sets; corruption/missing/old versions
+recover as cache misses. Installed package read sets are fingerprinted before
+export; joined batches verify shared dependencies once before committing good
+artifacts. Disposable caches use atomic renames without fsync: they may be lost
+on power failure, and hashes/checksums detect damage. Published content and the
+ownership journal retain syncing. `build.rs` computes a deterministic engine
+identity from code/resources/dependencies/toolchain/settings, avoiding an
+executable read on each invocation. Release optimization is speed-oriented.
+See [benchmarks, 0.1.7 comparison, and resource limits](performance.md).
 
 ## RSS and sitemap
 
@@ -229,7 +243,7 @@ cargo test --workspace --doc --locked --offline
 cargo build --release --locked --offline
 ```
 
-The default suite passes **112 unit/integration tests**; the three real-Typst
+The default suite passes **121 unit/integration tests** on Linux; the three real-Typst
 tests are ignored by default and pass when explicitly enabled. The fixtures
 compare full incremental/clean output snapshots, include independent compiler
 instances, and never change process cwd, HOME, or normal installed packages.
@@ -290,6 +304,10 @@ have **not** been run locally; no remote push was made to trigger those jobs.
   no export timeout or child-process cancellation policy yet.
 - Fingerprint checks and bounded verification exports detect ordinary racing
   edits, but do not provide an atomic snapshot of an actively changing project.
+- Performance is workload-dependent. The actual 0.1.7 comparison shows faster
+  template/article edits and 64-page builds, but the final 256-page cold/no-op
+  medians still regress. Published-file syncing is deliberately retained; see
+  `performance.md` for numbers, variation, and reproducible commands.
 - Reproducibility assumes stable external inputs. Use project fonts, isolated
   package paths, and `SOURCE_DATE_EPOCH` for hermetic builds. System-font installs,
   time-dependent source, and undeclared environment/network effects are not a

@@ -24,7 +24,7 @@ pub struct Compiler {
     options: CompileOptions,
     runner: Arc<dyn TypstRunner>,
     engine_identity: String,
-    export_jobs: NonZeroUsize,
+    export_jobs: Option<NonZeroUsize>,
 }
 
 impl Compiler {
@@ -50,21 +50,20 @@ impl Compiler {
         runner: Arc<dyn TypstRunner>,
     ) -> Result<Self> {
         paths.validate()?;
+        let engine_identity = env!("TYPSITE_ENGINE_ID").to_owned();
         Ok(Self {
             paths,
             options,
             runner,
-            export_jobs: NonZeroUsize::new(cpu_budget().min(4)).unwrap(),
-            engine_identity: digest(
-                &std::env::current_exe().context("Cannot locate build engine")?,
-            )?,
+            export_jobs: None,
+            engine_identity,
         })
     }
 
     /// Bound simultaneous article exports. Scheduling is not an input to the
     /// generated site, so changing this limit does not invalidate warm caches.
     pub fn with_jobs(mut self, jobs: NonZeroUsize) -> Self {
-        self.export_jobs = jobs;
+        self.export_jobs = Some(jobs);
         self
     }
 
@@ -93,22 +92,90 @@ impl Compiler {
         let mut report = BuildReport::default();
         let paths = &self.paths;
         let exports_root = paths.cache.join("exports");
-        let config = TypsiteConfig::load_with_options(
+        // Typst --version is a subprocess on the CLI path. Overlap it with
+        // filesystem reads without initializing Rayon on a small warm project.
+        let (input, configuration, packages, identity, mut cache, exports_valid, outputs_valid) =
+            std::thread::scope(|scope| -> Result<_> {
+                let identity = scope.spawn(|| self.runner.identity());
+                let input = scan(&paths.input)?;
+                let configuration = scan(&paths.config)?;
+                let packages = paths
+                    .packages
+                    .as_deref()
+                    .map(scan)
+                    .transpose()?
+                    .unwrap_or_default();
+                let cache = Manifest::load(&paths.cache);
+                let exports_valid = cache.published.is_some()
+                    && super::cache::exports_current(
+                        &cache.exports,
+                        &input,
+                        &exports_root,
+                        &paths.input,
+                    )?;
+                let outputs_valid = if let Some(published) = &cache.published {
+                    OutputPlan::is_current(&paths.output, &published.outputs)?
+                } else {
+                    false
+                };
+                let identity = identity
+                    .join()
+                    .map_err(|_| anyhow::anyhow!("Typst identity worker panicked"))??;
+                Ok((
+                    input,
+                    configuration,
+                    packages,
+                    identity,
+                    cache,
+                    exports_valid,
+                    outputs_valid,
+                ))
+            })?;
+        let input_key = fingerprint(&(
+            env!("CARGO_PKG_VERSION"),
+            &self.engine_identity,
+            &identity,
+            &paths.input,
+            &paths.config,
+            &paths.packages,
+            &self.options,
+            &input,
+            &configuration,
+            &packages,
+        ))?;
+        // A verified no-op needs no template/YAML/theme parsing. The complete
+        // configuration snapshot is still checked, including unused resources;
+        // any changed resource forces normal strict validation below.
+        if let Some(published) = &cache.published
+            && published.inputs == input_key
+            && published.sources.len() == cache.exports.len()
+            && published
+                .sources
+                .iter()
+                .all(|source| cache.exports.contains_key(source))
+            && exports_valid
+            && outputs_valid
+        {
+            return Ok(report);
+        }
+        let previous_manifest = fingerprint(&cache)?;
+        let highlight_inputs: Snapshot = configuration
+            .iter()
+            .filter(|(path, _)| path.starts_with("themes") || path.starts_with("syntaxes"))
+            .map(|(path, hash)| (path.clone(), hash.clone()))
+            .collect();
+        let highlight_key =
+            fingerprint(&(&self.engine_identity, &paths.config, &highlight_inputs))?;
+        let config = TypsiteConfig::load_cached(
             &paths.config,
             &paths.input,
             &exports_root,
             self.options,
+            &paths.cache,
+            &highlight_key,
         )
         .context("Cannot load project configuration")?;
         let site_outputs = super::site_output::SiteOutputs::new(&config.options)?;
-        let input = scan(&paths.input)?;
-        let configuration = scan(&paths.config)?;
-        let packages = paths
-            .packages
-            .as_deref()
-            .map(scan)
-            .transpose()?
-            .unwrap_or_default();
         let sources: Snapshot = input
             .iter()
             .filter(|(path, _)| is_typst(path) && !is_library(path, &config))
@@ -119,7 +186,6 @@ impl Compiler {
             .filter(|(path, _)| path.starts_with("assets/fonts"))
             .map(|(path, hash)| (path.clone(), hash.clone()))
             .collect();
-        let identity = self.runner.identity()?;
         let export_key = fingerprint(&(
             1_u32,
             &self.engine_identity,
@@ -130,8 +196,6 @@ impl Compiler {
             &packages,
             &fonts,
         ))?;
-        let mut cache = Manifest::load(&paths.cache);
-        let previous_manifest = fingerprint(&cache)?;
         // Hash known external dependencies before exporting, not just after.
         // New dependencies discovered by Typst require a verification export.
         let mut expected = Snapshot::new();
@@ -200,38 +264,33 @@ impl Compiler {
         if identity_changed || !dirty.is_empty() {
             // Includes repairing a deleted package namespace even if the build's
             // export identity is unchanged. Never race installers with exports.
-            self.runner.prepare(paths.packages.as_deref())?;
+            for root in self.runner.prepare(paths.packages.as_deref())? {
+                let root =
+                    fs::canonicalize(root).context("Cannot resolve prepared package root")?;
+                for (relative, hash) in scan(&root)? {
+                    expected.insert(fs::canonicalize(root.join(relative))?, hash);
+                }
+            }
         }
         // Never retain validity for a failed export. Successful siblings still
         // reach the independent export checkpoint after every worker has joined.
         for (relative, _, _) in &dirty {
             cache.exports.remove(*relative);
         }
-        let concurrent = self.export_jobs.get().min(dirty.len()).max(1);
+        let concurrent = self
+            .export_jobs
+            .map_or_else(cpu_budget, NonZeroUsize::get)
+            .min(dirty.len())
+            .max(1);
         let typst_jobs = NonZeroUsize::new((cpu_budget() / concurrent).max(1)).unwrap();
-        let run = |(relative, hash, artifact): &(&PathBuf, &String, PathBuf)| {
-            let source = paths.input.join(relative);
-            super::export::export(
-                self.runner.as_ref(),
-                paths,
-                &source,
-                hash,
-                artifact,
-                &expected,
-                typst_jobs,
-            )
-        };
-        let results: Vec<_> = if concurrent == 1 {
-            dirty.iter().map(run).collect()
-        } else {
-            // A dedicated bounded pool prevents spawning one Typst process per
-            // Rayon CPU worker. Typst's own --jobs divides the CPU budget above.
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(concurrent)
-                .build()
-                .context("Cannot create Typst export worker pool")?;
-            pool.install(|| dirty.par_iter().map(run).collect())
-        };
+        let results = super::export::export_batch(
+            self.runner.as_ref(),
+            paths,
+            &dirty,
+            &expected,
+            concurrent,
+            typst_jobs,
+        )?;
         for ((relative, _, _), result) in dirty.into_iter().zip(results) {
             match result {
                 Ok(entry) => {
@@ -243,23 +302,16 @@ impl Compiler {
                 }
             }
         }
-        // Export artifacts are durable independently of publication. Successful
-        // exports survive a render/output failure; failed sources remain misses.
+        // Exports are checkpointed independently of publication. Successful
+        // exports survive ordinary render/output failures; power-loss damage to
+        // this disposable cache is detected by checksums and artifact hashes.
         if fingerprint(&cache)? != previous_manifest {
             cache.save(&paths.cache)?;
         }
         if !report.is_success() {
             return Ok(report);
         }
-        let build_key = fingerprint(&(
-            env!("CARGO_PKG_VERSION"),
-            &self.engine_identity,
-            &cache.export_key,
-            &input,
-            &configuration,
-            &self.options,
-            &cache.exports,
-        ))?;
+        let build_key = fingerprint(&(&input_key, &cache.export_key, &cache.exports))?;
         if let Some(published) = &cache.published
             && published.key == build_key
             && OutputPlan::is_current(&paths.output, &published.outputs)?
@@ -381,10 +433,7 @@ impl Compiler {
                 .transpose()?
                 .unwrap_or_default()
                 != packages
-            || sources.par_iter().any(|(relative, hash)| {
-                !cache.exports[relative]
-                    .is_current(hash, &exports_root.join(relative).with_extension("html"))
-            })
+            || !super::cache::exports_current(&cache.exports, &input, &exports_root, &paths.input)?
         {
             // Never retain exports whose post-export hashes may describe a
             // different generation than the bytes Typst read during the build.
@@ -401,6 +450,8 @@ impl Compiler {
             Ok(outputs) => {
                 cache.published = Some(Publication {
                     key: build_key,
+                    inputs: input_key,
+                    sources: sources.keys().cloned().collect(),
                     outputs,
                 });
                 if let Err(error) = cache.save(&paths.cache) {

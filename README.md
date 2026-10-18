@@ -173,7 +173,7 @@ article metadata examples, and all settings.
 
 Typsite uses **Rayon** for independent file hashing, cache checks, article parsing,
 and page rendering. Typst article exports use a separate bounded Rayon pool:
-CPU-aware by default, capped at **4 concurrent articles**, with the CPU budget
+CPU-aware by default (up to the available CPU/Rayon budget), with the budget
 divided between Typst subprocesses rather than letting each use all cores.
 
 ```sh
@@ -185,8 +185,13 @@ typsite compile --jobs 1  # sequential article export; lower peak memory
 `RAYON_NUM_THREADS` tunes hashing/parsing/rendering separately and influences the
 automatic export budget. Explicitly large job limits may increase memory use.
 Packages are prepared once before export workers start; results and cache updates
-are folded in source order. Graph/metadata dependencies and publication ownership
-stay ordered. Changing the job limit alone does not invalidate cached output.
+are folded in source order. Graph/metadata dependencies, stale deletions, and
+ownership checkpoints stay ordered; independent output files publish in parallel
+with per-file atomic renames, data syncing, and batched parent-directory syncing.
+Verified no-ops skip configuration parsing. Themes/syntaxes have a content-keyed
+cache, and shared Typst dependencies are verified once per export batch. Release
+builds optimize for speed (`opt-level = 3`). Changing jobs alone does not invalidate
+cached output.
 
 See [measured before/after results and the reproducible benchmark](docs/performance.md).
 

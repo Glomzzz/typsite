@@ -113,7 +113,7 @@ Options:
       --port <PORT>          Serve port, must be specified to watch mode [default: 0]
       --config <CONFIG>      Project config [default: ./.typsite]
       --cache <CACHE>        Cache dir [default: ./.cache]
-  -j, --jobs <JOBS>          Concurrent article exports [default: automatic, CPU-aware, at most 4]
+  -j, --jobs <JOBS>          Concurrent article exports [default: automatic CPU/Rayon budget]
   -i, --input <INPUT>        Typst root dir, where your typst files are stored [default: ./root] [aliases: --i]
   -o, --output <OUTPUT>      Output dir [default: ./publish] [aliases: --o]
   -p, --packages <PACKAGES>  Packages dir, will be installed to @local and will be synced to @local in watch mode, skip if empty or not found [default: ] [aliases: --p]
@@ -153,7 +153,7 @@ Options:
 
 == Build parallelism
 
-Typsite uses Rayon to hash independent files, check export caches, parse article HTML, and render pages in parallel. Typst exports run in a separate bounded Rayon pool: the automatic limit is the available CPU budget (also respecting the Rayon pool size), capped at four simultaneous articles. Each Typst subprocess receives a share of that CPU budget through its own `--jobs` option, rather than letting every subprocess spawn a full machine's worth of workers.
+Typsite uses Rayon to hash independent files, check export caches, parse article HTML, and render pages in parallel. Typst exports run in a separate bounded Rayon pool: the automatic limit is the available CPU budget (also respecting the Rayon pool size). Each Typst subprocess receives a share of that CPU budget through its own `--jobs` option, rather than letting every subprocess spawn a full machine's worth of workers.
 
 ```sh
 typsite compile --jobs 4
@@ -163,7 +163,7 @@ typsite compile --jobs 1
 
 `-j` is an alias for `--jobs`; the value must be positive. This setting controls simultaneous *article exports*, not all Rayon work. Use `RAYON_NUM_THREADS` to tune Rayon hashing/parsing/rendering separately. An explicit high `--jobs` limit can increase memory use; it is still bounded by the number of dirty articles. No export pool is created for true no-ops.
 
-Packages are prepared before exports start. Workers produce independent artifacts, then the build joins them and records results in stable source order. Graph resolution, dependency-ordered metadata, cache checkpoints, and ownership/publication mutations stay ordered for correctness. Changing `--jobs` alone does not invalidate the cache or change site bytes.
+Packages are prepared before exports start. Workers produce independent artifacts, then the build joins them and records results in stable source order. Graph resolution, dependency-ordered metadata, cache/ownership checkpoints, and stale deletions stay ordered for correctness. Independent output files publish in parallel with atomic renames and data syncing; parent directories are synced once per batch. Verified no-ops skip configuration parsing, validated highlighting resources have a content-keyed cache, and shared dependencies are checked once per export batch. Changing `--jobs` alone does not invalidate the cache or change site bytes.
 
 = RSS feed and sitemap
 

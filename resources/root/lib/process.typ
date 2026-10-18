@@ -68,7 +68,7 @@
       #note([HIT], tint: green) → reuse verified raw HTML.\
       #note([MISS], tint: orange) → prepare packages once; bounded parallel Typst exports.\
       JSON deps + before/after hashes.\
-      #note([Checkpoint A: good raw exports])
+      #note([Checkpoint A: shared-dep cache])
     ], tint: orange))
     #arrow(430pt, 129pt, [→])
     #at(450pt, 84pt, card("03", [Published site current?], [
@@ -110,7 +110,7 @@
     #arrow(212pt, 425pt, [→])
     #at(232pt, 380pt, card("08", [Publish changed bytes], [
       Journal old + intended ownership.\
-      Delete stale owned files; preserve unrelated files. Atomic file writes.\
+      Delete stale owned files; preserve unrelated files. Parallel atomic writes.\
       Finalize ownership + hashes.\
       #note([Checkpoint B: published state])
     ], tint: green))

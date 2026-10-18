@@ -24,8 +24,10 @@ pub trait TypstRunner: Send + Sync {
     fn identity(&self) -> Result<String>;
     /// Prepare package resources in the same environment used by `export`.
     /// Test runners need no filesystem installation side effects.
-    fn prepare(&self, _packages: Option<&Path>) -> Result<()> {
-        Ok(())
+    /// Return installed resource directories to fingerprint before export.
+    /// Unknown dependencies discovered by Typst still require verification.
+    fn prepare(&self, _packages: Option<&Path>) -> Result<Vec<PathBuf>> {
+        Ok(Vec::new())
     }
     fn export(&self, request: &ExportRequest<'_>) -> Result<Vec<PathBuf>>;
 }
@@ -123,16 +125,20 @@ impl CommandTypst {
 }
 
 impl TypstRunner for CommandTypst {
-    fn prepare(&self, packages: Option<&Path>) -> Result<()> {
+    fn prepare(&self, packages: Option<&Path>) -> Result<Vec<PathBuf>> {
         let namespace = match &self.package_path {
             Some(path) => path.clone(),
             None => crate::resource::package::default_namespace()?,
         };
-        crate::resource::package::install_included_into(&namespace)?;
+        let mut roots = crate::resource::package::prepare_included_into(&namespace)?;
         if let Some(packages) = packages {
-            crate::resource::package::install_packages_into(packages, &namespace)?;
+            roots.extend(crate::resource::package::prepare_packages_into(
+                packages, &namespace,
+            )?);
         }
-        Ok(())
+        roots.sort();
+        roots.dedup();
+        Ok(roots)
     }
 
     fn identity(&self) -> Result<String> {

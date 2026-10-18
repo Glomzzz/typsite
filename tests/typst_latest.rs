@@ -78,8 +78,33 @@ fn main() {}
             .iter()
             .any(|path| path.ends_with("lib/lib.typ"))
     );
-    let compiler = project.compiler(std::sync::Arc::new(runner));
+    struct CountExports {
+        runner: CommandTypst,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl TypstRunner for CountExports {
+        fn identity(&self) -> anyhow::Result<String> {
+            self.runner.identity()
+        }
+        fn prepare(&self, packages: Option<&Path>) -> anyhow::Result<Vec<std::path::PathBuf>> {
+            self.runner.prepare(packages)
+        }
+        fn export(&self, request: &ExportRequest<'_>) -> anyhow::Result<Vec<std::path::PathBuf>> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.runner.export(request)
+        }
+    }
+    let runner = std::sync::Arc::new(CountExports {
+        runner,
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let compiler = project.compiler(runner.clone());
     let report = compiler.compile().unwrap();
+    assert_eq!(
+        runner.calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "prepared package contents must be fingerprinted before the first export"
+    );
     assert!(report.is_success(), "{:#?}", report.diagnostics);
     let published = std::fs::read_to_string(project.output.join("latest.html")).unwrap();
     assert!(published.contains("<svg"));
@@ -92,9 +117,11 @@ fn main() {}
     assert!(warm.is_success());
     assert!(!warm.changed());
     assert!(warm.exported.is_empty());
+    assert_eq!(runner.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     std::fs::remove_dir_all(packages.join("local/typsite/0.1.0")).unwrap();
     let repaired = common::successful(&compiler);
     assert_eq!(repaired.exported.len(), 1);
+    assert_eq!(runner.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
     assert!(packages.join("local/typsite/0.1.0/typst.toml").exists());
     let source = std::fs::read_to_string(&input).unwrap();
     for invalid in ["#rss(\"true\")", "#rss(1)"] {

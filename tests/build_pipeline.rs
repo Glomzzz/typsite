@@ -23,7 +23,7 @@ fn cold_build_and_true_noop_build() {
     assert_eq!(first.rendered, 2);
     assert!(first.changed());
     let before = project.snapshot();
-    let cache_modified = fs::metadata(project.cache.join("manifest.json"))
+    let cache_modified = fs::metadata(project.cache.join("manifest.bin"))
         .unwrap()
         .modified()
         .unwrap();
@@ -38,7 +38,7 @@ fn cold_build_and_true_noop_build() {
     assert_eq!(runner.calls().len(), 2);
     assert_eq!(
         cache_modified,
-        fs::metadata(project.cache.join("manifest.json"))
+        fs::metadata(project.cache.join("manifest.bin"))
             .unwrap()
             .modified()
             .unwrap()
@@ -260,7 +260,7 @@ fn corrupt_missing_and_incompatible_caches_are_cache_misses() {
         "not json",
         "{\"version\":999,\"export_key\":\"\",\"exports\":{},\"published\":null}",
     ] {
-        fs::write(project.cache.join("manifest.json"), metadata).unwrap();
+        fs::write(project.cache.join("manifest.bin"), metadata).unwrap();
         assert_eq!(successful(&compiler).exported.len(), 1);
         assert_eq!(original, project.snapshot());
     }

@@ -209,7 +209,7 @@ fn clean_validates_every_root_before_deleting_anything() {
         )
         .is_err()
     );
-    assert!(project.cache.join("manifest.json").exists());
+    assert!(project.cache.join("manifest.bin").exists());
     assert!(project.input.join("a.typ").exists());
     assert!(clean_roots(&project.cache, &project.cache.join("nested"), &[], true).is_err());
     assert!(clean_roots(&project.cache, &std::env::current_dir().unwrap(), &[], true).is_err());
@@ -220,12 +220,12 @@ fn clean_validates_every_root_before_deleting_anything() {
         .unwrap();
     lock.lock().unwrap();
     assert!(compiler.clean().is_err());
-    assert!(project.cache.join("manifest.json").exists());
+    assert!(project.cache.join("manifest.bin").exists());
     lock.unlock().unwrap();
     compiler.clean().unwrap();
     assert!(project.output.join(".typsite.lock").exists());
     assert!(!project.output.join("a.html").exists());
-    assert!(!project.cache.join("manifest.json").exists());
+    assert!(!project.cache.join("manifest.bin").exists());
     successful(&compiler);
 }
 

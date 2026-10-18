@@ -1015,6 +1015,7 @@ version = "0.1.8"
 dependencies = [
  "aho-corasick",
  "anyhow",
+ "bincode",
  "blake3",
  "clap",
  "home",
