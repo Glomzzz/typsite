@@ -68,7 +68,14 @@ fn normalize_path(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             Component::RootDir => {
-                stack.clear();
+                // A Windows root follows its drive/UNC prefix. Dropping that
+                // prefix turns a canonical \\?\C:\... path into a drive-less
+                // rooted path and makes every valid relationship look external.
+                if matches!(stack.first(), Some(Component::Prefix(_))) {
+                    stack.truncate(1);
+                } else {
+                    stack.clear();
+                }
                 stack.push(Component::RootDir);
             }
             Component::CurDir => {}
@@ -88,6 +95,41 @@ fn normalize_path(path: &Path) -> PathBuf {
         acc
     })
 }
+#[cfg(windows)]
+#[test]
+fn rooted_relationship_paths_keep_windows_drive_and_unc_prefixes() {
+    for root in [
+        r"C:\site root\content",
+        r"\\?\C:\site root\content",
+        r"\\server\share\site root\content",
+        r"\\?\UNC\server\share\site root\content",
+    ] {
+        let root = Path::new(root);
+        let current = root.join("current").join("dir");
+        for (reference, expected) in [
+            ("/target.typ", root.join("target.typ")),
+            ("../../parent.typ", root.join("parent.typ")),
+            ("./nested/../child.typ", current.join("child.typ")),
+        ] {
+            let resolved = resolve_path(root, &current, reference).unwrap();
+            assert_eq!(resolved, expected, "{root:?}: {reference}");
+            assert!(resolved.starts_with(root));
+            assert_eq!(resolved.components().next(), root.components().next());
+        }
+        for escape in [
+            "/../outside.typ",
+            "../../../outside.typ",
+            r"D:\outside.typ",
+            r"\\other\share\outside.typ",
+        ] {
+            assert!(
+                resolve_path(root, &current, escape).is_err(),
+                "{root:?}: {escape}"
+            );
+        }
+    }
+}
+
 #[test]
 fn test_resolve_path() {
     let root = "/app/root";

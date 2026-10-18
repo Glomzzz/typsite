@@ -45,7 +45,7 @@ jobs:
         with:
           typst-version: '0.15.1'
       - run: cargo check --workspace --all-targets --locked
-      - run: cargo test --workspace --all-targets --locked
+      - run: cargo test --workspace --all-targets --locked --no-fail-fast
       - run: cargo test --test typst_latest --locked -- --ignored
 
   test:
@@ -72,7 +72,7 @@ jobs:
         with:
           typst-version: ${{ matrix.typst }}
       - run: typst --version
-      - run: cargo test --workspace --all-targets --locked
+      - run: cargo test --workspace --all-targets --locked --no-fail-fast
       - run: cargo test --workspace --doc --locked
       - name: Real Typst compatibility (helpers, SVG frames, and complete initialized demo)
         run: cargo test --test typst_latest --locked -- --ignored
