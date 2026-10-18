@@ -78,6 +78,31 @@ impl<'a> TypsiteConfig<'a> {
         html_path: &'a Path,
         compile: CompileOptions,
     ) -> Result<Self> {
+        Self::load_with_highlight(config_path, typst_path, html_path, compile, || {
+            CodeHightlightConfig::load(config_path)
+        })
+    }
+
+    pub(crate) fn load_cached(
+        config_path: &'a Path,
+        typst_path: &'a Path,
+        html_path: &'a Path,
+        compile: CompileOptions,
+        cache: &Path,
+        highlight_key: &str,
+    ) -> Result<Self> {
+        Self::load_with_highlight(config_path, typst_path, html_path, compile, || {
+            CodeHightlightConfig::load_cached(config_path, cache, highlight_key)
+        })
+    }
+
+    fn load_with_highlight(
+        config_path: &'a Path,
+        typst_path: &'a Path,
+        html_path: &'a Path,
+        compile: CompileOptions,
+        highlight: impl FnOnce() -> Result<CodeHightlightConfig>,
+    ) -> Result<Self> {
         let options = ProjectOptions::load(config_path, compile)?;
         // Components
         let section = SectionConfig::load(config_path)?;
@@ -88,7 +113,7 @@ impl<'a> TypsiteConfig<'a> {
         let embed = EmbedConfig::load(config_path)?;
         let rules = RulesConfig::load(config_path)?;
         let schemas = SchemaConfig::load(config_path)?;
-        let highlight = CodeHightlightConfig::load(config_path)?;
+        let highlight = highlight()?;
 
         let typst_path = format_path_ref(typst_path);
         let typst_root_name = dir_name(typst_path)

@@ -29,6 +29,23 @@ fn package_installation_can_be_scoped_without_changing_home_or_environment() {
 }
 
 #[test]
+fn runner_preparation_returns_only_installed_roots_not_unrelated_local_packages() {
+    use typsite::compile::typst::{CommandTypst, TypstRunner};
+    let project = Project::new();
+    let namespace = project.root.join("namespace");
+    fs::create_dir_all(namespace.join("local/unrelated/1.0.0")).unwrap();
+    fs::write(
+        namespace.join("local/unrelated/1.0.0/manual"),
+        "do not inspect or replace",
+    )
+    .unwrap();
+    let runner = CommandTypst::new("typst").with_package_path(namespace.clone());
+    let prepared = runner.prepare(None).unwrap();
+    assert_eq!(prepared, vec![namespace.join("local/typsite/0.1.0")]);
+    assert!(namespace.join("local/unrelated/1.0.0/manual").exists());
+}
+
+#[test]
 fn invalid_package_identities_cannot_escape_the_installation_namespace() {
     for (name, version) in [
         ("../escape", "0.1.0"),

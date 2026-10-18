@@ -3,6 +3,8 @@ use crate::util::fs::files_with_extension;
 use crate::util::path::file_stem;
 use anyhow::{Context, Result, ensure};
 use metadata::{LoadMetadata, RawMetadataEntry};
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::fs;
@@ -26,6 +28,7 @@ fn default_syntax_set() -> &'static SyntaxSet {
 type PathMap<T> = BTreeMap<String, (Arc<Path>, T)>;
 type ThemePaths = PathMap<Theme>;
 
+#[derive(Serialize, Deserialize)]
 struct Syntaxes {
     syntax_set: SyntaxSet,
     syntax_paths_by_name: BTreeMap<String, Arc<Path>>,
@@ -33,6 +36,7 @@ struct Syntaxes {
     metadata_paths_by_stem: BTreeMap<String, Arc<Path>>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct CodeHightlightConfig {
     themes: ThemePaths,
     syntaxes: Syntaxes,
@@ -40,9 +44,53 @@ pub struct CodeHightlightConfig {
 
 impl CodeHightlightConfig {
     pub fn load(config_path: &Path) -> Result<Self> {
-        let themes = load_themes(&config_path.join(THEMES_DIR))?;
-        let syntaxes = Syntaxes::load(&config_path.join(SYNTAXES_DIR))?;
-        Ok(Self { themes, syntaxes })
+        let (themes, syntaxes) = rayon::join(
+            || load_themes(&config_path.join(THEMES_DIR)),
+            || Syntaxes::load(&config_path.join(SYNTAXES_DIR)),
+        );
+        Ok(Self {
+            themes: themes?,
+            syntaxes: syntaxes?,
+        })
+    }
+
+    /// Cache only validated resource data, keyed by content hashes and engine
+    /// identity. SyntaxSet skips its metadata in serde, so preserve it explicitly.
+    pub(crate) fn load_cached(config: &Path, cache: &Path, key: &str) -> Result<Self> {
+        #[derive(Serialize, Deserialize)]
+        struct Cached {
+            key: String,
+            config: CodeHightlightConfig,
+            // Syntect metadata contains serde_json values; encode it separately
+            // because bincode does not implement deserialize_any.
+            metadata_json: Vec<u8>,
+        }
+        let path = crate::compile::project::managed_path(cache, Path::new("highlight.bin"))?;
+        if let Ok(bytes) = fs::read(&path)
+            && bytes.starts_with(b"TYPSITE-HIGHLIGHT-1\0")
+            && let Some(rest) = bytes.get(b"TYPSITE-HIGHLIGHT-1\0".len()..)
+            && let Some((checksum, payload)) = rest.split_at_checked(32)
+            && blake3::hash(payload).as_bytes() == checksum
+            && let Ok(mut cached) = bincode::deserialize::<Cached>(payload)
+            && cached.key == key
+            && let Ok(metadata) = serde_json::from_slice::<Metadata>(&cached.metadata_json)
+        {
+            cached.config.syntaxes.syntax_set.set_metadata(metadata);
+            return Ok(cached.config);
+        }
+        let config = Self::load(config)?;
+        let cached = Cached {
+            key: key.to_owned(),
+            metadata_json: serde_json::to_vec(config.syntaxes.syntax_set.metadata())?,
+            config,
+        };
+        let payload =
+            bincode::serialize(&cached).context("Cannot serialize highlighting resources")?;
+        let mut bytes = b"TYPSITE-HIGHLIGHT-1\0".to_vec();
+        bytes.extend_from_slice(blake3::hash(&payload).as_bytes());
+        bytes.extend_from_slice(&payload);
+        crate::util::atomic::write_cache(&path, &bytes)?;
+        Ok(cached.config)
     }
 
     fn find_theme_pair(&self, name: &str, scheme: ColorScheme) -> Option<&(Arc<Path>, Theme)> {
@@ -141,10 +189,17 @@ impl Display for CodeHightlightConfig {
 
 fn load_themes(themes_path: &Path) -> Result<ThemePaths> {
     let mut themes = BTreeMap::new();
-    for path in files_with_extension(themes_path, "tmTheme")? {
+    let paths = files_with_extension(themes_path, "tmTheme")?;
+    let loaded: Vec<_> = paths
+        .par_iter()
+        .map(|path| {
+            ThemeSet::get_theme(path)
+                .with_context(|| format!("Failed to load theme {}", path.display()))
+        })
+        .collect();
+    for (path, theme) in paths.into_iter().zip(loaded) {
         let name = file_stem(&path).context("Theme has no name")?.to_string();
-        let theme = ThemeSet::get_theme(&path)
-            .with_context(|| format!("Failed to load theme {}", path.display()))?;
+        let theme = theme?;
         ensure!(
             !themes.contains_key(&name),
             "Duplicate theme {name} in {}",
@@ -228,6 +283,56 @@ impl Syntaxes {
         matches!(token, "text" | "shell")
             || (self.syntax_set.find_syntax_by_token(token).is_none()
                 && default_syntax_set().find_syntax_by_token(token).is_some())
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    #[test]
+    fn cached_syntax_metadata_roundtrips_without_reloading_or_losing_settings() {
+        let root = std::env::temp_dir().join(format!(
+            "typsite-highlight-metadata-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config = root.join("config");
+        fs::create_dir_all(config.join("syntaxes")).unwrap();
+        fs::write(config.join("syntaxes/valid.tmPreferences"), r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>scope</key><string>source.rust</string><key>settings</key><dict><key>shellVariables</key><array><dict><key>name</key><string>TM_COMMENT_START</string><key>value</key><string>// </string></dict></array><key>increaseIndentPattern</key><string>[{]</string></dict></dict></plist>"#).unwrap();
+        let cache = root.join("cache");
+        let first = CodeHightlightConfig::load_cached(&config, &cache, "generation").unwrap();
+        let expected = serde_json::to_value(first.syntaxes.syntax_set.metadata()).unwrap();
+        assert!(
+            !first
+                .syntaxes
+                .syntax_set
+                .metadata()
+                .scoped_metadata
+                .is_empty()
+        );
+        let before = fs::metadata(cache.join("highlight.bin"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        let second = CodeHightlightConfig::load_cached(&config, &cache, "generation").unwrap();
+        assert_eq!(
+            expected,
+            serde_json::to_value(second.syntaxes.syntax_set.metadata()).unwrap()
+        );
+        assert_eq!(
+            before,
+            fs::metadata(cache.join("highlight.bin"))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            "cache hit must not rewrite or rebuild resources"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }
 

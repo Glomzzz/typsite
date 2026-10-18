@@ -34,14 +34,14 @@ impl TypstRunner for ConcurrentRunner {
         Ok("concurrent runner".into())
     }
 
-    fn prepare(&self, _: Option<&Path>) -> Result<()> {
+    fn prepare(&self, _: Option<&Path>) -> Result<Vec<PathBuf>> {
         assert_eq!(
             self.state.lock().unwrap().active,
             0,
             "prepare must not race exports"
         );
         self.prepares.fetch_add(1, Ordering::SeqCst);
-        Ok(())
+        Ok(Vec::new())
     }
 
     fn export(&self, request: &ExportRequest<'_>) -> Result<Vec<PathBuf>> {

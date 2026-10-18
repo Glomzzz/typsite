@@ -198,7 +198,7 @@ struct CompileCmd {
     #[arg(short, long, default_value_t = format!(""), visible_alias = "p")]
     packages: String,
 
-    /// Maximum concurrent article exports (default: available CPUs, capped at 4).
+    /// Maximum concurrent article exports (default: available CPU/Rayon budget).
     #[arg(short = 'j', long)]
     jobs: Option<NonZeroUsize>,
 

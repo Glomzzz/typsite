@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use rayon::prelude::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -121,11 +121,16 @@ pub fn resolve(path: &Path) -> Result<PathBuf> {
 }
 
 pub fn digest(path: &Path) -> Result<String> {
-    Ok(
-        blake3::hash(&fs::read(path).with_context(|| format!("Cannot read {}", path.display()))?)
-            .to_hex()
-            .to_string(),
-    )
+    let bytes = fs::read(path).with_context(|| format!("Cannot read {}", path.display()))?;
+    let mut hasher = blake3::Hasher::new();
+    if bytes.len() >= 16 * 1024 * 1024 {
+        // Large fonts/assets and the engine executable benefit from BLAKE3's
+        // tree parallelism; small files avoid task-scheduling overhead.
+        hasher.update_rayon(&bytes);
+    } else {
+        hasher.update(&bytes);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 /// File symlinks are allowed only inside their source root. Directory symlinks
@@ -163,10 +168,15 @@ pub fn scan(root: &Path) -> Result<Snapshot> {
     // Ordered result folding makes the first error independent of thread timing.
     let mut files = Vec::new();
     visit(root, root, &mut files)?;
-    let hashed: Vec<_> = files
-        .par_iter()
-        .map(|relative| digest(&root.join(relative)).map(|hash| (relative.clone(), hash)))
-        .collect();
+    let hash =
+        |relative: &PathBuf| digest(&root.join(relative)).map(|hash| (relative.clone(), hash));
+    let hashed: Vec<_> = if files.len() < 512 {
+        // Tiny projects/no-op CLI invocations should not initialize a full Rayon
+        // pool merely to read a few kilobytes of configuration and source.
+        files.iter().map(hash).collect()
+    } else {
+        files.par_iter().map(hash).collect()
+    };
     hashed.into_iter().collect()
 }
 
@@ -189,6 +199,53 @@ pub fn validate_relative(path: &Path) -> Result<()> {
         path.display()
     );
     Ok(())
+}
+
+/// Validate a sorted set of managed paths without repeatedly stat-ing shared
+/// directories. Files and each distinct ancestor are still inspected for links;
+/// missing/file-directory transition paths retain the ordinary managed policy.
+pub fn managed_paths<'a>(
+    root: &Path,
+    relatives: impl IntoIterator<Item = &'a PathBuf>,
+) -> Result<Vec<PathBuf>> {
+    let mut checked = HashSet::new();
+    checked.insert(root.to_owned());
+    if let Ok(metadata) = fs::symlink_metadata(root) {
+        ensure!(
+            !metadata.file_type().is_symlink(),
+            "Managed root is a symlink: {}",
+            root.display()
+        );
+    }
+    let mut paths = Vec::new();
+    for relative in relatives {
+        validate_relative(relative)?;
+        let mut path = root.to_owned();
+        for component in relative.components() {
+            path.push(component.as_os_str());
+            if checked.insert(path.clone()) {
+                match fs::symlink_metadata(&path) {
+                    Ok(metadata) => ensure!(
+                        !metadata.file_type().is_symlink(),
+                        "Managed artifact is a symlink: {}",
+                        path.display()
+                    ),
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                        ) => {}
+                    Err(error) => {
+                        return Err(error).with_context(|| {
+                            format!("Cannot inspect managed artifact {}", path.display())
+                        });
+                    }
+                }
+            }
+        }
+        paths.push(path);
+    }
+    Ok(paths)
 }
 
 /// Never traverse output/cache symlinks, even for a path loaded from a manifest.

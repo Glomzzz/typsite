@@ -51,6 +51,42 @@ fn racing_external_dependency_edits_are_verified_before_caching() {
 }
 
 #[test]
+fn warm_noop_rechecks_external_dependency_content_without_an_input_tree_edit() {
+    let project = Project::new();
+    project.write(project.root.join("external.typ"), "First external value");
+    project.source("a.typ", &html("{{include}}"));
+    let runner = Arc::new(FakeTypst::default());
+    runner.depends_on("a.typ", "../external.typ");
+    let compiler = project.compiler(runner);
+    successful(&compiler);
+    assert!(!successful(&compiler).changed());
+    project.write(project.root.join("external.typ"), "Changed external value");
+    assert_eq!(successful(&compiler).exported.len(), 1);
+    assert!(
+        fs::read_to_string(project.output.join("a.html"))
+            .unwrap()
+            .contains("Changed external value")
+    );
+    clean_equivalent(&project, &compiler);
+}
+
+#[cfg(unix)]
+#[test]
+fn warm_noop_rejects_symlinked_shared_output_ancestors() {
+    let project = Project::new();
+    project.source("nested/a.typ", &html("A"));
+    project.source("nested/b.typ", &html("B"));
+    let compiler = project.compiler(Arc::new(FakeTypst::default()));
+    successful(&compiler);
+    let outside = project.root.join("saved-output");
+    fs::rename(project.output.join("nested"), &outside).unwrap();
+    std::os::unix::fs::symlink(&outside, project.output.join("nested")).unwrap();
+    assert!(compiler.compile().is_err());
+    assert!(outside.join("a.html").exists());
+    assert!(outside.join("b.html").exists());
+}
+
+#[test]
 fn racing_library_edits_invalidate_the_whole_export_checkpoint() {
     let project = Project::new();
     project.source("lib/shared.typ", "First");
@@ -203,6 +239,35 @@ fn ownership_paths_are_portable_and_legacy_windows_separators_are_readable() {
     fs::remove_file(project.input.join("nested/a.typ")).unwrap();
     successful(&compiler);
     assert!(!project.output.join("nested/a.html").exists());
+}
+
+#[test]
+fn parallel_publication_reports_all_successful_siblings_and_repairs_failed_targets() {
+    let project = Project::new();
+    for name in ["a", "b", "c"] {
+        project.source(&format!("{name}.typ"), &html(name));
+    }
+    let compiler = project.compiler(Arc::new(FakeTypst::default()));
+    successful(&compiler);
+    fs::remove_file(project.output.join("b.html")).unwrap();
+    project.write(project.output.join("b.html/blocker"), "unowned");
+    for name in ["a", "b", "c"] {
+        project.source(&format!("{name}.typ"), &html(&format!("updated {name}")));
+    }
+    let failed = compiler.compile().unwrap();
+    assert!(!failed.is_success());
+    assert!(failed.written.contains(&"a.html".into()));
+    assert!(failed.written.contains(&"c.html".into()));
+    assert!(!failed.written.contains(&"b.html".into()));
+    assert_eq!(
+        fs::read_to_string(project.output.join("b.html/blocker")).unwrap(),
+        "unowned"
+    );
+    fs::remove_dir_all(project.output.join("b.html")).unwrap();
+    let repaired = successful(&compiler);
+    assert!(repaired.exported.is_empty());
+    assert_eq!(repaired.written, vec![std::path::PathBuf::from("b.html")]);
+    clean_equivalent(&project, &compiler);
 }
 
 #[test]

@@ -22,6 +22,13 @@ pub fn install_included_packages() -> Result<()> {
 }
 
 pub fn install_packages_into(packages_path: &Path, namespace: &Path) -> Result<()> {
+    prepare_packages_into(packages_path, namespace).map(|_| ())
+}
+
+pub(crate) fn prepare_packages_into(
+    packages_path: &Path,
+    namespace: &Path,
+) -> Result<Vec<PathBuf>> {
     let mut entries = fs::read_dir(packages_path)
         .with_context(|| format!("Cannot read packages directory {}", packages_path.display()))?
         .collect::<std::io::Result<Vec<_>>>()?;
@@ -41,19 +48,27 @@ pub fn install_packages_into(packages_path: &Path, namespace: &Path) -> Result<(
         packages.push((entry.path(), info));
     }
     let _lock = lock_namespace(namespace)?;
+    let mut installed = Vec::new();
     for (path, info) in packages {
+        installed.push(info.local_dir(namespace)?);
         install_local(info, |info| install_package(&path, info, namespace))?;
     }
-    Ok(())
+    Ok(installed)
 }
 
 pub fn install_included_into(namespace: &Path) -> Result<()> {
+    prepare_included_into(namespace).map(|_| ())
+}
+
+pub(crate) fn prepare_included_into(namespace: &Path) -> Result<Vec<PathBuf>> {
     let _lock = lock_namespace(namespace)?;
+    let mut installed = Vec::new();
     for dir in PACKAGES.entries().iter().filter_map(|entry| entry.as_dir()) {
         let info = get_included_package_info(dir)?;
+        installed.push(info.local_dir(namespace)?);
         install_local(info, |info| install_included_package(dir, info, namespace))?;
     }
-    Ok(())
+    Ok(installed)
 }
 
 pub fn default_namespace() -> Result<PathBuf> {

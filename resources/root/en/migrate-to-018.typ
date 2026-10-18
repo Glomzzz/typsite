@@ -130,9 +130,9 @@ Keep these directories separate from the source, configuration, build cache, and
 
 = Parallel builds and --jobs
 
-Independent file hashes, article parsing, and page rendering now use Rayon. Typst exports run concurrently with an automatic, CPU-aware limit of at most four articles. Each Typst subprocess receives a share of the CPU budget. Set `typsite compile --jobs 1` to serialize article exports on low-memory machines, or `--jobs 4` to set an explicit limit (`-j` is an alias; values must be positive).
+Independent file hashes, article parsing, and page rendering now use Rayon. Typst exports run concurrently with an automatic upper bound from the available CPU/Rayon budget (the earlier fixed four-article cap is removed). Each Typst subprocess receives a share of the CPU budget. Set `typsite compile --jobs 1` to serialize article exports on low-memory machines, or `--jobs 4` to set an explicit limit (`-j` is an alias; values must be positive).
 
-`--jobs` does not control all Rayon work; use `RAYON_NUM_THREADS` to tune hashing/parsing/rendering. Packages are prepared before workers start, results are collected in stable source order, and all workers finish before checkpoint/publication. Graph/metadata ordering and publication ownership remain protected. Changing concurrency alone needs no cache clean and produces the same output bytes.
+`--jobs` does not control all Rayon work; use `RAYON_NUM_THREADS` to tune hashing/parsing/rendering. Packages are prepared before workers start, results are collected in stable source order, and all workers finish before checkpoint/publication. Graph/metadata ordering, stale deletions, and publication ownership remain protected. Independent output files publish in parallel with atomic renames and data syncing. Disposable caches now use checksummed binary manifests with shared dependency sets, plus a content-keyed highlighting-resource cache; old formats rebuild automatically. Verified no-ops still hash-check actual inputs/artifacts/outputs but no longer reparse all configuration. Installed local packages are fingerprinted before export, avoiding unnecessary verification passes; newly discovered external inputs still need verification. Changing concurrency alone needs no cache clean and produces the same output bytes.
 
 = RSS feed configuration
 

@@ -37,6 +37,69 @@ fn malformed_resources_are_errors_even_if_no_article_uses_them() {
 }
 
 #[test]
+fn highlighting_cache_is_content_keyed_checksums_corruption_and_revalidates_unused_resources() {
+    let project = Project::new();
+    project.source("a.typ", &html("<rewrite id=\"code-block\" lang=\"rust\" theme=\"forest\" content=\"fn main() {}\"></rewrite>"));
+    let runner = Arc::new(FakeTypst::default());
+    let compiler = project.compiler(runner.clone());
+    successful(&compiler);
+    let good = project.snapshot();
+    let cache = project.cache.join("highlight.bin");
+    let original = fs::read(&cache).unwrap();
+    assert!(original.starts_with(b"TYPSITE-HIGHLIGHT-1\0"));
+    for bytes in [b"corrupt".to_vec(), {
+        let mut altered = original.clone();
+        let last = altered.len() - 1;
+        altered[last] ^= 1;
+        altered
+    }] {
+        fs::write(&cache, bytes).unwrap();
+        // Force rendering without changing any theme/syntax content hash.
+        fs::remove_file(project.output.join("a.html")).unwrap();
+        assert!(successful(&compiler).exported.is_empty());
+        assert_eq!(project.snapshot(), good);
+        assert!(
+            fs::read(&cache)
+                .unwrap()
+                .starts_with(b"TYPSITE-HIGHLIGHT-1\0")
+        );
+    }
+    let theme = project.config.join("themes/forest_light.tmTheme");
+    let text = fs::read_to_string(&theme).unwrap();
+    let broken = text.replace("<dict>", "<broken>");
+    fs::write(&theme, broken).unwrap();
+    assert!(
+        compiler.compile().is_err(),
+        "a warm binary cache must not mask changed malformed resources"
+    );
+    assert_eq!(project.snapshot(), good);
+    fs::write(&theme, text).unwrap();
+    successful(&compiler);
+    common::clean_equivalent(&project, &compiler);
+    assert_eq!(
+        runner.calls().len(),
+        2,
+        "cache recovery/config edits should not export Typst"
+    );
+}
+
+#[test]
+fn early_noop_checks_still_repair_modified_outputs_and_raw_artifacts() {
+    let project = Project::new();
+    project.source("a.typ", &html("Original body"));
+    let compiler = project.compiler(Arc::new(FakeTypst::default()));
+    successful(&compiler);
+    let good = project.snapshot();
+    fs::write(project.output.join("a.html"), "tampered").unwrap();
+    assert!(successful(&compiler).exported.is_empty());
+    assert_eq!(project.snapshot(), good);
+    fs::write(project.cache.join("exports/a.html"), "corrupt artifact").unwrap();
+    assert_eq!(successful(&compiler).exported.len(), 1);
+    assert_eq!(project.snapshot(), good);
+    assert!(!successful(&compiler).changed());
+}
+
+#[test]
 fn malformed_shell_variables_do_not_disappear_into_log_messages() {
     let project = Project::new();
     project.configure(

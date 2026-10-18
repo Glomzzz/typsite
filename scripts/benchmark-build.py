@@ -29,8 +29,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--label", default="current")
+    parser.add_argument("--resources", type=Path, help="Optional resource tree shared by both versions")
+    parser.add_argument("--independent-only", action="store_true", help="Use generated articles only, retaining the chosen library/config")
     parser.add_argument("--jobs", type=int)
     parser.add_argument("--pages", type=int, default=64)
+    parser.add_argument("--note", default="", help="Record timing conditions, e.g. paused preview")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -43,7 +46,11 @@ def main():
         root = Path(temporary)
         for iteration in range(args.runs):
             project = root / f"project-{iteration}"
-            shutil.copytree(repository / "resources", project)
+            shutil.copytree(args.resources or repository / "resources", project)
+            if args.independent_only:
+                for path in (project / "root").rglob("*.typ"):
+                    if not path.is_relative_to(project / "root/lib"):
+                        path.unlink()
             for index in range(args.pages):
                 source = (
                     '#import "/lib/lib.typ": *\n#show: schema.with("page")\n'
@@ -56,8 +63,13 @@ def main():
                 path = project / f"root/benchmark-{index:04}.typ"
                 path.write_text(source, encoding="utf-8")
             env = os.environ.copy()
+            # 0.1.7 installs into HOME/.cache and ignores explicit package paths.
+            # Child-only HOME also isolates that unchanged legacy executable.
+            home = project / "isolated-home"
+            home.mkdir()
             env.update(
-                TYPST_PACKAGE_PATH=str(project / "isolated-packages"),
+                HOME=str(home),
+                TYPST_PACKAGE_PATH=str(home / ".cache/typst/packages"),
                 TYPST_PACKAGE_CACHE_PATH=str(project / "isolated-downloads"),
                 TYPST_IGNORE_SYSTEM_FONTS="true",
                 SOURCE_DATE_EPOCH="1772496000",
@@ -85,7 +97,14 @@ def main():
                 counts = re.search(
                     r"(\d+) exported, (\d+) rendered, (\d+) written, (\d+) removed", output.stdout
                 )
-                assert counts, output.stdout
+                if not counts:
+                    assert "Compiling done." in output.stdout and not output.stderr.strip(), (output.stdout, output.stderr)
+                articles = sum(1 for path in (project / "root").rglob("*.typ") if not path.is_relative_to(project / "root/lib"))
+                assert sum(1 for _ in (project / "publish").rglob("*.html")) == articles, (output.stdout, output.stderr)
+                if scenario == "template":
+                    assert all(b'data-benchmark="template-edit"' in path.read_bytes() for path in (project / "publish").rglob("*.html"))
+                if scenario == "one-article":
+                    assert b"An incremental article edit." in (project / "publish/benchmark-0000.html").read_bytes()
                 digest = hashlib.sha256()
                 for path in sorted((project / "publish").rglob("*")):
                     if path.is_file() and not path.name.startswith(".typsite"):
@@ -94,16 +113,19 @@ def main():
                         digest.update(path.read_bytes())
                 result = dict(
                     run=iteration, scenario=scenario, seconds=elapsed,
-                    counts=list(map(int, counts.groups())), output_hash=digest.hexdigest(),
+                    counts=list(map(int, counts.groups())) if counts else None, output_hash=digest.hexdigest(),
                 )
                 results.append(result)
-                print(f"{args.label} run={iteration + 1} {scenario}: {elapsed:.3f}s {counts.group(0)}", flush=True)
+                print(f"{args.label} run={iteration + 1} {scenario}: {elapsed:.3f}s {counts.group(0) if counts else 'legacy output verified'}", flush=True)
     summary = {
         scenario: statistics.median(result["seconds"] for result in results if result["scenario"] == scenario)
         for scenario in ["cold", "noop", "template", "one-article"]
     }
     report = dict(
         label=args.label, binary=str(binary), jobs=args.jobs, generated_pages=args.pages,
+        resources=str(args.resources) if args.resources else None, independent_only=args.independent_only,
+        note=args.note,
+        binary_hash=hashlib.sha256(binary.read_bytes()).hexdigest(),
         runs=args.runs, typst=subprocess.check_output(["typst", "--version"], text=True).strip(),
         cpu_count=os.cpu_count(), rayon_num_threads=os.environ.get("RAYON_NUM_THREADS"),
         median_seconds=summary, results=results,
