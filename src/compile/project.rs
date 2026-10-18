@@ -1,6 +1,7 @@
 //! Validated project boundaries and deterministic filesystem discovery.
 
 use anyhow::{Context, Result, bail, ensure};
+use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -130,7 +131,7 @@ pub fn digest(path: &Path) -> Result<String> {
 /// File symlinks are allowed only inside their source root. Directory symlinks
 /// are rejected rather than silently recursed into (or treated as deletions).
 pub fn scan(root: &Path) -> Result<Snapshot> {
-    fn visit(root: &Path, at: &Path, files: &mut Snapshot) -> Result<()> {
+    fn visit(root: &Path, at: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
         let mut entries = fs::read_dir(at)
             .with_context(|| format!("Cannot scan {}", at.display()))?
             .collect::<std::io::Result<Vec<_>>>()?;
@@ -141,7 +142,7 @@ pub fn scan(root: &Path) -> Result<Snapshot> {
             if kind.is_dir() {
                 visit(root, &path, files)?;
             } else if kind.is_file() {
-                files.insert(path.strip_prefix(root)?.to_owned(), digest(&path)?);
+                files.push(path.strip_prefix(root)?.to_owned());
             } else if kind.is_symlink() {
                 let target = fs::canonicalize(&path)
                     .with_context(|| format!("Broken source symlink {}", path.display()))?;
@@ -151,16 +152,22 @@ pub fn scan(root: &Path) -> Result<Snapshot> {
                     root.display(),
                     path.display()
                 );
-                files.insert(path.strip_prefix(root)?.to_owned(), digest(&path)?);
+                files.push(path.strip_prefix(root)?.to_owned());
             } else {
                 bail!("Unsupported source file type: {}", path.display());
             }
         }
         Ok(())
     }
-    let mut files = Snapshot::new();
+    // Discover and validate deterministically before hashing independent files.
+    // Ordered result folding makes the first error independent of thread timing.
+    let mut files = Vec::new();
     visit(root, root, &mut files)?;
-    Ok(files)
+    let hashed: Vec<_> = files
+        .par_iter()
+        .map(|relative| digest(&root.join(relative)).map(|hash| (relative.clone(), hash)))
+        .collect();
+    hashed.into_iter().collect()
 }
 
 /// Cross-platform output/cache names: no roots, traversal, drive prefixes, or

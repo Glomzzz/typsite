@@ -1,19 +1,21 @@
 //! Build orchestration. Source discovery, export caching, graph resolution,
 //! rendering and publication have separate responsibilities and failure modes.
 
-use super::cache::{Export, Manifest, Publication, fingerprint};
+use super::cache::{Manifest, Publication, fingerprint};
 use super::graph::ResolvedSite;
 use super::options::CompileOptions;
 use super::output::{LOCK, OutputPlan};
 use super::project::{ProjectPaths, Snapshot, digest, managed_path, scan};
 use super::registry::KeyRegistry;
 use super::report::{BuildReport, Stage};
-use super::typst::{CommandTypst, ExportRequest, TypstRunner};
+use super::typst::{CommandTypst, TypstRunner};
 use crate::config::TypsiteConfig;
 use crate::pass::pass_pure;
 use anyhow::{Context, Result, ensure};
-use std::collections::{BTreeMap, HashMap};
+use rayon::prelude::*;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File, OpenOptions};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -22,6 +24,7 @@ pub struct Compiler {
     options: CompileOptions,
     runner: Arc<dyn TypstRunner>,
     engine_identity: String,
+    export_jobs: NonZeroUsize,
 }
 
 impl Compiler {
@@ -51,10 +54,18 @@ impl Compiler {
             paths,
             options,
             runner,
+            export_jobs: NonZeroUsize::new(cpu_budget().min(4)).unwrap(),
             engine_identity: digest(
                 &std::env::current_exe().context("Cannot locate build engine")?,
             )?,
         })
+    }
+
+    /// Bound simultaneous article exports. Scheduling is not an input to the
+    /// generated site, so changing this limit does not invalidate warm caches.
+    pub fn with_jobs(mut self, jobs: NonZeroUsize) -> Self {
+        self.export_jobs = jobs;
+        self
     }
 
     pub fn output_path(&self) -> &Path {
@@ -123,12 +134,7 @@ impl Compiler {
         let previous_manifest = fingerprint(&cache)?;
         // Hash known external dependencies before exporting, not just after.
         // New dependencies discovered by Typst require a verification export.
-        let mut expected: Snapshot = cache
-            .exports
-            .values()
-            .flat_map(|entry| entry.dependencies.keys())
-            .filter_map(|path| digest(path).ok().map(|hash| (path.clone(), hash)))
-            .collect();
+        let mut expected = Snapshot::new();
         for (root, snapshot) in [(&paths.input, &input), (&paths.config, &configuration)] {
             for (relative, hash) in snapshot {
                 expected.insert(fs::canonicalize(root.join(relative))?, hash.clone());
@@ -139,85 +145,94 @@ impl Compiler {
                 expected.insert(fs::canonicalize(root.join(relative))?, hash.clone());
             }
         }
-        let mut prepared = false;
-        if cache.export_key != export_key {
-            self.runner.prepare(paths.packages.as_deref())?;
-            prepared = true;
+        // Shared package/import files can be dependencies of every article.
+        // Fingerprint each external path once, rather than once per importer.
+        let external: BTreeSet<_> = cache
+            .exports
+            .values()
+            .flat_map(|entry| entry.dependencies.keys())
+            .filter(|path| !expected.contains_key(*path))
+            .cloned()
+            .collect();
+        let external: Vec<_> = external
+            .par_iter()
+            .filter_map(|path| digest(path).ok().map(|hash| (path.clone(), hash)))
+            .collect();
+        expected.extend(external);
+        let identity_changed = cache.export_key != export_key;
+        if identity_changed {
             cache.exports.clear();
             cache.export_key = export_key;
         }
         cache
             .exports
             .retain(|source, _| sources.contains_key(source));
-        for (relative, source_hash) in &sources {
-            let artifact = managed_path(
-                &paths.cache,
-                &Path::new("exports").join(relative).with_extension("html"),
-            )?;
-            if cache
-                .exports
-                .get(relative)
-                .is_some_and(|entry| entry.is_current(source_hash, &artifact))
-            {
-                continue;
-            }
-            if !prepared {
-                // A local package namespace can disappear independently of the
-                // build cache. Repair it before retrying an invalid export.
-                self.runner.prepare(paths.packages.as_deref())?;
-                prepared = true;
-            }
-            // Never use last build's HTML after a failed export of this source.
-            cache.exports.remove(relative);
+        // Preflight all targets before any workers write. Preserve source order
+        // when folding results, irrespective of worker completion order.
+        let candidates = {
+            let mut names = OutputPlan::default();
+            sources
+                .iter()
+                .map(|(relative, hash)| {
+                    let target = relative.with_extension("html");
+                    // Two workers must never target the same artifact, including
+                    // portable case-insensitive or file/directory collisions.
+                    names.insert(target.clone(), Vec::new(), relative.display().to_string())?;
+                    let artifact = managed_path(&paths.cache, &Path::new("exports").join(target))?;
+                    Ok((relative, hash, artifact))
+                })
+                .collect::<Result<Vec<_>>>()?
+        };
+        let validity: Vec<_> = candidates
+            .par_iter()
+            .map(|(relative, hash, artifact)| {
+                cache
+                    .exports
+                    .get(*relative)
+                    .is_some_and(|entry| entry.matches_snapshot(hash, artifact, &expected))
+            })
+            .collect();
+        let dirty: Vec<_> = candidates
+            .into_iter()
+            .zip(validity)
+            .filter_map(|(candidate, current)| (!current).then_some(candidate))
+            .collect();
+        if identity_changed || !dirty.is_empty() {
+            // Includes repairing a deleted package namespace even if the build's
+            // export identity is unchanged. Never race installers with exports.
+            self.runner.prepare(paths.packages.as_deref())?;
+        }
+        // Never retain validity for a failed export. Successful siblings still
+        // reach the independent export checkpoint after every worker has joined.
+        for (relative, _, _) in &dirty {
+            cache.exports.remove(*relative);
+        }
+        let concurrent = self.export_jobs.get().min(dirty.len()).max(1);
+        let typst_jobs = NonZeroUsize::new((cpu_budget() / concurrent).max(1)).unwrap();
+        let run = |(relative, hash, artifact): &(&PathBuf, &String, PathBuf)| {
             let source = paths.input.join(relative);
-            let result = (|| {
-                let mut before = expected.clone();
-                for _ in 0..3 {
-                    let pending = crate::util::atomic::PendingFile::new(&artifact)?;
-                    let mut dependencies = self.runner.export(&ExportRequest {
-                        root: &paths.input,
-                        input: &source,
-                        output: pending.path(),
-                        font_path: &paths.config.join("assets/fonts"),
-                    })?;
-                    dependencies.push(source.clone());
-                    let dependencies = dependencies
-                        .into_iter()
-                        .map(|path| {
-                            let path = if path.is_absolute() {
-                                path
-                            } else {
-                                paths.input.join(path)
-                            };
-                            let path = fs::canonicalize(&path).with_context(|| {
-                                format!("Cannot resolve Typst dependency {}", path.display())
-                            })?;
-                            Ok((path.clone(), digest(&path)?))
-                        })
-                        .collect::<Result<Snapshot>>()?;
-                    ensure!(
-                        dependencies.get(&fs::canonicalize(&source)?) == Some(source_hash),
-                        "Source changed during export: {}",
-                        source.display()
-                    );
-                    if dependencies
-                        .iter()
-                        .all(|(path, hash)| before.get(path) == Some(hash))
-                    {
-                        let html_hash = digest(pending.path())?;
-                        pending.commit(&artifact)?;
-                        return Ok::<_, anyhow::Error>(Export {
-                            source_hash: source_hash.clone(),
-                            html_hash,
-                            dependencies,
-                        });
-                    }
-                    // The first export discovered files we could not fingerprint
-                    // beforehand, or files changed while Typst was reading them.
-                    before = dependencies;
-                }
-                anyhow::bail!("Typst dependencies did not stabilize during export")
-            })();
+            super::export::export(
+                self.runner.as_ref(),
+                paths,
+                &source,
+                hash,
+                artifact,
+                &expected,
+                typst_jobs,
+            )
+        };
+        let results: Vec<_> = if concurrent == 1 {
+            dirty.iter().map(run).collect()
+        } else {
+            // A dedicated bounded pool prevents spawning one Typst process per
+            // Rayon CPU worker. Typst's own --jobs divides the CPU budget above.
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(concurrent)
+                .build()
+                .context("Cannot create Typst export worker pool")?;
+            pool.install(|| dirty.par_iter().map(run).collect())
+        };
+        for ((relative, _, _), result) in dirty.into_iter().zip(results) {
             match result {
                 Ok(entry) => {
                     cache.exports.insert(relative.clone(), entry);
@@ -262,15 +277,40 @@ impl Compiler {
             );
             registry.register_article_path(&config, &source)?;
         }
+        let parse_jobs = sources
+            .keys()
+            .map(|relative| {
+                let source = paths.input.join(relative);
+                let slug = config.path_to_slug(&source)?;
+                Ok((
+                    relative,
+                    registry.slug(&slug).context("Unregistered article slug")?,
+                    registry.path(&slug).context("Unregistered article path")?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        // The registry/config are immutable after registration. Each parse owns
+        // its buffers and returns a result; diagnostics are folded in slug order.
+        let parsed: Vec<_> = parse_jobs
+            .par_iter()
+            .map(|(relative, slug, source)| {
+                let html = fs::read_to_string(managed_path(
+                    &paths.cache,
+                    &Path::new("exports").join(relative).with_extension("html"),
+                )?)?;
+                Ok(pass_pure(
+                    &config,
+                    &registry,
+                    source.clone(),
+                    slug.clone(),
+                    None,
+                    &html,
+                ))
+            })
+            .collect::<Vec<Result<_>>>();
         let mut articles = HashMap::new();
-        for relative in sources.keys() {
-            let source = paths.input.join(relative);
-            let (slug, source) = registry.register_article_path(&config, &source)?;
-            let html = fs::read_to_string(managed_path(
-                &paths.cache,
-                &Path::new("exports").join(relative).with_extension("html"),
-            )?)?;
-            match pass_pure(&config, &registry, source, slug.clone(), None, &html) {
+        for ((relative, slug, _), result) in parse_jobs.into_iter().zip(parsed) {
+            match result? {
                 Ok(article) => {
                     articles.insert(slug, article);
                 }
@@ -341,7 +381,7 @@ impl Compiler {
                 .transpose()?
                 .unwrap_or_default()
                 != packages
-            || sources.iter().any(|(relative, hash)| {
+            || sources.par_iter().any(|(relative, hash)| {
                 !cache.exports[relative]
                     .is_current(hash, &exports_root.join(relative).with_extension("html"))
             })
@@ -390,6 +430,13 @@ pub(super) fn lock(root: &Path) -> Result<File> {
         )
     })?;
     Ok(file)
+}
+
+fn cpu_budget() -> usize {
+    std::thread::available_parallelism()
+        .map_or(1, NonZeroUsize::get)
+        .min(rayon::current_num_threads())
+        .max(1)
 }
 
 fn is_typst(path: &Path) -> bool {

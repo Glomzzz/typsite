@@ -3,6 +3,7 @@
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use std::ffi::OsString;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -11,10 +12,14 @@ pub struct ExportRequest<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
     pub font_path: &'a Path,
+    /// Worker budget inside this Typst subprocess (not concurrent articles).
+    pub jobs: NonZeroUsize,
 }
 
 /// Implementations must write HTML to `output` and return the files actually read
-/// by Typst. This small seam lets build tests run without a shell or package installs.
+/// by Typst. `export` may be called concurrently for distinct output artifacts;
+/// `prepare` always completes before any exports in that build. This small seam
+/// lets build tests run without a shell or package installs.
 pub trait TypstRunner: Send + Sync {
     fn identity(&self) -> Result<String>;
     /// Prepare package resources in the same environment used by `export`.
@@ -105,7 +110,9 @@ impl CommandTypst {
             .arg(std::path::absolute(request.font_path)?)
             .arg("--deps")
             .arg(std::path::absolute(dependencies)?)
-            .args(["--deps-format", "json"]);
+            .args(["--deps-format", "json"])
+            .arg("--jobs")
+            .arg(request.jobs.to_string());
         if let Some(packages) = &self.package_path {
             command
                 .arg("--package-path")
@@ -249,6 +256,7 @@ mod tests {
             input: &input,
             output: &output,
             font_path: &fonts,
+            jobs: NonZeroUsize::new(2).unwrap(),
         };
         let runner = CommandTypst::new("typst");
         let command = runner.command(&request, &dependencies).unwrap();
@@ -260,6 +268,8 @@ mod tests {
         assert!(args.contains(&output.as_os_str()));
         assert!(args.contains(&fonts.as_os_str()));
         assert!(args.iter().any(|arg| *arg == "--deps"));
+        let jobs_arg = args.iter().position(|arg| *arg == "--jobs").unwrap();
+        assert_eq!(args[jobs_arg + 1], "2");
         assert!(!args.iter().any(|arg| *arg == "powershell"));
     }
 }

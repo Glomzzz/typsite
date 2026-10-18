@@ -105,6 +105,58 @@ fn cli_accepts_absolute_custom_roots_and_a_typst_executable_with_spaces() {
 }
 
 #[test]
+fn cli_jobs_accepts_positive_limits_rejects_zero_and_does_not_invalidate_cache() {
+    let project = Project::new();
+    project.source("a.typ", &html("One article"));
+    let executable = stub(&project);
+    let compile = |jobs: &str| {
+        command(&project)
+            .args([
+                "c", "--input", "content", "--cache", "cache", "--jobs", jobs,
+            ])
+            .arg("--typst")
+            .arg(&executable)
+            .env("TYPSITE_TEST_JOB_LOG", project.root.join("jobs.log"))
+            .output()
+            .unwrap()
+    };
+    let bad = compile("0");
+    assert!(!bad.status.success());
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("--jobs"));
+    assert!(!project.root.join("export.log").exists());
+    let cold = compile("1");
+    assert!(
+        cold.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cold.stderr)
+    );
+    assert!(
+        fs::read_to_string(project.root.join("jobs.log"))
+            .unwrap()
+            .parse::<usize>()
+            .unwrap()
+            >= 1
+    );
+    let warm = compile("2");
+    assert!(
+        warm.status.success(),
+        "{}",
+        String::from_utf8_lossy(&warm.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&warm.stdout)
+            .contains("0 exported, 0 rendered, 0 written, 0 removed")
+    );
+    assert_eq!(
+        fs::read_to_string(project.root.join("export.log"))
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn cli_publication_errors_exit_nonzero_and_an_ordinary_rerun_repairs_them() {
     let project = Project::new();
     project.source("a.typ", &html("CLI publication"));

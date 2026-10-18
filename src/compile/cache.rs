@@ -60,6 +60,21 @@ impl Manifest {
 }
 
 impl Export {
+    /// Reuse one build-local dependency snapshot across articles sharing imports.
+    pub fn matches_snapshot(
+        &self,
+        source_hash: &str,
+        html: &Path,
+        dependencies: &Snapshot,
+    ) -> bool {
+        self.source_hash == source_hash
+            && digest(html).is_ok_and(|hash| hash == self.html_hash)
+            && self
+                .dependencies
+                .iter()
+                .all(|(path, hash)| dependencies.get(path) == Some(hash))
+    }
+
     pub fn is_current(&self, source_hash: &str, html: &Path) -> bool {
         self.source_hash == source_hash
             && digest(html).is_ok_and(|hash| hash == self.html_hash)

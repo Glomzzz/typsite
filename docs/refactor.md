@@ -158,6 +158,26 @@ cleans its output when a default parent is configured. Malformed SVG scaling
 produces a diagnostic instead of a slicing panic. The latest-Typst smoke test
 includes SVG links and footnote references as well as shipped page templates.
 
+## Parallel execution
+
+Rayon was already used for body/reference preparation and final page rendering.
+Independent file hashing, cache/artifact checks, and immutable-registry article
+parsing now use parallel iterators too. Dirty Typst exports run in a dedicated
+bounded Rayon pool (CPU-aware default, at most four concurrent articles), with
+`--jobs` / `-j` and `Compiler::with_jobs` as positive-limit overrides. Each Typst
+subprocess receives a share of the CPU budget. Package preparation precedes
+workers; ordered result folding and independent checkpoints follow their join.
+Metadata/graph dependencies and ownership/publication mutations remain ordered.
+Export targets are preflighted for portable collisions before workers start;
+output-plan collision checks use ordered lookups rather than an all-pairs scan.
+
+This is bounded data parallelism, not a new dependency scheduler. No cache clean
+is needed for job-count changes. Shared external dependency fingerprints are
+reused within the pre-export snapshot; before/after export and pre-publication
+generation checks remain in force. Concurrency tests cover overlap/limits,
+stable reports, partial-export failures/retries, racing imports, and sequential
+versus parallel output equality. See [benchmarks and resource limits](performance.md).
+
 ## RSS and sitemap
 
 `[site].base_url` enables deterministic RSS 2.0 and sitemap generation. Blank
@@ -209,7 +229,7 @@ cargo test --workspace --doc --locked --offline
 cargo build --release --locked --offline
 ```
 
-The default suite passes **105 unit/integration tests**; the three real-Typst
+The default suite passes **112 unit/integration tests**; the three real-Typst
 tests are ignored by default and pass when explicitly enabled. The fixtures
 compare full incremental/clean output snapshots, include independent compiler
 instances, and never change process cwd, HOME, or normal installed packages.

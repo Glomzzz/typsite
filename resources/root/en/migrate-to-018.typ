@@ -128,6 +128,12 @@ typsite compile
 
 Keep these directories separate from the source, configuration, build cache, and output roots. Without an override, the default shared package installation behavior is retained. Use project fonts and a fixed `SOURCE_DATE_EPOCH` when you need reproducible exports; changes to system fonts or undeclared external inputs may require discarding the build cache.
 
+= Parallel builds and --jobs
+
+Independent file hashes, article parsing, and page rendering now use Rayon. Typst exports run concurrently with an automatic, CPU-aware limit of at most four articles. Each Typst subprocess receives a share of the CPU budget. Set `typsite compile --jobs 1` to serialize article exports on low-memory machines, or `--jobs 4` to set an explicit limit (`-j` is an alias; values must be positive).
+
+`--jobs` does not control all Rayon work; use `RAYON_NUM_THREADS` to tune hashing/parsing/rendering. Packages are prepared before workers start, results are collected in stable source order, and all workers finish before checkpoint/publication. Graph/metadata ordering and publication ownership remain protected. Changing concurrency alone needs no cache clean and produces the same output bytes.
+
 = RSS feed configuration
 
 RSS 2.0 supports summaries or full article content. Setup has *two separate parts*: enable feed generation in the site configuration, then choose articles through a marked collection. The article metadata `rss` *defaults to false*; setting the site URL alone does not select any articles.
