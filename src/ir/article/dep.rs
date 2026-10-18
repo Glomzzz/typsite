@@ -41,10 +41,7 @@ impl Dependency {
             .collect()
     }
     pub fn articles(&self) -> HashSet<Key> {
-        self.dependency
-            .iter()
-            .filter_map(|(source, _)| source.article())
-            .collect()
+        self.dependency.keys().filter_map(Source::article).collect()
     }
 
     pub fn metadata_articles(&self) -> HashSet<Key> {

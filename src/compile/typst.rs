@@ -270,9 +270,14 @@ mod tests {
         let args: Vec<_> = command.get_args().collect();
         let root_arg = args.iter().position(|arg| *arg == "--root").unwrap();
         assert_eq!(args[root_arg + 1], root.as_os_str());
-        assert!(args.contains(&input.as_os_str()));
-        assert!(args.contains(&output.as_os_str()));
-        assert!(args.contains(&fonts.as_os_str()));
+        // Windows absolute() normalizes separators; compare native path
+        // components rather than the fixture's mixed-separator OsStr spelling.
+        // Keep the mixed separator fixture to cover this exact CI regression.
+        assert_eq!(Path::new(args[1]), input.as_path());
+        assert_eq!(Path::new(args[2]), output.as_path());
+        for path in [&fonts, &dependencies] {
+            assert!(args.iter().any(|argument| Path::new(argument) == path));
+        }
         assert!(args.iter().any(|arg| *arg == "--deps"));
         let jobs_arg = args.iter().position(|arg| *arg == "--jobs").unwrap();
         assert_eq!(args[jobs_arg + 1], "2");
