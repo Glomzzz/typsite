@@ -219,7 +219,9 @@ The upgrade checklist is:
    being silently skipped or leaving a falsely successful build.
 
 See the migration guide for copyable configuration, safe cleanup, package
-isolation, RSS troubleshooting, and failure recovery.
+isolation, RSS troubleshooting, and failure recovery. See [stable release gates](docs/releasing.md)
+for exact-revision CI, locked builds, downloaded-binary smoke tests, and manual
+draft publication; local Linux tests alone do not establish cross-platform readiness.
 
 ## 5. Architecture & Flow
 

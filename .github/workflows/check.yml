@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, dev]
   pull_request:
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,6 +20,16 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Lint workflow definitions
+        run: |
+          curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.9/actionlint_1.7.9_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "233b280d05e100837f4af1433c7b40a5dcb306e3aa68fb4f17f8a7f45a7df7b4  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color -shellcheck= -pyflakes=
+      - run: python -m unittest discover -s scripts/tests -v
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
@@ -29,7 +41,12 @@ jobs:
         with:
           toolchain: '1.89'
       - uses: Swatinem/rust-cache@v2
+      - uses: typst-community/setup-typst@v4
+        with:
+          typst-version: '0.15.1'
       - run: cargo check --workspace --all-targets --locked
+      - run: cargo test --workspace --all-targets --locked
+      - run: cargo test --test typst_latest --locked -- --ignored
 
   test:
     strategy:
@@ -56,5 +73,42 @@ jobs:
           typst-version: ${{ matrix.typst }}
       - run: typst --version
       - run: cargo test --workspace --all-targets --locked
+      - run: cargo test --workspace --doc --locked
       - name: Real Typst compatibility (helpers, SVG frames, and complete initialized demo)
         run: cargo test --test typst_latest --locked -- --ignored
+
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: typst-community/setup-typst@v4
+        with:
+          typst-version: latest
+      - name: Evaluate supported flake outputs
+        run: nix flake check --all-systems --no-build
+      - name: Build documented Nix package
+        run: nix build --no-link --print-out-paths .#default > nix-output.txt
+      - name: Smoke-test Nix binary
+        run: python scripts/smoke_binary.py --binary "$(tail -n 1 nix-output.txt)/bin/typsite"
+
+  required:
+    if: ${{ always() }}
+    needs: [quality, msrv, test, nix]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every check on this exact revision
+        env:
+          QUALITY: ${{ needs.quality.result }}
+          MSRV: ${{ needs.msrv.result }}
+          TESTS: ${{ needs.test.result }}
+          NIX: ${{ needs.nix.result }}
+        run: |
+          test "$QUALITY" = success
+          test "$MSRV" = success
+          test "$TESTS" = success
+          test "$NIX" = success
+          echo "All required checks passed for $GITHUB_SHA"

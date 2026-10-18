@@ -4,3 +4,4 @@
 /.direnv
 DEV_GUIDE.md
 .sisyphus/
+__pycache__/
