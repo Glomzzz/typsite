@@ -4,145 +4,7 @@
 #show: schema.with("page")
 
 
-#let _process = {
-  import "@preview/fletcher:0.5.8" as fletcher: diagram, node, edge
-  import fletcher.shapes: house, hexagon, circle, rect
-
-  let blob(pos, label, tint: white, ..args) = node(
-    pos,
-    align(center, label),
-    width: 28mm,
-    fill: tint.lighten(60%),
-    stroke: 1pt + tint.darken(20%),
-    corner-radius: 5pt,
-    ..args,
-  )
-
-
-  let diagram = diagram(
-    spacing: 21pt,
-    cell-size: (14mm, 10mm),
-    edge-stroke: 1pt,
-    edge-corner-radius: 7pt,
-    mark-scale: 70%,
-
-
-    blob((0.35, 0.8), [*Input*], shape: house.with(angle: 30deg, dir: bottom), width: 15mm, tint: red),
-
-
-    for x in (-.2, +.2) {
-      edge((0.35, 1.4), (0.35 + x, 1.4), (0.35 + x, 2), "-|>")
-    },
-
-    edge("-|>", [_changed files_], label-side: right, label-pos: 0),
-
-    blob((0.35, 2), [Compile Typst \ to HTML], width: auto, tint: orange),
-
-
-    for x in (-.2, +.2) {
-      edge((0.35, 2), (0.35 + x, 2), (0.35 + x, 2.9), "-|>")
-    },
-
-    edge("-|>"),
-
-    blob((0.35, 3), [Pass HTML], tint: purple),
-
-    for x in (-.2, +.2) {
-      edge((0.35 + x, 3), (0.35 + x, 4), (0.35, 4), "-")
-    },
-    edge((0.35, 3), (0.35, 4.65), "r", "-|>"),
-
-    blob((1, 4.65), [Dependency Analysis], tint: yellow, shape: hexagon),
-
-    edge((0.35, 3), (1, 3), "--|>"),
-
-    blob((1, 3), [Cache], width: auto, shape: circle, tint: maroon),
-
-    edge(
-      (1, 3),
-      "d",
-      (1, 3.8),
-      "-",
-      [_articles remain unchanged \ but require an update_],
-      label-side: center,
-      label-pos: 100%,
-      label-size: 0.9em,
-    ),
-
-    edge((1, 4), (1, 4.65), "-|>"),
-
-    edge((1, 4.65), (1.65, 4.65), (1.65, 4)),
-
-    for x in (-.2, -.07, +.07, +.2) {
-      edge((1.65, 4), (1.65 + x, 4), (1.65 + x, 3), "-|>")
-    },
-
-
-    blob((1.65, 3), [Pass Articles], tint: blue),
-    for x in (-.2, -.07, +.07, +.2) {
-      edge((1.65, 3), (1.65 + x, 3), (1.65 + x, 2), "-|>")
-    },
-
-    blob((1.65, 2), [Compose Pages \ with Schemas], tint: green, width: 30mm),
-
-
-    for x in (-.2, -.07, +.07, +.2) {
-      edge((1.65 + x, 2), (1.65 + x, 1.5), (1.65, 1.5), "-")
-    },
-
-    edge((1.65, 1.5), (1.65, 0.8), "-|>"),
-
-
-    edge((0.35, 0.9), (0.35, 0.3), (1.65, 0.3), (1.65, 0.8), "..|>", [_Sync_]),
-
-    blob((1.65, 0.8), [*Output*], shape: house.with(dir: bottom, angle: 30deg), width: 15mm, tint: red),
-
-
-    edge((1, 3), (1, 0.8), "--|>"),
-
-    blob((1, 0.8), [*Cache*], shape: house.with(dir: bottom, angle: 30deg), width: 15mm, tint: red),
-
-    edge((0.2, 1.4), (-0.3, 1.4), ".."),
-    blob((-0.3, 1.5), [.typ], width: auto, shape: rect, tint: gray),
-    edge("..|>"),
-    edge((0.15, 2.5), (-0.3, 2.5), ".."),
-    blob((-0.3, 2.5), [.html], width: auto, shape: rect, tint: gray),
-
-    edge((0.15, 3.5), (-0.3, 3.5), ".."),
-
-    edge((-0.3, 2.5), (-0.3, 5.9), (1, 5.9), "..|>", [_Articles_], label-side: left),
-
-    for y in (+.5, -.5) {
-      edge((0.16, 5.9), (0.16, 5.9 + y), (1, 5.9 + y), "..|>")
-    },
-
-    edge((1, 4.65), (1, 5.4), ".."),
-
-    blob((1, 5.4), [(Parents, Children, Cited, Citing)], width: 65mm, shape: rect, tint: gray),
-    edge(".."),
-
-    blob((1, 5.9), [{ Metadata, Sidebar, Embed ,Rewrite }], width: 65mm, shape: rect, tint: gray),
-    edge(".."),
-
-    blob((1, 6.4), [[Head,Body]], width: 65mm, shape: rect, tint: gray),
-
-
-    edge((1, 5.9), (2.35, 5.9), (2.35, 2.55), "..|>"),
-    for y in (+.5, -.5) {
-      edge((1.84, 5.9), (1.84, 5.9 + y), (1, 5.9 + y), "..")
-    },
-
-    edge((1.85, 3.5), (2.35, 3.5), ".."),
-
-    edge((1.85, 2.55), (2.35, 2.55), ".."),
-
-    blob((2.35, 2.55), [Pendings], width: auto, shape: rect, tint: gray),
-    edge("..|>"),
-    blob((2.35, 1.5), [.html], width: auto, shape: rect, tint: gray),
-    edge((1.55, 1.5), (2.35, 1.5), ".."),
-  )
-  diagram
-}
+#import "/lib/process.typ": process-diagram
 
 #let _typst-support = table(
   columns: (auto, auto, auto, auto),
@@ -159,22 +21,36 @@
   [`label`], [✅], [`ref`], [✅],
   [`footnote`], [✅], [`math.equation`], [✅],
   [`highlight`], [✅], [`text with color`], [✅],
-  [`align`#super[1]], [inline#super[2]], [`strike`], [inline],
+  [`align`#footnote(<align>)], [inline#footnote(<svg-inline>)], [`strike`], [inline],
   [`table`], [inline], [`terms`], [inline],
   [`figure`], [inline],
 )
 
 #title[Typsite 文档]
+#rss(true)
 #date[2025-04-12 02:08]
 #author[Glomzzz]
 
 #metacontent("process")[
-  #set text(font: "libertinus serif")
-  #html.align(center, inline(scale: 200%, block(fill: color.white, _process)))
+  #html.div(class: "process-diagram", role: "img", aria-label: "Typsite build pipeline: export cache, no-op branch, graph resolution, page and feed composition, atomic publication, and failure recovery")[
+    #inline(process-diagram())
+  ]
 ]
 
 #metacontent("icon")[
-  #html.align(center, inline(scale: 37.5%, image("icon.svg")))
+  #context {
+    if target() == "html" {
+      html.align(center, html.img(
+        src: "/icon.svg",
+        alt: "Typsite",
+        width: "192",
+        height: "192",
+        style: "width: 192px; max-width: 100%; height: auto;",
+      )[])
+    } else {
+      align(center, image("icon.svg", width: 144pt))
+    }
+  }
 ]
 
 #set text(font: "Inria Sans") // From .typsite/assets/font
@@ -189,6 +65,7 @@
 
 
 
+#html.align(center)[ #cite-title("migrate-to-018.typ") ]
 #html.align(center)[ #cite-title("migrate-to-017.typ") ]
 #html.align(center)[ #cite-title("migrate-to-016.typ") ]
 
@@ -210,7 +87,8 @@ Typsite 是一个用于构建静态网站的工具，其文章内容由纯 *Typs
 = 安装
 
 - 通过 #link("https://github.com/Glomzzz/typsite/releases/latest")[Release 页面]下载二进制文件
-  - 请确保你已安装了*0.13+*的typst
+  - 请使用 *Typst 最新稳定版*（当前已测试 *0.15.1*）
+  - 从源码构建需要 *Rust 1.89 或更新版本*
 - 通过 Nix & Flakes 构建
   - 请确保你已经开启了 `experimental-features = nix-command flakes`
 
@@ -229,7 +107,7 @@ nix build .
 .
 ├── root     ---  typst 根目录
 │   ├── index.typ    --- 文章
-│   └── lib.typ      --- typsite 库文件
+│   └── lib/         --- typsite 库文件，入口为 lib/lib.typ
 ├── .typsite --- typsite 配置目录
 │   ├── assets       ---  资源目录 (会同步到输出目录)
 │   ├── components   ---  组件模板
@@ -244,26 +122,12 @@ nix build .
 
 = 写作
 
-#import "@preview/frame-it:1.2.0": *
-
-#let (example, feature, variant, syntax) = frames(
-  feature: ("Feature",),
-  // For each frame kind, you have to provide its supplement title to be displayed
-  variant: ("Variant",),
-  // You can provide a color or leave it out and it will be generated
-  example: ("Example", gray),
-  // You can add as many as you want
-  syntax: ("Syntax",),
-)
-// This is necessary. Don't forget this!
-#show: frame-style(styles.boxy)
-
 Typsite 兼容绝大部分 typst 的原生表达:
 
 #get-metacontent("typst-support")
 
 #footnote[对于align, 请单独使用库中的 `html.align` 函数] <align>
-#footnote[对于复杂样式的元素, 请使用 `inline` 函数进行 *svg* 内联]
+#footnote[对于复杂样式的元素, 请使用 `inline` 函数进行 *svg* 内联] <svg-inline>
 
 = 命令行
 
@@ -306,9 +170,11 @@ Typsite 兼容绝大部分 typst 的原生表达:
       --port <PORT>      服务端口, 如果非0则进入watch-mode [默认: 0]
       --config <CONFIG>  项目配置路径 [默认: ./.typsite]
       --cache <CACHE>    缓存目录 [默认: ./.cache]
+  -j, --jobs <JOBS>      并发导出的文章数 [默认: 可用 CPU/Rayon 预算]
   -i, --input <INPUT>    Typst 根目录，存放 typst 文件的位置 [默认: ./root] [别名: --i]
   -o, --output <OUTPUT>  输出目录 [默认: ./publish] [别名: --o]
   -p, --packages <PACKAGES>  本地包目录，typsite会将在此目录的包自动安装到@local，若在watch-mode则会自动同步，如果为空或未找到目录则跳过 [默认: ""] [别名: --p]
+  -t, --typst <TYPST>    Typst 可执行程序路径 [默认: typst]
       --no-pretty-url
       --no-short-slug
   -h, --help             打印帮助
@@ -322,8 +188,11 @@ Typsite 兼容绝大部分 typst 的原生表达:
 用法: typsite clean [OPTIONS]
 
 选项:
+      --input <INPUT>    受保护的 Typst 源文件目录 [默认: ./root]
+      --config <CONFIG>  受保护的配置目录 [默认: ./.typsite]
+      --force            检查路径后允许清理没有归属标记的旧目录
   -o, --output <OUTPUT>  输出目录 [默认: ./publish]
-  -c, --cache <CACHE>    缓存目录，用于存储原始 typst_html_export 内容 [默认: ./.cache]
+  -c, --cache <CACHE>    缓存目录，用于存储原始 Typst HTML [默认: ./.cache]
   -h, --help             打印帮助
 ```
 
@@ -338,9 +207,103 @@ Typsite 兼容绝大部分 typst 的原生表达:
   -h, --help             打印帮助
 ```
 
+== 并行构建
+
+Typsite 使用 Rayon 并行计算独立文件的指纹、校验导出缓存、解析文章 HTML 和渲染页面。Typst 导出使用独立的有界 Rayon 池：默认以可用 CPU 预算（同时参考 Rayon 池大小）为并发上限。每个 Typst 子进程再通过自身的 `--jobs` 分得一部分 CPU 预算，避免每个子进程都启动整台机器数量的工作线程。
+
+```sh
+typsite compile --jobs 4
+# 内存受限或排查导出问题时，每次只运行一个文章子进程。
+typsite compile --jobs 1
+```
+
+`-j` 是 `--jobs` 的别名，参数必须是正整数。它控制的是*同时导出的文章数*，不是全部 Rayon 工作；文件指纹、解析和渲染的线程可另用 `RAYON_NUM_THREADS` 调整。显式设置较大的 `--jobs` 可能增加内存使用，但实际并发数不会超过待导出的文章数。真正无变化的构建不会创建导出线程池。
+
+包在导出前统一准备。各工作线程生成独立产物，全部结束后再按稳定的源文件顺序汇总。关系解析、依赖有序的元数据、缓存/归属检查点和过期删除仍保持有序。独立输出文件并行原子写入并同步数据，父目录按批次同步。已验证的无变化构建跳过配置解析，合法高亮资源按内容指纹缓存，共享依赖每批导出校验一次。只改变 `--jobs` 不会使缓存失效，也不会改变站点字节。
+
+= RSS 订阅与站点地图
+
+*RSS 需要主动开启。* 文章标记 `rss` 默认是 `false`，内置配置的 `base_url` 留空。生成订阅需要*同时*填写站点地址，并在集合页通过 `#rss(true)` 选择文章。不要把全局文章默认值改为 true。
+
+== 1. 开启订阅文件生成
+
+在 `.typsite/options.toml` 中填写站点公开地址，即可生成 RSS 2.0 和站点地图：
+
+```toml
+[site]
+base_url = "https://example.org"
+title = "我的站点"
+description = "笔记与文章"
+rss_path = "/rss.xml"
+sitemap_path = "/sitemap.xml"
+rss_limit = 20
+rss_content = "summary" # 可选 "summary" 或 "full"
+```
+
+请修改已有的 `[site]`，不要重复添加。把示例地址换成自己的公开地址后，运行 `typsite compile`。文件写入输出目录；每个生成页面的 HTML head 中都会加入 RSS 自动发现链接，读者可订阅 `https://example.org/rss.xml`。
+
+== 2. 通过集合页选择文章
+
+文章元数据新增布尔选项 `rss`，默认是 `false`。在集合页写上 `#rss(true)`，并直接嵌入要订阅的文章：
+
+```typ
+#import "/lib/lib.typ": *
+#show: schema.with("page")
+#title[我的订阅集合]
+#rss(true)
+
+= #embed("./first-post.typ")
+= #embed("./second-post.typ")
+```
+
+只有*直接嵌入的文章*会成为订阅条目。标记为 `rss: true` 的集合页自身不进入 RSS，即使被其他集合页嵌入也不例外。标记不会被嵌入文章继承。嵌套嵌入不会自动成为独立条目，但全文模式仍会保留所选文章里的嵌入内容。引用、父级元数据和仅声明的 child 图关系不参与选择。多个集合页选出的文章合并去重，每篇只出现一次。
+
+`#rss(false)` 将页面恢复为普通文章；如果仍被某个已标记的集合页直接嵌入，它仍可进入 RSS。没有标记集合页或没有可选直接嵌入时，已启用的订阅文件为空。日期排序和 `rss_limit` 在*选出条目之后*应用。站点地图仍包含所有编译文章。
+
+演示站点的两个首页都是集合页，各自直接嵌入文章指南和 Typst 简介，因此 RSS 共*四个条目*，而不是全部页面。旧站点库可从 `@local/typsite:0.1.0` 导入 `rss`，或合并新版 `root/lib/lib.typ` 的导入列表。
+
+== 3. 在演示站点中试用
+
+填写 `base_url` 后，在初始化的演示站点目录运行：
+
+```sh
+typsite compile
+typsite compile --port 8080
+```
+
+检查 `publish/rss.xml`，或在预览运行时打开 `http://localhost:8080/rss.xml`。部署输出后，用公开地址（例如 `https://example.org/rss.xml`）订阅；预览地址只用于本地检查。
+
+没有文件时，检查 `base_url`、`rss_path`、`rss_limit`；文件为空时，检查是否存在带有可选直接嵌入的标记集合页。保留 `[default_metadata.options].rss = false`；`#rss(true)` 写在集合页，而不是准备发布的文章上。完整的升级操作见 #cite("./migrate-to-018.typ")[0.1.8 RSS 迁移步骤]。
+
+== 条目内容与日期
+
+- `summary` 输出纯文本摘要，依次取非空的 `description`、`summary`、`abstract` 元数据。没有这些元数据时，不会自动截取正文。
+- `full` 还会在 `content:encoded` 中包含组合后的文章 HTML，包括嵌入文章，但不包含页面模板、导航、侧边栏或引用与反向链接页脚。普通链接和图片地址会转为绝对 URL。脚本会被移除；RSS 阅读器可能无法像网页一样显示 SVG、MathML、交互元素或站点专用 CSS。
+- 标题优先使用 `page-title`，其次为 `title`。排序时间依次取 `updated`、`lastmod`、`date`，由新到旧；时间相同时按 URL 排序。`pubDate` 使用发表 `date`，缺失时回退到修改时间。
+- 日期支持 `YYYY-MM-DD`、`YYYY-MM-DD HH:MM[:SS]`（按 UTC）、RFC 3339 和 RFC 2822。无效或未知日期会被省略，不会写出不合法的 RSS 日期。
+- `base_url` 留空会关闭两种输出。`rss_path` 留空或 `rss_limit = 0` 只关闭 RSS；`sitemap_path` 留空只关闭站点地图。关闭或改名后，旧生成文件通过归属记录清理。
+- 修改订阅配置只重新组合输出，不会让未变更文章重新经过 Typst 导出。`--no-pretty-url` 会反映在文章链接中。
+
+文章可以使用现有辅助函数提供元数据：
+
+```typ
+#title[一篇文章]
+#date[2026-03-02 18:25]
+#metacontent("summary")[写给订阅阅读器的简短介绍。]
+#metacontent("updated")[2026-03-03T09:00:00Z]
+```
+
 = 架构 & 流程
 
 #get-metacontent("process")
+
+流程图分为三条泳道，自上而下阅读，每条从左到右。HIT 复用原始 HTML，MISS 重新调用 Typst；发布状态未变时在步骤 03 走向“无变化”出口直接结束。只有需要发布更新时，才进入构建泳道，继续解析、关系解析和完整页面组合。标签标出并行阶段与两个独立检查点（A 保存导出结果，B 保存发布归属），底部红色区域说明失败恢复。小屏可在图内横向滚动查看细节。
+
+Rayon 并行执行独立文件指纹、文章解析、页面渲染和有界 Typst 导出；包准备与发布检查点仍保持有序。
+构建缓存保存原始 Typst HTML 和实际依赖的指纹，不保存旧关系图或渲染片段。
+需要更新时重新组合所有页面，但只写入内容发生变化的文件；无变化的构建不写输出，也不刷新预览。
+发布按单个文件原子替换，不是整个站点的事务；失败后修复问题并重新运行即可。
+升级与输出归属说明见 #cite-title("migrate-to-018.typ")。
 
 = 配置
 

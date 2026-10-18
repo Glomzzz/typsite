@@ -15,9 +15,33 @@ fn ac_replacement(patterns: &[&str]) -> Option<AhoCorasick> {
 }
 
 pub fn ac_replace_map(text: &str, (patterns, values): (Vec<&str>, Vec<&str>)) -> String {
-    ac_replacement(&patterns)
-        .map(|matcher| matcher.replace_all(text, &values))
-        .unwrap_or_else(|| text.to_string())
+    if patterns.len() != values.len() {
+        // Preserve the original invalid-pattern behavior for direct callers.
+        return ac_replacement(&patterns)
+            .map(|matcher| matcher.replace_all(text, &values))
+            .unwrap_or_else(|| text.to_owned());
+    }
+    // Most template fragments use only a handful of their possible metadata
+    // placeholders. Do not rebuild a large automaton for absent patterns, or any
+    // automaton at all for the common zero/single-replacement cases.
+    let present: Vec<_> = patterns
+        .iter()
+        .zip(&values)
+        .filter(|(pattern, _)| text.contains(**pattern))
+        .collect();
+    match present.as_slice() {
+        [] => text.to_owned(),
+        [(pattern, value)] if !pattern.is_empty() => text.replace(**pattern, value),
+        _ => {
+            let (patterns, values): (Vec<_>, Vec<_>) = present
+                .into_iter()
+                .map(|(pattern, value)| (*pattern, *value))
+                .unzip();
+            ac_replacement(&patterns)
+                .map(|matcher| matcher.replace_all(text, &values))
+                .unwrap_or_else(|| text.to_owned())
+        }
+    }
 }
 
 pub fn ac_replace(text: &str, replacements: &[(&str, &str)]) -> String {
@@ -170,6 +194,30 @@ impl<E: Elem> ElemTokenizerTrait<E> for ElemTokenizer<'_> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn optimized_replacements_match_leftmost_longest_without_recursive_expansion() {
+        for (text, replacements) in [
+            (
+                "plain text",
+                vec![("{title}", "title"), ("{unused}", "unused")],
+            ),
+            (
+                "{title}/{title}",
+                vec![("{title}", "{other}"), ("{other}", "not recursive")],
+            ),
+            ("ababa", vec![("a", "A"), ("ab", "AB"), ("aba", "LONG")]),
+            ("你好{x}世界", vec![("{x}", "🙂"), ("世界", "world")]),
+            ("xxx", vec![("x", "first"), ("x", "second")]),
+            ("abc", vec![("", "_")]),
+        ] {
+            let (patterns, values): (Vec<_>, Vec<_>) = replacements.iter().copied().unzip();
+            let baseline = ac_replacement(&patterns)
+                .map(|matcher| matcher.replace_all(text, &values))
+                .unwrap_or_else(|| text.to_owned());
+            assert_eq!(ac_replace(text, &replacements), baseline, "{text}");
+        }
+    }
 
     #[test]
     fn test_correct_parsing() {

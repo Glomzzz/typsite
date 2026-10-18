@@ -1,11 +1,10 @@
+use crate::config::TypsiteConfig;
 use crate::pass::pure::PurePass;
 use crate::pass::rewrite::code::highlighter::highlight;
 use crate::pass::rewrite::*;
 use crate::util::html::Attributes;
 use crate::util::str::ac_replace;
-use crate::{compile::proj_options, config::TypsiteConfig};
 use std::collections::{HashMap, HashSet};
-use typsite_macros::rewrite_pass;
 
 pub mod highlighter;
 
@@ -86,10 +85,7 @@ impl TagRewritePass for CodeBlockPass {
         let (light, dark) = config.highlight.find_theme(theme).expect(
             "code rewrite pass should only render with themes validated during dependency discovery",
         );
-        let fallback = proj_options()
-            .expect("project options should be initialized before code highlighting")
-            .code_fallback_style
-            .clone();
+        let fallback = &config.options.project.code_fallback_style;
         let light = highlight(syntax_set, syntax, content, light, &fallback.light);
         let dark = highlight(syntax_set, syntax, content, dark, &fallback.dark);
         Some(ac_replace(

@@ -2,64 +2,167 @@ name: Release
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+
 permissions:
-  contents: write
+  contents: read
+
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
+  # Same workflow file and commit as the caller, not an unrelated branch's
+  # latest green run. A failed/skipped/cancelled gate blocks every release job.
+  validate:
+    uses: ./.github/workflows/check.yml
+
   build:
+    needs: validate
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
             rust-target: x86_64-pc-windows-msvc
-            artifact-name: typsite-x86_64-pc-windows-msvc.exe
+            executable: typsite.exe
           - os: ubuntu-latest
             rust-target: x86_64-unknown-linux-gnu
-            artifact-name: typsite-x86_64-unknown-linux-gnu
+            executable: typsite
           - os: macos-latest
             rust-target: aarch64-apple-darwin
-            artifact-name: typsite-aarch64-apple-darwin
-    name: Release ${{ matrix.rust-target }}
+            executable: typsite
+    name: Build ${{ matrix.rust-target }}
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: 9.5.0
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: ${{ matrix.rust-target }}
-          toolchain: nightly
-          rustflags: --cfg tokio_unstable
-          override: true
-      - name: Get package name
-        id: version
-        uses: nicolaiunrein/cargo-get@master
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
         with:
-          subcommand: package.version --pretty
-      - run: |
-          echo ${{ steps.version.outputs.metadata }}
-      - name: Build
-        run: |
-          cargo build --release --target ${{ matrix.rust-target }}
-      - name: Copy Typsite - Windows
-        if: ${{ contains(matrix.os,'windows')  }}
-        run: |
-            move target/${{ matrix.rust-target }}/release/typsite.exe ${{ matrix.artifact-name }}
-      - name: Copy Typsite - Linux or Apple
-        if: ${{ ! contains(matrix.os,'windows')  }}
-        run: |
-            mv target/${{ matrix.rust-target }}/release/typsite ${{ matrix.artifact-name }}
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
+          python-version: '3.12'
+      - name: Build with tested lockfile
+        run: cargo build --release --locked --target ${{ matrix.rust-target }}
+      - name: Package binary and exact-revision provenance
+        run: >-
+          python scripts/release_artifacts.py package
+          --binary target/${{ matrix.rust-target }}/release/${{ matrix.executable }}
+          --target ${{ matrix.rust-target }} --commit ${{ github.sha }} --output dist
+      - uses: actions/upload-artifact@v4
         with:
-          file: ${{ matrix.artifact-name }}
-          overwrite: true
-          tag: ${{ steps.version.outputs.metadata }}-${{ github.run_number }}
+          name: binary-${{ matrix.rust-target }}
+          path: dist/*
+          if-no-files-found: error
+
+  stage:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.draft.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: dist
+      - name: Stage an unpublished release (never overwrite a public release)
+        id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/release_draft.py stage
+          --repository ${{ github.repository }} --commit ${{ github.sha }}
+          --run ${{ github.run_number }} --directory dist
+
+  smoke:
+    needs: [validate, stage]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: typsite-x86_64-pc-windows-msvc.exe
+          - os: ubuntu-latest
+            asset: typsite-x86_64-unknown-linux-gnu
+          - os: macos-latest
+            asset: typsite-aarch64-apple-darwin
+    name: Download and smoke ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    # Draft releases are visible only with repository write access. The smoke
+    # harness strips these credentials from the executable's child environment.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: typst-community/setup-typst@v4
+        with:
+          typst-version: latest
+      - name: Download actual draft release assets and verify commit/checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/release_draft.py download
+          --repository ${{ github.repository }} --commit ${{ github.sha }}
+          --tag ${{ needs.stage.outputs.tag }} --asset ${{ matrix.asset }} --directory downloaded
+      - name: init -> compile -> edit -> compile using the downloaded executable
+        run: >-
+          python scripts/smoke_binary.py --binary downloaded/${{ matrix.asset }}
+          --manifest downloaded/release-manifest.json --commit ${{ github.sha }} --report smoke.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.asset }}
+          path: smoke.json
+          if-no-files-found: error
+
+  ready:
+    needs: [validate, build, stage, smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: smoke-*
+          path: evidence
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: dist
+      - name: Verify all platforms and mark the draft ready for manual review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/release_draft.py ready
+          --repository ${{ github.repository }} --commit ${{ github.sha }}
+          --tag ${{ needs.stage.outputs.tag }} --directory dist --evidence evidence
+      # Deliberately no publish step: maintainers publish this validated draft
+      # only after reviewing the exact revision's checks and migration notes.

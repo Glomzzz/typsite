@@ -1,12 +1,12 @@
 use crate::compile::error::{TypError, TypResult};
-use crate::config::footer::{BACKLINKS_KEY, REFERENCES_KEY};
-use crate::config::schema::{Schema, BACKLINK_KEY, REFERENCE_KEY};
 use crate::config::TypsiteConfig;
-use crate::ir::article::data::GlobalData;
+use crate::config::footer::{BACKLINKS_KEY, REFERENCES_KEY};
+use crate::config::schema::{BACKLINK_KEY, REFERENCE_KEY, Schema};
 use crate::ir::article::Article;
+use crate::ir::article::data::GlobalData;
 use crate::util::error::TypsiteError;
-use crate::util::html::{write_token, OutputHead};
 use crate::util::html::{Attributes, OutputHtml};
+use crate::util::html::{OutputHead, write_token};
 use crate::util::str::ac_replace;
 use crate::write_into;
 use anyhow::Context;
@@ -74,17 +74,18 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
             let footer_body = self.config.footer.footer.body.as_str();
             let node = self.article.get_meta_node();
             let descendants = self.global_data.descendant_slugs(self.article);
-            let references = node
-                .references
-                .iter()
+            let mut references: Vec<_> = node.references.iter().collect();
+            references.sort();
+            let references = references
+                .into_iter()
                 .filter(|slug| !descendants.contains(*slug))
                 .filter_map(|slug| self.global_data.article(slug))
                 .filter_map(|article| article.get_reference())
                 .collect::<Vec<_>>();
-
-            let backlinks = node
-                .backlinks
-                .iter()
+            let mut backlinks: Vec<_> = node.backlinks.iter().collect();
+            backlinks.sort();
+            let backlinks = backlinks
+                .into_iter()
                 .filter(|slug| !descendants.contains(*slug))
                 .filter_map(|slug| self.global_data.article(slug))
                 .filter_map(|article| article.get_backlink())
@@ -212,106 +213,27 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::compile::{
-        init_compile_options, init_proj_options,
-        options::{CompileOptions, ProjOptions},
-    };
     use crate::config::TypsiteConfig;
     use crate::ir::article::body::Body;
     use crate::ir::article::data::GlobalData;
     use crate::ir::article::dep::{Dependency, Indexes};
-    use crate::ir::article::{sidebar::Sidebar, Article};
+    use crate::ir::article::{Article, sidebar::Sidebar};
+    use crate::ir::metadata::Metadata;
     use crate::ir::metadata::content::MetaContents;
     use crate::ir::metadata::graph::MetaNode;
     use crate::ir::metadata::options::MetaOptions;
-    use crate::ir::metadata::Metadata;
     use std::collections::{HashMap, HashSet};
     use std::fs;
     use std::sync::OnceLock;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn write_test_config(root: &std::path::Path) {
-        fs::create_dir_all(root.join("components/footer")).expect("footer dir");
-        fs::create_dir_all(root.join("rewrite")).expect("rewrite dir");
-        fs::create_dir_all(root.join("schemas")).expect("schema dir");
-        fs::create_dir_all(root.join("syntaxes")).expect("syntaxes dir");
-        fs::create_dir_all(root.join("themes")).expect("themes dir");
-
-        fs::write(
-            root.join("options.toml"),
-            include_str!("../../resources/.typsite/options.toml"),
-        )
-        .expect("options file");
-        fs::write(
-            root.join("components/section.html"),
-            include_str!("../../resources/.typsite/components/section.html"),
-        )
-        .expect("section");
-        fs::write(
-            root.join("components/heading-numbering.html"),
-            "<html><body>{numbering}</body></html>",
-        )
-        .expect("heading numbering");
-        fs::write(
-            root.join("components/footer.html"),
-            "<html><body><footer>{references}{backlinks}</footer></body></html>",
-        )
-        .expect("footer");
-        fs::write(
-            root.join("components/footer/backlinks.html"),
-            "<html><body>{backlinks}</body></html>",
-        )
-        .expect("backlinks");
-        fs::write(
-            root.join("components/footer/references.html"),
-            "<html><body>{references}</body></html>",
-        )
-        .expect("references");
-        fs::write(
-            root.join("components/anchor_def.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor def");
-        fs::write(
-            root.join("components/anchor_def_svg.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor def svg");
-        fs::write(
-            root.join("components/anchor_goto.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor goto");
-        fs::write(
-            root.join("components/anchor_goto_svg.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor goto svg");
-        fs::write(
-            root.join("components/sidebar.html"),
-            "<html><body>{children}</body></html>",
-        )
-        .expect("sidebar");
-        fs::write(
-            root.join("components/sidebar_each.html"),
-            "<html><body>{title}</body></html>",
-        )
-        .expect("sidebar each");
-        fs::write(
-            root.join("components/embed.html"),
-            "<html><body>{content}</body></html>",
-        )
-        .expect("embed");
-        fs::write(
-            root.join("components/embed_title.html"),
-            "<html><body>{title}</body></html>",
-        )
-        .expect("embed title");
+        crate::test_support::write_config(root);
         fs::write(
             root.join("schemas/main.html"),
             "<head></head><body><metadata></metadata></body>",
         )
-        .expect("schema");
+        .unwrap();
     }
 
     pub(crate) fn run_schema_pass_reports_missing_metadata_tag_attr() {
@@ -327,19 +249,12 @@ pub(crate) mod tests {
         fs::create_dir_all(&html).expect("html dir");
 
         let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
-        let proj = ProjOptions::load(&root).expect("project options should load");
-        init_proj_options(proj).expect("project options should initialize");
-        init_compile_options(CompileOptions {
-            watch: false,
-            short_slug: false,
-            pretty_url: true,
-        })
-        .expect("compile options should initialize");
 
         let slug: crate::compile::registry::Key = std::sync::Arc::from("/article");
         let metadata = Metadata {
-            contents: MetaContents::new(slug.clone(), HashMap::new(), false),
+            contents: MetaContents::new(slug.clone(), HashMap::new(), false, &config.options),
             options: MetaOptions {
+                rss: false,
                 heading_numbering_style: crate::ir::article::sidebar::HeadingNumberingStyle::Bullet,
                 sidebar_type: crate::ir::article::sidebar::SidebarType::All,
             },
@@ -406,7 +321,6 @@ pub(crate) mod tests {
 
     #[test]
     fn schema_pass_reports_missing_metadata_tag_attr() {
-        let _guard = crate::test_lock();
         run_schema_pass_reports_missing_metadata_tag_attr();
     }
 }

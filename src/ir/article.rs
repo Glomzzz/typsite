@@ -1,7 +1,7 @@
 use crate::compile::error::{TypError, TypResult};
 use crate::compile::registry::{Key, KeyRegistry, SlugPath};
-use crate::config::schema::Schema;
 use crate::config::TypsiteConfig;
+use crate::config::schema::Schema;
 use crate::ir::article::sidebar::Sidebar;
 use crate::ir::embed::{Embed, PureEmbed};
 use crate::ir::metadata::content::MetaContents;
@@ -198,7 +198,7 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
     pub fn get_pending_or_init(
         &'b self,
         global_data: &'c GlobalData<'a, 'b, 'c>,
-    ) -> &'c Pending<'c> {
+    ) -> TypResult<&'c Pending<'c>> {
         global_data.get_pending_or_init(self)
     }
 
@@ -216,6 +216,12 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
 
     pub fn get_metadata(&'b self) -> &'b Metadata<'a> {
         &self.metadata
+    }
+
+    /// Actual embeds in this article, not inferred parents, citations, or the
+    /// broader metadata graph's `child` relationships. Repeats may occur.
+    pub fn direct_embeds(&self) -> impl Iterator<Item = &Key> {
+        self.embeds.iter().map(|embed| &embed.slug)
     }
 
     pub fn get_meta_options(&self) -> &MetaOptions {
@@ -249,6 +255,10 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
             });
             all_used_rules
         })
+    }
+
+    pub fn metadata_dependencies(&self) -> HashSet<Key> {
+        self.dependency.metadata_articles()
     }
 
     pub fn get_depending_articles(&self) -> HashSet<Key> {
@@ -287,10 +297,6 @@ impl<'c, 'b: 'c, 'a: 'b> Article<'a> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::compile::{
-        init_compile_options, init_proj_options,
-        options::{CompileOptions, ProjOptions},
-    };
     use crate::config::TypsiteConfig;
     use crate::ir::article::body::Body;
     use crate::ir::article::dep::Dependency;
@@ -300,89 +306,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn write_test_config(root: &std::path::Path) {
-        fs::create_dir_all(root.join("components/footer")).expect("footer dir");
-        fs::create_dir_all(root.join("rewrite")).expect("rewrite dir");
-        fs::create_dir_all(root.join("schemas")).expect("schema dir");
-        fs::create_dir_all(root.join("syntaxes")).expect("syntaxes dir");
-        fs::create_dir_all(root.join("themes")).expect("themes dir");
-
-        fs::write(
-            root.join("options.toml"),
-            include_str!("../../resources/.typsite/options.toml"),
-        )
-        .expect("options file");
-        fs::write(
-            root.join("components/section.html"),
-            include_str!("../../resources/.typsite/components/section.html"),
-        )
-        .expect("section");
-        fs::write(
-            root.join("components/heading-numbering.html"),
-            "<html><body>{numbering}</body></html>",
-        )
-        .expect("heading numbering");
-        fs::write(
-            root.join("components/footer.html"),
-            "<html><body><footer>{references}{backlinks}</footer></body></html>",
-        )
-        .expect("footer");
-        fs::write(
-            root.join("components/footer/backlinks.html"),
-            "<html><body>{backlinks}</body></html>",
-        )
-        .expect("backlinks");
-        fs::write(
-            root.join("components/footer/references.html"),
-            "<html><body>{references}</body></html>",
-        )
-        .expect("references");
-        fs::write(
-            root.join("components/anchor_def.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor def");
-        fs::write(
-            root.join("components/anchor_def_svg.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor def svg");
-        fs::write(
-            root.join("components/anchor_goto.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor goto");
-        fs::write(
-            root.join("components/anchor_goto_svg.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor goto svg");
-        fs::write(
-            root.join("components/sidebar.html"),
-            "<html><body>{children}</body></html>",
-        )
-        .expect("sidebar");
-        fs::write(
-            root.join("components/sidebar_each.html"),
-            "<html><body>{title}</body></html>",
-        )
-        .expect("sidebar each");
-        fs::write(
-            root.join("components/embed.html"),
-            "<html><body>{content}</body></html>",
-        )
-        .expect("embed");
-        fs::write(
-            root.join("components/embed_title.html"),
-            "<html><body>{title}</body></html>",
-        )
-        .expect("embed title");
-        fs::write(
-            root.join("schemas/reference.html"),
-            "<html><body><content></content></body></html>",
-        )
-        .expect("reference schema");
-    }
+    use crate::test_support::write_config as write_test_config;
 
     pub(crate) fn run_article_from_collects_registry_and_schema_errors() {
         let unique = SystemTime::now()
@@ -397,14 +321,6 @@ pub(crate) mod tests {
         fs::create_dir_all(&html).expect("html dir");
 
         let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
-        let proj = ProjOptions::load(&root).expect("project options should load");
-        init_proj_options(proj).expect("project options should initialize");
-        init_compile_options(CompileOptions {
-            watch: false,
-            short_slug: false,
-            pretty_url: true,
-        })
-        .expect("compile options should initialize");
 
         let pure = PureArticle {
             path: std::path::PathBuf::from("missing.typ"),
@@ -415,8 +331,10 @@ pub(crate) mod tests {
                     Arc::from("/missing"),
                     HashMap::new(),
                     false,
+                    &config.options,
                 ),
                 options: MetaOptions {
+                    rss: false,
                     heading_numbering_style:
                         crate::ir::article::sidebar::HeadingNumberingStyle::Bullet,
                     sidebar_type: crate::ir::article::sidebar::SidebarType::All,
@@ -470,12 +388,9 @@ pub(crate) mod tests {
 
     #[test]
     fn article_from_collects_registry_and_schema_errors() {
-        let _guard = crate::test_lock();
         run_article_from_collects_registry_and_schema_errors();
     }
 }
-
-unsafe impl Send for Article<'_> {}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PureArticle {

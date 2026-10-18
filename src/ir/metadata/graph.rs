@@ -3,7 +3,7 @@ use crate::compile::{
     registry::{Key, KeyRegistry},
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct MetaNode {
@@ -56,11 +56,11 @@ impl MetaNode {
             children: children.into_iter().flatten().collect(),
         })
     }
-    pub fn refs_and_backlinks(&self) -> HashSet<&Key> {
+    pub fn refs_and_backlinks(&self) -> BTreeSet<&Key> {
         self.references
             .iter()
             .chain(self.backlinks.iter())
-            .collect::<HashSet<_>>()
+            .collect()
     }
 }
 

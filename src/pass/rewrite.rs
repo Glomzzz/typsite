@@ -8,7 +8,34 @@ use crate::util::html::Attributes;
 use anyhow::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::Arc;
+
+// Built-ins are ordinary values, not process-start constructors. Keep the small
+// declaration helper local so adding a pass cannot mutate global state.
+macro_rules! rewrite_pass {
+    ($name:ident, id = $id:literal, atom = $atom:literal) => {
+        rewrite_pass!($name, id = $id, atom = $atom, pure = true);
+    };
+    ($name:ident, id = $id:literal, atom = $atom:literal, pure = $pure:literal) => {
+        #[derive(Default)]
+        pub(super) struct $name;
+        impl Id for $name {
+            fn id(&self) -> &str {
+                $id
+            }
+        }
+        impl Atom for $name {
+            fn atom(&self) -> bool {
+                $atom
+            }
+        }
+        impl Purity for $name {
+            fn pure(&self) -> bool {
+                $pure
+            }
+        }
+    };
+}
 
 mod cite;
 mod code;
@@ -19,24 +46,34 @@ mod footnote_ref_svg;
 
 pub const METACONTENT_TAG: &str = "metacontent";
 
-static REWRITE_PASSES: LazyLock<Arc<Mutex<HashMap<String, Arc<dyn TagRewritePass>>>>> =
-    LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
-
-pub fn register_rewrite_pass(rewriter: impl TagRewritePass + 'static) {
-    let tag = rewriter.id().to_string();
-    let arc_instance = Arc::new(rewriter);
-    REWRITE_PASSES
-        .lock()
-        .expect("rewrite pass registry mutex should not be poisoned")
-        .insert(tag, arc_instance);
+/// An immutable, project-local registry of the built-in rewrite passes.
+pub struct RewriteRegistry {
+    passes: HashMap<String, Arc<dyn TagRewritePass>>,
 }
 
-pub fn find_rewrite_pass(tag: &str) -> Option<Arc<dyn TagRewritePass>> {
-    REWRITE_PASSES
-        .lock()
-        .expect("rewrite pass registry mutex should not be poisoned")
-        .get(tag)
-        .map(Arc::clone)
+impl Default for RewriteRegistry {
+    fn default() -> Self {
+        let passes: Vec<Arc<dyn TagRewritePass>> = vec![
+            Arc::new(cite::CitePass),
+            Arc::new(code::CodeBlockPass),
+            Arc::new(footnote::FootnoteRef),
+            Arc::new(footnote::FootnoteDef),
+            Arc::new(footnote_ref_svg::FootnoteRef),
+            Arc::new(metacontent::MetaContentPass),
+        ];
+        Self {
+            passes: passes
+                .into_iter()
+                .map(|pass| (pass.id().to_owned(), pass))
+                .collect(),
+        }
+    }
+}
+
+impl RewriteRegistry {
+    pub fn get(&self, tag: &str) -> Option<Arc<dyn TagRewritePass>> {
+        self.passes.get(tag).cloned()
+    }
 }
 
 pub trait Id {
@@ -269,6 +306,28 @@ impl<'c, 'b: 'c, 'a: 'b> RewritePass<'a, 'b, 'c> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use super::RewriteRegistry;
+
+    #[test]
+    fn builtin_registry_is_explicit_and_independent() {
+        let first = RewriteRegistry::default();
+        let second = RewriteRegistry::default();
+        let expected = [
+            "cite",
+            "code",
+            "footnote-ref",
+            "footnote-def",
+            "footnote-ref-svg",
+            "metacontent",
+        ];
+        assert_eq!(first.passes.len(), expected.len());
+        for id in expected {
+            assert_eq!(first.get(id).expect("built-in pass").id(), id);
+            assert_eq!(second.get(id).expect("independent built-in pass").id(), id);
+        }
+        assert!(first.get("unknown").is_none());
+    }
+
     use crate::pass::tokenizer::{BodyTag, Event, EventTokenizer, Tokenizer};
 
     pub(crate) fn run_rewrite_pass_reports_missing_required_attr() {

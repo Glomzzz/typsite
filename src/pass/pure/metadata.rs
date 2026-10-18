@@ -1,10 +1,10 @@
-use crate::compile::proj_options;
+use crate::compile::options::ProjectOptions;
 use crate::compile::registry::Key;
 use crate::ir::article::sidebar::{HeadingNumberingStyle, SidebarType};
+use crate::ir::metadata::Metadata;
 use crate::ir::metadata::content::{MetaContent, MetaContents};
 use crate::ir::metadata::graph::MetaNode;
 use crate::ir::metadata::options::MetaOptions;
-use crate::ir::metadata::Metadata;
 use crate::ir::rewriter::MetaRewriter;
 use crate::pass::pure::rewriter::RewriterBuilder;
 use anyhow::anyhow;
@@ -12,12 +12,14 @@ use std::collections::{HashMap, HashSet};
 
 pub struct MetadataBuilder<'a> {
     slug: Key,
+    options: &'a ProjectOptions,
     pub(crate) meta_key: Option<String>,
     meta_rewriter_buffer: Vec<MetaRewriter<'a>>,
     // content supported metadata
     contents: HashMap<String, MetaContent<'a>>,
     pub(crate) heading_numbering_style: HeadingNumberingStyle,
     pub(crate) sidebar_type: SidebarType,
+    rss: bool,
     // slugs
     parent: Option<Key>,
     cited: HashSet<Key>,
@@ -26,9 +28,8 @@ pub struct MetadataBuilder<'a> {
 }
 
 impl<'a> MetadataBuilder<'a> {
-    pub fn new(self_slug: Key) -> Self {
-        let options = proj_options()
-            .expect("project options should be initialized before parsing article metadata");
+    pub fn new(self_slug: Key, project_options: &'a ProjectOptions) -> Self {
+        let options = &project_options.project;
 
         let heading_numbering_style = options.default_metadata.options.heading_numbering;
         let sidebar_type = options.default_metadata.options.sidebar_type;
@@ -48,11 +49,13 @@ impl<'a> MetadataBuilder<'a> {
 
         Self {
             slug: self_slug,
+            options: project_options,
             meta_key: None,
             meta_rewriter_buffer: Vec::new(),
             contents: HashMap::new(),
             heading_numbering_style,
             sidebar_type,
+            rss: options.default_metadata.options.rss,
             parent,
             cited: HashSet::new(),
             children: HashSet::new(),
@@ -61,11 +64,11 @@ impl<'a> MetadataBuilder<'a> {
     }
 
     pub fn intake_meta_graph(&mut self, kind: &str, slug: Key) {
-        if self.slug.as_ref() == slug.as_ref() {
-            eprintln!(
-                "[WARN] MetadataBuilder: An article's parent cannot be itself! {}",
+        if self.slug == slug && kind.eq_ignore_ascii_case("parent") {
+            self.errors.push(anyhow!(
+                "An article cannot be its own parent: {}",
                 self.slug
-            );
+            ));
             return;
         }
         match kind.to_lowercase().as_str() {
@@ -92,6 +95,13 @@ impl<'a> MetadataBuilder<'a> {
             "sidebar" => {
                 self.sidebar_type = SidebarType::from(value.as_ref());
             }
+            "rss" => match value.trim().parse::<bool>() {
+                Ok(rss) => self.rss = rss,
+                Err(_) => self.errors.push(anyhow!(
+                    "Metadata option rss must be true or false in {}, got {value:?}",
+                    self.slug
+                )),
+            },
             _ => {
                 eprintln!("[WARN] Unknown metadata option: {key}");
             }
@@ -142,10 +152,11 @@ impl<'a> MetadataBuilder<'a> {
             .as_ref()
             .map(|cache| !cache.same_contents(&self.contents))
             .unwrap_or(true);
-        let contents = MetaContents::new(slug.clone(), self.contents, updated);
+        let contents = MetaContents::new(slug.clone(), self.contents, updated, self.options);
         let options = MetaOptions {
             heading_numbering_style: self.heading_numbering_style,
             sidebar_type: self.sidebar_type,
+            rss: self.rss,
         };
         let node = MetaNode {
             slug,

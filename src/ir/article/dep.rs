@@ -41,8 +41,17 @@ impl Dependency {
             .collect()
     }
     pub fn articles(&self) -> HashSet<Key> {
+        self.dependency.keys().filter_map(Source::article).collect()
+    }
+
+    pub fn metadata_articles(&self) -> HashSet<Key> {
         self.dependency
             .iter()
+            .filter(|(_, indexes)| {
+                indexes
+                    .iter()
+                    .any(|index| matches!(index, UpdatedIndex::MetaRewriter(..)))
+            })
             .filter_map(|(source, _)| source.article())
             .collect()
     }

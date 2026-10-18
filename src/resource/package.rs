@@ -1,8 +1,8 @@
 use anyhow::{Context, Result, anyhow};
 use home::home_dir;
 use include_dir::{DirEntry, include_dir};
-use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::{
     fmt,
     fs::{self, create_dir_all},
@@ -14,49 +14,84 @@ use crate::util::fs::{copy_dir, remove_dir_all};
 static PACKAGES: include_dir::Dir = include_dir!("./packages/");
 
 pub fn install_packages(packages_path: &Path) -> Result<()> {
-    if !packages_path.is_dir() {
-        return Err(anyhow!(
-            "Path is not a directory: {}",
-            packages_path.display()
-        ));
-    }
-
-    let entries = fs::read_dir(packages_path).with_context(|| {
-        format!(
-            "Failed to read packages directory: {}",
-            packages_path.display()
-        )
-    })?;
-
-    println!("Installing packages...");
-    entries
-        .into_iter()
-        .par_bridge()
-        .filter_map(|entry| {
-            entry
-                .ok()
-                .filter(|it| it.file_type().map(|it| it.is_dir()).unwrap_or(false))
-        })
-        .map(|entry| -> Result<()> {
-            let package_path = entry.path();
-            let typst_toml = package_path.join("typst.toml");
-            let info = get_package_info(&typst_toml)?;
-            install_local(info, |info| install_package(&package_path, info))
-        })
-        .collect()
+    install_packages_into(packages_path, &default_namespace()?)
 }
 
 pub fn install_included_packages() -> Result<()> {
-    println!("Installing included packages...");
-    PACKAGES
-        .entries()
-        .into_par_iter()
-        .filter_map(|it| it.as_dir())
-        .map(|dir| -> Result<()> {
-            let info = get_included_package_info(dir)?;
-            install_local(info, |info| install_included_package(dir, info))
-        })
-        .collect::<Result<()>>()
+    install_included_into(&default_namespace()?)
+}
+
+pub fn install_packages_into(packages_path: &Path, namespace: &Path) -> Result<()> {
+    prepare_packages_into(packages_path, namespace).map(|_| ())
+}
+
+pub(crate) fn prepare_packages_into(
+    packages_path: &Path,
+    namespace: &Path,
+) -> Result<Vec<PathBuf>> {
+    let mut entries = fs::read_dir(packages_path)
+        .with_context(|| format!("Cannot read packages directory {}", packages_path.display()))?
+        .collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    let mut packages = Vec::new();
+    let mut identities = HashSet::new();
+    // Validate every identity before mutating the installation namespace.
+    for entry in entries {
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let info = get_package_info(&entry.path().join("typst.toml"))?;
+        anyhow::ensure!(
+            identities.insert((info.name.clone(), info.version.clone())),
+            "Duplicate package {info}"
+        );
+        packages.push((entry.path(), info));
+    }
+    let _lock = lock_namespace(namespace)?;
+    let mut installed = Vec::new();
+    for (path, info) in packages {
+        installed.push(info.local_dir(namespace)?);
+        install_local(info, |info| install_package(&path, info, namespace))?;
+    }
+    Ok(installed)
+}
+
+pub fn install_included_into(namespace: &Path) -> Result<()> {
+    prepare_included_into(namespace).map(|_| ())
+}
+
+pub(crate) fn prepare_included_into(namespace: &Path) -> Result<Vec<PathBuf>> {
+    let _lock = lock_namespace(namespace)?;
+    let mut installed = Vec::new();
+    for dir in PACKAGES.entries().iter().filter_map(|entry| entry.as_dir()) {
+        let info = get_included_package_info(dir)?;
+        installed.push(info.local_dir(namespace)?);
+        install_local(info, |info| install_included_package(dir, info, namespace))?;
+    }
+    Ok(installed)
+}
+
+pub fn default_namespace() -> Result<PathBuf> {
+    for key in ["TYPST_PACKAGE_PATH", "TYPST_PACKAGE_CACHE_PATH"] {
+        if let Some(path) = std::env::var_os(key).filter(|path| !path.is_empty()) {
+            return Ok(PathBuf::from(path));
+        }
+    }
+    Ok(cache_dir()?.join("typst/packages"))
+}
+
+fn lock_namespace(root: &Path) -> Result<fs::File> {
+    fs::create_dir_all(root)?;
+    let path = crate::compile::project::managed_path(root, Path::new(".typsite-package.lock"))?;
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    file.try_lock()
+        .with_context(|| format!("Package namespace is in use: {}", root.display()))?;
+    Ok(file)
 }
 
 fn install_local(
@@ -71,12 +106,12 @@ fn install_local(
         }
         Err(err) => {
             eprintln!("   - Failed to install {info}, because: {err}");
-            Err(anyhow!("Some packages installed failed!"))
+            Err(err).with_context(|| format!("Cannot install {info}"))
         }
     }
 }
-fn install_package(package: &Path, info: &PackageInfo) -> Result<()> {
-    let local_package_dir = info.get_local_dir()?;
+fn install_package(package: &Path, info: &PackageInfo, namespace: &Path) -> Result<()> {
+    let local_package_dir = info.local_dir(namespace)?;
     if local_package_dir.exists() {
         remove_dir_all(&local_package_dir)
             .with_context(|| format!("Failed to clean {local_package_dir:?}"))?;
@@ -85,8 +120,12 @@ fn install_package(package: &Path, info: &PackageInfo) -> Result<()> {
         .with_context(|| format!("Failed to extract {info} from {local_package_dir:?}"))?;
     Ok(())
 }
-fn install_included_package(dir: &include_dir::Dir, info: &PackageInfo) -> Result<()> {
-    let local_package_dir = info.get_local_dir()?;
+fn install_included_package(
+    dir: &include_dir::Dir,
+    info: &PackageInfo,
+    namespace: &Path,
+) -> Result<()> {
+    let local_package_dir = info.local_dir(namespace)?;
     if local_package_dir.exists() {
         remove_dir_all(&local_package_dir)?;
     }
@@ -183,15 +222,11 @@ fn cache_dir() -> Result<PathBuf> {
 }
 
 impl PackageInfo {
-
-    pub fn get_local_dir(&self) -> Result<PathBuf> {
-        let cache_path = cache_dir().with_context(|| {
-            format!("Failed to get cache directory while installing {self} into @local")
-        })?;
-        let PackageInfo { name, version } = self;
-        let local_package =
-            cache_path.join(format!("typst/packages/local/{name}/{version}/"));
-        Ok(local_package)
+    fn local_dir(&self, namespace: &Path) -> Result<PathBuf> {
+        crate::compile::project::managed_path(
+            namespace,
+            &Path::new("local").join(&self.name).join(&self.version),
+        )
     }
 }
 
@@ -207,5 +242,14 @@ fn get_package_info(typst_toml: &Path) -> Result<PackageInfo> {
 }
 fn get_package_info_from_content(toml_str: &str) -> Result<PackageInfo> {
     let info = toml::from_str::<TypstToml>(toml_str)?.package;
+    for (field, value) in [("name", &info.name), ("version", &info.version)] {
+        let path = Path::new(value);
+        crate::compile::project::validate_relative(path)
+            .with_context(|| format!("Invalid package {field}: {value}"))?;
+        anyhow::ensure!(
+            path.components().count() == 1 && !value.starts_with('.'),
+            "Invalid package {field}: {value}"
+        );
+    }
     Ok(info)
 }

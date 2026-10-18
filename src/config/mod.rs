@@ -1,3 +1,4 @@
+use crate::compile::options::{CompileOptions, ProjectOptions};
 use crate::config::anchor::AnchorConfig;
 use crate::config::footer::FooterConfig;
 use crate::config::heading_numbering::HeadingNumberingConfig;
@@ -45,6 +46,7 @@ const EMBED_TITLE_PATH: &str = "components/embed_title.html";
 const SIDEBAR_BLOCK_PATH: &str = "components/sidebar.html";
 const SIDEBAR_EACH_PATH: &str = "components/sidebar_each.html";
 pub struct TypsiteConfig<'a> {
+    pub options: ProjectOptions,
     pub section: SectionConfig,
     pub heading_numbering: HeadingNumberingConfig,
     pub footer: FooterConfig,
@@ -62,6 +64,46 @@ pub struct TypsiteConfig<'a> {
 
 impl<'a> TypsiteConfig<'a> {
     pub fn load(config_path: &'a Path, typst_path: &'a Path, html_path: &'a Path) -> Result<Self> {
+        Self::load_with_options(
+            config_path,
+            typst_path,
+            html_path,
+            CompileOptions::default(),
+        )
+    }
+
+    pub fn load_with_options(
+        config_path: &'a Path,
+        typst_path: &'a Path,
+        html_path: &'a Path,
+        compile: CompileOptions,
+    ) -> Result<Self> {
+        Self::load_with_highlight(config_path, typst_path, html_path, compile, || {
+            CodeHightlightConfig::load(config_path)
+        })
+    }
+
+    pub(crate) fn load_cached(
+        config_path: &'a Path,
+        typst_path: &'a Path,
+        html_path: &'a Path,
+        compile: CompileOptions,
+        cache: &Path,
+        highlight_key: &str,
+    ) -> Result<Self> {
+        Self::load_with_highlight(config_path, typst_path, html_path, compile, || {
+            CodeHightlightConfig::load_cached(config_path, cache, highlight_key)
+        })
+    }
+
+    fn load_with_highlight(
+        config_path: &'a Path,
+        typst_path: &'a Path,
+        html_path: &'a Path,
+        compile: CompileOptions,
+        highlight: impl FnOnce() -> Result<CodeHightlightConfig>,
+    ) -> Result<Self> {
+        let options = ProjectOptions::load(config_path, compile)?;
         // Components
         let section = SectionConfig::load(config_path)?;
         let heading_numbering = HeadingNumberingConfig::load(config_path)?;
@@ -71,7 +113,7 @@ impl<'a> TypsiteConfig<'a> {
         let embed = EmbedConfig::load(config_path)?;
         let rules = RulesConfig::load(config_path)?;
         let schemas = SchemaConfig::load(config_path)?;
-        let highlight = CodeHightlightConfig::load(config_path);
+        let highlight = highlight()?;
 
         let typst_path = format_path_ref(typst_path);
         let typst_root_name = dir_name(typst_path)
@@ -79,6 +121,7 @@ impl<'a> TypsiteConfig<'a> {
             .to_string();
 
         let config = Self {
+            options,
             rules,
             section,
             heading_numbering,
@@ -149,18 +192,20 @@ impl<'a> TypsiteConfig<'a> {
 
     pub fn path_to_slug(&self, path: &Path) -> Result<String> {
         let path = if path.starts_with(self.typst_path) {
-            path
+            path.strip_prefix(self.typst_path)?
         } else if path.starts_with(self.html_path) {
             path.strip_prefix(self.html_path)?
         } else {
             return Err(anyhow!("Can't find a slug for {:?}", path));
         };
-        Ok(self.format_slug(path.to_string_lossy().as_ref()))
+        let path = path.with_extension("");
+        Ok(format!("/{}", path.to_string_lossy().replace('\\', "/")))
     }
 
     pub fn format_slug(&self, slug: &str) -> String {
         let slug = slug.replace("\\", "/");
-        let slug = slug.trim_start_matches(self.typst_root_name.as_str());
+        let prefix = format!("{}/", self.typst_root_name);
+        let slug = slug.strip_prefix(&prefix).unwrap_or(&slug);
         let slug = slug
             .strip_suffix(".typ")
             .or_else(|| slug.strip_suffix(".html"))

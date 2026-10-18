@@ -1,3 +1,4 @@
+use crate::compile::error::{TypError, TypResult};
 use crate::compile::registry::Key;
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::Indexes;
@@ -24,7 +25,7 @@ impl<'c, 'b: 'c, 'a: 'b> PendingPass<'a, 'b, 'c> {
         content: &'c (Vec<String>, Vec<String>, Vec<String>),
         embeds: &[Embed],
         indexes: &Indexes,
-    ) -> Pending<'c> {
+    ) -> TypResult<Pending<'c>> {
         match indexes {
             Indexes::All => self.run_self(embeds.iter().collect(), content),
             Indexes::Some(indexes) => {
@@ -34,10 +35,10 @@ impl<'c, 'b: 'c, 'a: 'b> PendingPass<'a, 'b, 'c> {
         }
     }
 
-    fn emit_embeds(&self, embeds: Vec<&Embed>) -> Vec<EmbedData<'c>> {
+    fn emit_embeds(&self, embeds: Vec<&Embed>) -> TypResult<Vec<EmbedData<'c>>> {
         embeds
             .into_iter()
-            .filter_map(|embed| self.emit_embed(embed))
+            .map(|embed| self.emit_embed(embed))
             .collect()
     }
 
@@ -91,22 +92,19 @@ impl<'c, 'b: 'c, 'a: 'b> PendingPass<'a, 'b, 'c> {
         SidebarData::new(indexes, numberings, anchors)
     }
 
-    fn emit_embed(&self, embed: &Embed) -> Option<EmbedData<'c>> {
+    fn emit_embed(&self, embed: &Embed) -> TypResult<EmbedData<'c>> {
         let slug = embed.slug.clone();
-        let child = self.global_data.article(slug.as_ref());
-        if child.is_none() {
-            eprintln!(
-                "[WARN] (emit_embed) Embed `{}` not found in {}",
-                slug.as_ref(),
-                self.slug
-            );
-            return None;
-        }
-        let Some(child) = child else {
-            return None;
-        };
+        let child = self.global_data.article(slug.as_ref()).ok_or_else(|| {
+            TypError::new_with(
+                self.slug.clone(),
+                vec![anyhow::anyhow!(
+                    "Embedded article {slug} not found in {}",
+                    self.slug
+                )],
+            )
+        })?;
         let child_metadata = child.get_metadata();
-        let child_pending = child.get_pending_or_init(self.global_data);
+        let child_pending = child.get_pending_or_init(self.global_data)?;
         let section_type = embed.section_type;
         let pos: Pos = embed.sidebar_pos.0.clone();
         let body_index = embed.body_index;
@@ -117,7 +115,7 @@ impl<'c, 'b: 'c, 'a: 'b> PendingPass<'a, 'b, 'c> {
         let title = child_metadata.inline(&self.global_data.config.embed.embed_title.body);
         let full_sidebar_title_indexes = child.get_full_sidebar().title_index().clone();
         let embed_sidebar_title_indexes = child.get_embed_sidebar().title_index().clone();
-        Some(EmbedData::new(
+        Ok(EmbedData::new(
             pos,
             slug,
             section_type,
@@ -137,20 +135,28 @@ impl<'c, 'b: 'c, 'a: 'b> PendingPass<'a, 'b, 'c> {
         self,
         embeds: Vec<&Embed>,
         content: &'c (Vec<String>, Vec<String>, Vec<String>),
-    ) -> Pending<'c> {
+    ) -> TypResult<Pending<'c>> {
         let article = self
             .global_data
             .article(self.slug.as_ref())
-            .expect("pending pass should only run for registered articles");
+            .ok_or_else(|| {
+                TypError::new_with(
+                    self.slug.clone(),
+                    vec![anyhow::anyhow!(
+                        "Pending pass article {} is not registered",
+                        self.slug
+                    )],
+                )
+            })?;
         let style = article.get_meta_options().heading_numbering_style;
         let body_numberings = self.emit_body_numberings(&article.get_body().numberings);
         let full_sidebar = article.get_full_sidebar();
         let embed_sidebar = article.get_embed_sidebar();
         let full_sidebar_data = self.emit_sidebar(full_sidebar);
         let embed_sidebar_data = self.emit_sidebar(embed_sidebar);
-        let embeds = self.emit_embeds(embeds);
+        let embeds = self.emit_embeds(embeds)?;
         let anchors = article.get_anchors();
-        Pending::new(
+        Ok(Pending::new(
             content,
             style,
             body_numberings,
@@ -158,7 +164,7 @@ impl<'c, 'b: 'c, 'a: 'b> PendingPass<'a, 'b, 'c> {
             embed_sidebar_data,
             embeds,
             anchors,
-        )
+        ))
     }
 }
 
@@ -167,19 +173,19 @@ pub(crate) mod tests {
     use super::*;
     use crate::compile::registry::{Key, SlugPath};
     use crate::config::TypsiteConfig;
+    use crate::ir::article::Article;
     use crate::ir::article::body::Body;
     use crate::ir::article::dep::{Dependency, Indexes};
     use crate::ir::article::sidebar::{HeadingNumberingStyle, Sidebar, SidebarPos, SidebarType};
-    use crate::ir::article::Article;
     use crate::ir::embed::SectionType;
+    use crate::ir::metadata::Metadata;
     use crate::ir::metadata::content::{MetaContent, MetaContents, TITLE_KEY};
     use crate::ir::metadata::graph::MetaNode;
     use crate::ir::metadata::options::MetaOptions;
-    use crate::ir::metadata::Metadata;
     use crate::ir::pending::AnchorData;
     use std::collections::{HashMap, HashSet};
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_root(label: &str) -> PathBuf {
@@ -190,94 +196,7 @@ pub(crate) mod tests {
         std::env::temp_dir().join(format!("typsite-{label}-{unique}"))
     }
 
-    fn write_test_config(root: &Path) {
-        fs::create_dir_all(root.join("components/footer")).expect("footer dir");
-        fs::create_dir_all(root.join("rewrite")).expect("rewrite dir");
-        fs::create_dir_all(root.join("schemas")).expect("schema dir");
-        fs::create_dir_all(root.join("syntaxes")).expect("syntaxes dir");
-        fs::create_dir_all(root.join("themes")).expect("themes dir");
-
-        fs::write(
-            root.join("options.toml"),
-            include_str!("../../resources/.typsite/options.toml"),
-        )
-        .expect("options file");
-        fs::write(
-            root.join("components/section.html"),
-            include_str!("../../resources/.typsite/components/section.html"),
-        )
-        .expect("section");
-        fs::write(
-            root.join("components/heading-numbering.html"),
-            "<html><body>{numbering}</body></html>",
-        )
-        .expect("heading numbering");
-        fs::write(
-            root.join("components/footer.html"),
-            "<html><body><footer>{references}{backlinks}</footer></body></html>",
-        )
-        .expect("footer");
-        fs::write(
-            root.join("components/footer/backlinks.html"),
-            "<html><body>{backlinks}</body></html>",
-        )
-        .expect("backlinks");
-        fs::write(
-            root.join("components/footer/references.html"),
-            "<html><body>{references}</body></html>",
-        )
-        .expect("references");
-        fs::write(
-            root.join("components/anchor_def.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor def");
-        fs::write(
-            root.join("components/anchor_def_svg.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor def svg");
-        fs::write(
-            root.join("components/anchor_goto.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor goto");
-        fs::write(
-            root.join("components/anchor_goto_svg.html"),
-            "<html><body></body></html>",
-        )
-        .expect("anchor goto svg");
-        fs::write(
-            root.join("components/sidebar.html"),
-            "<html><body>{children}</body></html>",
-        )
-        .expect("sidebar");
-        fs::write(
-            root.join("components/sidebar_each.html"),
-            "<html><body>{title}</body></html>",
-        )
-        .expect("sidebar each");
-        fs::write(
-            root.join("components/embed.html"),
-            "<html><body>{content}</body></html>",
-        )
-        .expect("embed");
-        fs::write(
-            root.join("components/embed_title.html"),
-            "<html><body>{title}</body></html>",
-        )
-        .expect("embed title");
-        fs::write(
-            root.join("schemas/main.html"),
-            "<html><body><content></content></body></html>",
-        )
-        .expect("main schema");
-        fs::write(
-            root.join("schemas/reference.html"),
-            "<html><body><content></content></body></html>",
-        )
-        .expect("reference schema");
-    }
+    use crate::test_support::write_config as write_test_config;
 
     fn article_with_title<'a>(config: &'a TypsiteConfig<'a>, slug: &str) -> Article<'a> {
         let slug = Key::from(slug);
@@ -287,8 +206,9 @@ pub(crate) mod tests {
             MetaContent::new(vec!["Regression Article".to_string()], Vec::new()),
         );
         let metadata = Metadata {
-            contents: MetaContents::new(slug.clone(), contents, false),
+            contents: MetaContents::new(slug.clone(), contents, false, &config.options),
             options: MetaOptions {
+                rss: false,
                 heading_numbering_style: HeadingNumberingStyle::Bullet,
                 sidebar_type: SidebarType::All,
             },
@@ -360,17 +280,21 @@ pub(crate) mod tests {
         )];
         let content = (vec!["body".to_string()], Vec::new(), Vec::new());
 
-        let pending = PendingPass::new(slug, &global_data).run(&content, &embeds, &Indexes::All);
-
-        assert!(pending.embeds.is_empty());
-        assert_eq!(pending.raw.0, vec!["body".to_string()]);
+        let result = PendingPass::new(slug, &global_data).run(&content, &embeds, &Indexes::All);
+        match result {
+            Ok(_) => panic!("Missing embeds must not produce fabricated content"),
+            Err(error) => assert!(
+                error
+                    .to_string()
+                    .contains("Embedded article /missing-embed not found")
+            ),
+        }
 
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
     fn pending_pass_skips_missing_embed_article_without_panicking() {
-        let _guard = crate::test_lock();
         run_pending_pass_skips_missing_embed_article_without_panicking();
     }
 }

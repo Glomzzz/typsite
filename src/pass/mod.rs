@@ -1,10 +1,10 @@
 use crate::compile::error::TypResult;
 use crate::compile::registry::{Key, KeyRegistry, SlugPath};
-use crate::config::schema::Schema;
 use crate::config::TypsiteConfig;
+use crate::config::schema::Schema;
+use crate::ir::article::Article;
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::dep::Indexes;
-use crate::ir::article::Article;
 use crate::ir::embed::Embed;
 use crate::ir::pending::Pending;
 use crate::ir::rewriter::{BodyRewriter, MetaRewriter};
@@ -50,7 +50,7 @@ pub fn pass_embed<'c, 'b: 'c, 'a: 'b>(
     embeds: &[Embed],
     indexes: &Indexes,
     global_data: &'c GlobalData<'a, 'b, 'c>,
-) -> Pending<'c> {
+) -> TypResult<Pending<'c>> {
     PendingPass::new(slug, global_data).run(content, embeds, indexes)
 }
 
@@ -73,11 +73,4 @@ pub fn pass_schema<'c, 'b: 'c, 'a: 'b>(
     global_data: &'c GlobalData<'a, 'b, 'c>,
 ) -> TypResult<OutputHtml<'a>> {
     SchemaPass::new(config, schema, article, content, sidebar, global_data).run()
-}
-
-#[cfg(test)]
-pub(crate) mod tests {
-    pub(crate) fn run_pending_pass_skips_missing_embed_article_without_panicking() {
-        super::pending::tests::run_pending_pass_skips_missing_embed_article_without_panicking();
-    }
 }

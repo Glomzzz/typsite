@@ -1,0 +1,216 @@
+import copy
+import json
+import shutil
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+
+SCRIPTS = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(SCRIPTS))
+import release_artifacts as artifacts
+import release_draft as draft
+import smoke_binary
+
+
+SHA = "a" * 40
+VERSION = "0.1.8"
+
+
+class ReleaseToolsTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="typsite-release-tools-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        (self.root / "Cargo.toml").write_text(f'[package]\nversion = "{VERSION}"\n', encoding="utf-8")
+        notes = self.root / f"docs/releases/{VERSION}.md"
+        notes.parent.mkdir(parents=True)
+        notes.write_text("Migration notes", encoding="utf-8")
+        self.dist = self.root / "dist"
+        for target in artifacts.TARGETS:
+            binary = self.root / f"input-{target}"
+            binary.write_bytes(b"binary fixture: " + target.encode())
+            artifacts.package(binary, target, SHA, self.root, self.dist)
+        self.report = artifacts.manifest(self.dist, SHA, VERSION)
+
+    def test_complete_manifest_and_downloaded_asset_verification(self):
+        self.assertEqual(len(self.report["assets"]), 3)
+        for asset in self.report["assets"]:
+            checked = artifacts.verify(self.dist / asset["name"], self.dist / "release-manifest.json", SHA, VERSION)
+            self.assertEqual(checked, asset)
+        self.assertEqual(len((self.dist / "SHA256SUMS").read_text().splitlines()), 3)
+
+    def test_tampered_binary_and_wrong_revision_or_version_fail_closed(self):
+        binary = self.dist / next(iter(artifacts.TARGETS.values()))
+        with self.assertRaises(ValueError):
+            artifacts.verify(binary, self.dist / "release-manifest.json", "b" * 40, VERSION)
+        with self.assertRaises(ValueError):
+            artifacts.verify(binary, self.dist / "release-manifest.json", SHA, "0.0.0")
+        binary.write_bytes(b"tampered asset")
+        with self.assertRaises(ValueError):
+            artifacts.verify(binary, self.dist / "release-manifest.json", SHA, VERSION)
+        with self.assertRaises(ValueError):
+            artifacts.manifest(self.dist, SHA, VERSION)
+
+    def test_missing_or_mixed_provenance_is_not_a_complete_release(self):
+        asset = self.report["assets"][0]
+        metadata = self.dist / (asset["name"] + ".json")
+        data = json.loads(metadata.read_text())
+        data["commit"] = "b" * 40
+        metadata.write_text(json.dumps(data))
+        with self.assertRaises(ValueError):
+            artifacts.manifest(self.dist, SHA, VERSION)
+        metadata.unlink()
+        with self.assertRaises(FileNotFoundError):
+            artifacts.manifest(self.dist, SHA, VERSION)
+
+    def test_duplicate_or_unsupported_assets_in_manifest_are_rejected(self):
+        binary = self.dist / self.report["assets"][0]["name"]
+        report = copy.deepcopy(self.report)
+        report["assets"][1] = report["assets"][0]
+        path = self.dist / "release-manifest.json"
+        path.write_text(json.dumps(report))
+        with self.assertRaises(ValueError):
+            artifacts.verify(binary, path, SHA, VERSION)
+
+    def test_only_exact_draft_can_be_modified(self):
+        for release in (None, {"draft": False, "target_commitish": SHA},
+                        {"draft": True, "target_commitish": "main"},
+                        {"draft": True, "target_commitish": "b" * 40}):
+            with self.assertRaises(ValueError):
+                draft.require_draft(release, SHA)
+        draft.require_draft({"draft": True, "target_commitish": SHA}, SHA)
+
+    def test_public_release_rerun_never_uploads_or_mutates(self):
+        release = {"draft": False, "target_commitish": SHA}
+        with mock.patch.object(draft, "find_release", return_value=release), mock.patch.object(draft, "gh") as gh:
+            with self.assertRaises(ValueError):
+                draft.stage(self.root, "owner/repo", SHA, 42, self.dist)
+            gh.assert_not_called()
+
+    def test_existing_tag_is_not_repurposed(self):
+        refs = [{"ref": f"refs/tags/{VERSION}-42"}]
+        with mock.patch.object(draft, "find_release", return_value=None), mock.patch.object(draft, "gh", return_value=json.dumps(refs)) as gh:
+            with self.assertRaises(ValueError):
+                draft.stage(self.root, "owner/repo", SHA, 42, self.dist)
+            self.assertEqual(gh.call_count, 1)
+            self.assertEqual(gh.call_args.args[0], "api")
+
+    def test_staging_uses_draft_only_and_uploads_exact_expected_assets(self):
+        release = {"draft": True, "target_commitish": SHA}
+        with mock.patch.object(draft, "find_release", side_effect=[None, release, release]), mock.patch.object(draft, "gh", return_value="[]") as gh:
+            draft.stage(self.root, "owner/repo", SHA, 42, self.dist)
+        calls = [call.args for call in gh.call_args_list]
+        create = next(call for call in calls if call[:2] == ("release", "create"))
+        self.assertIn("--draft", create)
+        self.assertEqual(create[create.index("--target") + 1], SHA)
+        for call in calls:
+            if call[:2] == ("release", "edit"):
+                self.assertFalse(any(str(argument).startswith("--draft") for argument in call),
+                                 "editing notes/title must not change publication state")
+        upload = next(call for call in calls if call[:2] == ("release", "upload"))
+        self.assertEqual({path.name for path in upload if isinstance(path, Path)},
+                         set(artifacts.TARGETS.values()) | {"release-manifest.json", "SHA256SUMS"})
+
+    def write_evidence(self):
+        directory = self.root / "evidence"
+        for index, asset in enumerate(self.report["assets"]):
+            output = directory / str(index) / "smoke.json"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json.dumps({
+                "binary": asset["name"], "sha256": asset["sha256"], "version": VERSION,
+                "provenance": asset, "pages": 14, "passed": sorted(draft.REQUIRED_STAGES),
+            }))
+        return directory
+
+    def test_all_native_smoke_evidence_is_required(self):
+        directory = self.write_evidence()
+        self.assertEqual(len(draft.check_evidence(self.report, directory)), 3)
+        (directory / "0/smoke.json").unlink()
+        with self.assertRaises(ValueError):
+            draft.check_evidence(self.report, directory)
+
+    def test_wrong_hash_or_incomplete_smoke_cannot_be_marked_ready(self):
+        for key, value in (("sha256", "wrong"), ("passed", ["warm no-op"]), ("pages", 1)):
+            directory = self.write_evidence()
+            path = directory / "0/smoke.json"
+            data = json.loads(path.read_text())
+            data[key] = value
+            path.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):
+                draft.check_evidence(self.report, directory)
+
+    def test_download_checks_draft_before_network_download(self):
+        with mock.patch.object(draft, "find_release", return_value={"draft": False, "target_commitish": SHA}), mock.patch.object(draft, "gh") as gh:
+            with self.assertRaises(ValueError):
+                draft.download("owner/repo", "tag", SHA, next(iter(artifacts.TARGETS.values())), self.root / "download")
+            gh.assert_not_called()
+
+    def test_smoke_snapshot_includes_ownership_and_failures_are_errors(self):
+        (self.root / "publish").mkdir()
+        (self.root / "publish/.typsite-outputs.json").write_text("{}")
+        self.assertIn(".typsite-outputs.json", smoke_binary.snapshot(self.root / "publish"))
+        with self.assertRaises(RuntimeError):
+            smoke_binary.require(False, "must fail")
+        smoke_binary.require(True, "must pass")
+
+    def test_ready_redownloads_and_checks_actual_bytes_without_publishing(self):
+        evidence = self.write_evidence()
+        release = {"draft": True, "target_commitish": SHA}
+
+        def gh(*arguments):
+            if arguments[:2] == ("release", "download"):
+                destination = Path(arguments[arguments.index("--dir") + 1])
+                for name in set(artifacts.TARGETS.values()) | {"release-manifest.json", "SHA256SUMS"}:
+                    shutil.copy2(self.dist / name, destination / name)
+            return "[]"
+
+        with mock.patch.object(draft, "find_release", return_value=release), mock.patch.object(draft, "gh", side_effect=gh) as command:
+            draft.ready(self.root, "owner/repo", "tag", SHA, self.dist, evidence)
+        for call in command.call_args_list:
+            self.assertNotIn("--draft=false", call.args)
+            self.assertNotIn("--latest", call.args)
+        self.assertTrue(any("validated draft" in str(call.args) for call in command.call_args_list))
+
+    def test_ready_fails_if_downloaded_binary_changed_after_smoke(self):
+        evidence = self.write_evidence()
+        release = {"draft": True, "target_commitish": SHA}
+
+        def gh(*arguments):
+            if arguments[:2] == ("release", "download"):
+                destination = Path(arguments[arguments.index("--dir") + 1])
+                for name in set(artifacts.TARGETS.values()) | {"release-manifest.json", "SHA256SUMS"}:
+                    shutil.copy2(self.dist / name, destination / name)
+                (destination / next(iter(artifacts.TARGETS.values()))).write_bytes(b"changed after smoke")
+            return "[]"
+
+        with mock.patch.object(draft, "find_release", return_value=release), mock.patch.object(draft, "gh", side_effect=gh) as command:
+            with self.assertRaises(ValueError):
+                draft.ready(self.root, "owner/repo", "tag", SHA, self.dist, evidence)
+        self.assertFalse(any(call.args[:2] == ("release", "edit") for call in command.call_args_list))
+
+    def test_lightweight_and_annotated_tags_must_resolve_to_exact_commit(self):
+        for target in ({"type": "commit", "sha": SHA}, {"type": "tag", "sha": "c" * 40}):
+            ref = [{"ref": "refs/tags/test", "object": target}]
+            responses = [json.dumps(ref)]
+            if target["type"] == "tag":
+                responses.append(json.dumps({"object": {"type": "commit", "sha": SHA}}))
+            with mock.patch.object(draft, "gh", side_effect=responses):
+                draft.require_matching_tag("owner/repo", "test", SHA)
+        ref = [{"ref": "refs/tags/test", "object": {"type": "commit", "sha": "b" * 40}}]
+        with mock.patch.object(draft, "gh", return_value=json.dumps(ref)):
+            with self.assertRaises(ValueError):
+                draft.require_matching_tag("owner/repo", "test", SHA)
+        with mock.patch.object(draft, "gh", return_value="[]"):
+            draft.require_matching_tag("owner/repo", "not-yet-tagged-draft", SHA)
+
+    def test_short_revision_names_are_not_accepted_for_release_provenance(self):
+        for commit in ("main", "a" * 7, "A" * 40, "a" * 41):
+            with self.assertRaises(ValueError):
+                artifacts.checked_commit(commit)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,11 +1,11 @@
 use crate::compile::registry::Key;
+use crate::config::TypsiteConfig;
 use crate::config::anchor::AnchorConfig;
 use crate::config::heading_numbering::HeadingNumberingConfig;
-use crate::config::TypsiteConfig;
 use crate::ir::article::data::GlobalData;
 use crate::ir::article::sidebar::{HeadingNumberingStyle, Pos, SidebarIndexes, SidebarType};
 use crate::ir::embed::SectionType;
-use crate::util::str::{ac_replace, SectionElem};
+use crate::util::str::{SectionElem, ac_replace};
 use crate::util::{pos_base_on, pos_slug};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

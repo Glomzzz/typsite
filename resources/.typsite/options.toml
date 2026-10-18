@@ -8,6 +8,7 @@ sidebar = "true"
 show-metadata = "true"
 [default_metadata.options]
 heading_numbering = "Bullet" # Bullet | Roman | Alphabet | None
+rss = false # Opt in per collection page with #rss(true); not inherited.
 [default_metadata.graph]
 parent = "" # the default parent page
 
@@ -22,10 +23,17 @@ dark = "#d3c6aa"
 light = "#5c6a72"
 
 [site]
-# base_url is required to generate sitemap and RSS
+# Set your public HTTP(S) URL to enable RSS and sitemap; blank disables both.
+# Example: base_url = "https://example.org"
 base_url = ""
 title = ""
 description = ""
+# Output paths are relative to publish/, with an optional leading slash.
+# Items are direct embeds of #rss(true) pages; the marked pages are excluded.
+# Set rss_path = "" or rss_limit = 0 to disable RSS only.
 rss_path = "/rss.xml"
 sitemap_path = "/sitemap.xml"
 rss_limit = 20
+# "summary": description/summary/abstract metadata and links (default).
+# "full": also include composed article HTML as content:encoded.
+rss_content = "summary"

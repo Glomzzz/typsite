@@ -1,680 +1,501 @@
-use crate::compile::compiler::cache::article::ArticleCache;
-use crate::compile::compiler::cache::dep::RevDeps;
-use crate::compile::options::CompileOptions;
-use crate::compile::registry::KeyRegistry;
+//! Build orchestration. Source discovery, export caching, graph resolution,
+//! rendering and publication have separate responsibilities and failure modes.
+
+use super::cache::{Manifest, Publication, fingerprint};
+use super::graph::ResolvedSite;
+use super::options::CompileOptions;
+use super::output::{LOCK, OutputPlan};
+use super::project::{ProjectPaths, Snapshot, digest, managed_path, scan};
+use super::registry::KeyRegistry;
+use super::report::{BuildReport, Stage};
+use super::typst::{CommandTypst, TypstRunner};
 use crate::config::TypsiteConfig;
-use crate::util::fs::remove_dir_all;
-use crate::util::html::OutputHtml;
-use analysis::*;
-use anyhow::*;
-use html_pass::pass_html;
-use initializer::{Input, initialize};
-use output_sync::{Output, sync_files_to_output};
-use site_output::generate_site_outputs;
-use page_composer::{PageData, compose_pages};
-use std::collections::{HashMap, HashSet};
+use crate::pass::pass_pure;
+use anyhow::{Context, Result, ensure};
+use rayon::prelude::*;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fs::{self, File, OpenOptions};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::result::Result::Ok;
 use std::sync::Arc;
-use typst_pass::compile_typsts;
-
-use super::watch::watch;
-use super::{init_compile_options, proj_options};
-
-mod analysis;
-mod html_pass;
-mod initializer;
-mod output_sync;
-mod page_composer;
-mod site_output;
-mod typst_pass;
-
-mod cache {
-    pub mod article;
-    pub mod dep;
-    pub mod monitor;
-}
-
-type PathBufs = HashSet<PathBuf>;
-type ErrorArticles = Vec<(PathBuf, String)>;
-type UpdatedPages<'a> = Vec<(Arc<Path>, OutputHtml<'a>)>;
-
-pub fn clean_dir(path: &Path) -> Result<()> {
-    if path.exists() {
-        println!("  - Cleaning dir: {path:?}");
-        remove_dir_all(path)?;
-    }
-    Ok(())
-}
 
 pub struct Compiler {
-    typst_path: PathBuf,      // Typst root
-    html_cache_path: PathBuf, // Typst-export-html path (in which are raw typst-html-export files)
-    config_path: PathBuf,     // Config root
-    assets_path: PathBuf,     // Assets
-    cache_path: PathBuf,      // Cache root
-    output_path: PathBuf,     // Output
-    packages_path: Option<PathBuf>,// Package
-    typst: String,            // Typst executable path
+    paths: ProjectPaths,
+    options: CompileOptions,
+    runner: Arc<dyn TypstRunner>,
+    engine_identity: String,
+    export_jobs: Option<NonZeroUsize>,
 }
 
 impl Compiler {
     pub fn new(
         options: CompileOptions,
-        cache_path: PathBuf,
-        config_path: PathBuf,
-        typst_path: PathBuf,
-        output_path: PathBuf,
-        packages_path: Option<PathBuf>,
-        typst: String
+        cache: PathBuf,
+        config: PathBuf,
+        input: PathBuf,
+        output: PathBuf,
+        packages: Option<PathBuf>,
+        typst: String,
     ) -> Result<Self> {
-        init_compile_options(options)?;
-        let html_cache_path = cache_path.join("html");
-        let assets_path = config_path.join("assets");
+        Self::with_runner(
+            ProjectPaths::new(input, config, cache, output, packages)?,
+            options,
+            Arc::new(CommandTypst::new(typst)),
+        )
+    }
+
+    pub fn with_runner(
+        paths: ProjectPaths,
+        options: CompileOptions,
+        runner: Arc<dyn TypstRunner>,
+    ) -> Result<Self> {
+        paths.validate()?;
+        let engine_identity = env!("TYPSITE_ENGINE_ID").to_owned();
         Ok(Self {
-            typst_path,
-            html_cache_path,
-            config_path,
-            assets_path,
-            cache_path,
-            output_path,
-            packages_path,
-            typst
+            paths,
+            options,
+            runner,
+            export_jobs: None,
+            engine_identity,
         })
     }
+
+    /// Bound simultaneous article exports. Scheduling is not an input to the
+    /// generated site, so changing this limit does not invalidate warm caches.
+    pub fn with_jobs(mut self, jobs: NonZeroUsize) -> Self {
+        self.export_jobs = Some(jobs);
+        self
+    }
+
     pub fn output_path(&self) -> &Path {
-        &self.output_path
+        &self.paths.output
     }
+
     pub fn clean(&self) -> Result<()> {
-        clean_dir(&self.cache_path)?;
-        clean_dir(&self.output_path)
+        self.paths.validate()?;
+        super::clean::clean_roots(
+            &self.paths.cache,
+            &self.paths.output,
+            &[&self.paths.input, &self.paths.config],
+            false,
+        )
     }
+
     pub async fn watch(self, host: String, port: u16) -> Result<()> {
-        watch(self, host, port).await
+        super::watch::watch(self, host, port).await
     }
-    // return (updated, no error)
-    pub fn compile(&self) -> Result<(bool, bool)> {
-        //1. Initialize input & config
-        let input = initialize(
-            &self.cache_path,
-            &self.typst_path,
-            &self.html_cache_path,
-            &self.config_path,
-            &self.assets_path,
-            self.packages_path.as_deref(),
-        );
-        let input = match input {
-            Ok(input) => input,
-            Err(err) => {
-                eprintln!("Error initializing compiler: {err}");
-                return Ok((false, false));
+
+    pub fn compile(&self) -> Result<BuildReport> {
+        self.paths.validate()?;
+        let _cache_lock = lock(&self.paths.cache)?;
+        let _output_lock = lock(&self.paths.output)?;
+        let mut report = BuildReport::default();
+        let paths = &self.paths;
+        let exports_root = paths.cache.join("exports");
+        // Typst --version is a subprocess on the CLI path. Overlap it with
+        // filesystem reads without initializing Rayon on a small warm project.
+        let (input, configuration, packages, identity, mut cache, exports_valid, outputs_valid) =
+            std::thread::scope(|scope| -> Result<_> {
+                let identity = scope.spawn(|| self.runner.identity());
+                let input = scan(&paths.input)?;
+                let configuration = scan(&paths.config)?;
+                let packages = paths
+                    .packages
+                    .as_deref()
+                    .map(scan)
+                    .transpose()?
+                    .unwrap_or_default();
+                let cache = Manifest::load(&paths.cache);
+                let exports_valid = cache.published.is_some()
+                    && super::cache::exports_current(
+                        &cache.exports,
+                        &input,
+                        &exports_root,
+                        &paths.input,
+                    )?;
+                let outputs_valid = if let Some(published) = &cache.published {
+                    OutputPlan::is_current(&paths.output, &published.outputs)?
+                } else {
+                    false
+                };
+                let identity = identity
+                    .join()
+                    .map_err(|_| anyhow::anyhow!("Typst identity worker panicked"))??;
+                Ok((
+                    input,
+                    configuration,
+                    packages,
+                    identity,
+                    cache,
+                    exports_valid,
+                    outputs_valid,
+                ))
+            })?;
+        let input_key = fingerprint(&(
+            env!("CARGO_PKG_VERSION"),
+            &self.engine_identity,
+            &identity,
+            &paths.input,
+            &paths.config,
+            &paths.packages,
+            &self.options,
+            &input,
+            &configuration,
+            &packages,
+        ))?;
+        // A verified no-op needs no template/YAML/theme parsing. The complete
+        // configuration snapshot is still checked, including unused resources;
+        // any changed resource forces normal strict validation below.
+        if let Some(published) = &cache.published
+            && published.inputs == input_key
+            && published.sources.len() == cache.exports.len()
+            && published
+                .sources
+                .iter()
+                .all(|source| cache.exports.contains_key(source))
+            && exports_valid
+            && outputs_valid
+        {
+            return Ok(report);
+        }
+        let previous_manifest = fingerprint(&cache)?;
+        let highlight_inputs: Snapshot = configuration
+            .iter()
+            .filter(|(path, _)| path.starts_with("themes") || path.starts_with("syntaxes"))
+            .map(|(path, hash)| (path.clone(), hash.clone()))
+            .collect();
+        let highlight_key =
+            fingerprint(&(&self.engine_identity, &paths.config, &highlight_inputs))?;
+        let config = TypsiteConfig::load_cached(
+            &paths.config,
+            &paths.input,
+            &exports_root,
+            self.options,
+            &paths.cache,
+            &highlight_key,
+        )
+        .context("Cannot load project configuration")?;
+        let site_outputs = super::site_output::SiteOutputs::new(&config.options)?;
+        let sources: Snapshot = input
+            .iter()
+            .filter(|(path, _)| is_typst(path) && !is_library(path, &config))
+            .map(|(path, hash)| (path.clone(), hash.clone()))
+            .collect();
+        let fonts: Snapshot = configuration
+            .iter()
+            .filter(|(path, _)| path.starts_with("assets/fonts"))
+            .map(|(path, hash)| (path.clone(), hash.clone()))
+            .collect();
+        let export_key = fingerprint(&(
+            1_u32,
+            &self.engine_identity,
+            &identity,
+            &paths.input,
+            &paths.config,
+            &paths.packages,
+            &packages,
+            &fonts,
+        ))?;
+        // Hash known external dependencies before exporting, not just after.
+        // New dependencies discovered by Typst require a verification export.
+        let mut expected = Snapshot::new();
+        for (root, snapshot) in [(&paths.input, &input), (&paths.config, &configuration)] {
+            for (relative, hash) in snapshot {
+                expected.insert(fs::canonicalize(root.join(relative))?, hash.clone());
+            }
+        }
+        if let Some(root) = &paths.packages {
+            for (relative, hash) in &packages {
+                expected.insert(fs::canonicalize(root.join(relative))?, hash.clone());
+            }
+        }
+        // Shared package/import files can be dependencies of every article.
+        // Fingerprint each external path once, rather than once per importer.
+        let external: BTreeSet<_> = cache
+            .exports
+            .values()
+            .flat_map(|entry| entry.dependencies.keys())
+            .filter(|path| !expected.contains_key(*path))
+            .cloned()
+            .collect();
+        let external: Vec<_> = external
+            .par_iter()
+            .filter_map(|path| digest(path).ok().map(|hash| (path.clone(), hash)))
+            .collect();
+        expected.extend(external);
+        let identity_changed = cache.export_key != export_key;
+        if identity_changed {
+            cache.exports.clear();
+            cache.export_key = export_key;
+        }
+        cache
+            .exports
+            .retain(|source, _| sources.contains_key(source));
+        // Preflight all targets before any workers write. Preserve source order
+        // when folding results, irrespective of worker completion order.
+        let candidates = {
+            let mut names = OutputPlan::default();
+            sources
+                .iter()
+                .map(|(relative, hash)| {
+                    let target = relative.with_extension("html");
+                    // Two workers must never target the same artifact, including
+                    // portable case-insensitive or file/directory collisions.
+                    names.insert(target.clone(), Vec::new(), relative.display().to_string())?;
+                    let artifact = managed_path(&paths.cache, &Path::new("exports").join(target))?;
+                    Ok((relative, hash, artifact))
+                })
+                .collect::<Result<Vec<_>>>()?
+        };
+        let validity: Vec<_> = candidates
+            .par_iter()
+            .map(|(relative, hash, artifact)| {
+                cache
+                    .exports
+                    .get(*relative)
+                    .is_some_and(|entry| entry.matches_snapshot(hash, artifact, &expected))
+            })
+            .collect();
+        let dirty: Vec<_> = candidates
+            .into_iter()
+            .zip(validity)
+            .filter_map(|(candidate, current)| (!current).then_some(candidate))
+            .collect();
+        if identity_changed || !dirty.is_empty() {
+            // Includes repairing a deleted package namespace even if the build's
+            // export identity is unchanged. Never race installers with exports.
+            for root in self.runner.prepare(paths.packages.as_deref())? {
+                let root =
+                    fs::canonicalize(root).context("Cannot resolve prepared package root")?;
+                for (relative, hash) in scan(&root)? {
+                    expected.insert(fs::canonicalize(root.join(relative))?, hash);
+                }
+            }
+        }
+        // Never retain validity for a failed export. Successful siblings still
+        // reach the independent export checkpoint after every worker has joined.
+        for (relative, _, _) in &dirty {
+            cache.exports.remove(*relative);
+        }
+        let concurrent = self
+            .export_jobs
+            .map_or_else(cpu_budget, NonZeroUsize::get)
+            .min(dirty.len())
+            .max(1);
+        let typst_jobs = NonZeroUsize::new((cpu_budget() / concurrent).max(1)).unwrap();
+        let results = super::export::export_batch(
+            self.runner.as_ref(),
+            paths,
+            &dirty,
+            &expected,
+            concurrent,
+            typst_jobs,
+        )?;
+        for ((relative, _, _), result) in dirty.into_iter().zip(results) {
+            match result {
+                Ok(entry) => {
+                    cache.exports.insert(relative.clone(), entry);
+                    report.exported.push(relative.clone());
+                }
+                Err(error) => {
+                    report.error(Stage::Export, Some(relative.clone()), format!("{error:#}"))
+                }
+            }
+        }
+        // Exports are checkpointed independently of publication. Successful
+        // exports survive ordinary render/output failures; power-loss damage to
+        // this disposable cache is detected by checksums and artifact hashes.
+        if fingerprint(&cache)? != previous_manifest {
+            cache.save(&paths.cache)?;
+        }
+        if !report.is_success() {
+            return Ok(report);
+        }
+        let build_key = fingerprint(&(&input_key, &cache.export_key, &cache.exports))?;
+        if let Some(published) = &cache.published
+            && published.key == build_key
+            && OutputPlan::is_current(&paths.output, &published.outputs)?
+        {
+            return Ok(report);
+        }
+        let mut registry = KeyRegistry::new();
+        let mut known = BTreeMap::new();
+        for relative in sources.keys() {
+            let source = paths.input.join(relative);
+            let slug = config.path_to_slug(&source)?;
+            ensure!(
+                known.insert(slug.clone(), source.clone()).is_none(),
+                "Duplicate article slug {slug}"
+            );
+            registry.register_article_path(&config, &source)?;
+        }
+        let parse_jobs = sources
+            .keys()
+            .map(|relative| {
+                let source = paths.input.join(relative);
+                let slug = config.path_to_slug(&source)?;
+                Ok((
+                    relative,
+                    registry.slug(&slug).context("Unregistered article slug")?,
+                    registry.path(&slug).context("Unregistered article path")?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        // The registry/config are immutable after registration. Each parse owns
+        // its buffers and returns a result; diagnostics are folded in slug order.
+        let parsed: Vec<_> = parse_jobs
+            .par_iter()
+            .map(|(relative, slug, source)| {
+                let html = fs::read_to_string(managed_path(
+                    &paths.cache,
+                    &Path::new("exports").join(relative).with_extension("html"),
+                )?)?;
+                Ok(pass_pure(
+                    &config,
+                    &registry,
+                    source.clone(),
+                    slug.clone(),
+                    None,
+                    &html,
+                ))
+            })
+            .collect::<Vec<Result<_>>>();
+        let mut articles = HashMap::new();
+        for ((relative, slug, _), result) in parse_jobs.into_iter().zip(parsed) {
+            match result? {
+                Ok(article) => {
+                    articles.insert(slug, article);
+                }
+                Err(error) => report.error(Stage::Parse, Some(relative.clone()), error),
+            }
+        }
+        if !report.is_success() {
+            return Ok(report);
+        }
+        let site = match ResolvedSite::resolve(&config, articles) {
+            Ok(site) => site,
+            Err(error) => {
+                report.error(Stage::Resolve, None, format!("{error:#}"));
+                return Ok(report);
             }
         };
-        // If all files are not changed, return
-        if input.unchanged() {
-            return Ok((false, true));
-        } else if !input.overall_compile_needed {
-            println!("Files changed, compiling...");
+        let feed_link = site_outputs.discovery_link();
+        let pages = super::render::render(&config, &site, &mut report, feed_link.as_deref());
+        if !report.is_success() {
+            return Ok(report);
         }
-        let Input {
-            mut monitor,
-            changed_typst_paths,
-            deleted_typst_paths,
-            changed_config_paths,
-            changed_non_typst,
-            deleted_non_typst,
-            changed_assets,
-            deleted_assets,
-            retry_typst_paths,
-            retry_html_paths,
-            overall_compile_needed,
-            ..
-        } = input;
-
-
-        let config =
-            TypsiteConfig::load(&self.config_path, &self.typst_path, &self.html_cache_path).with_context(|| {
-                format!("Loading '{:?}' failed, try to init Typsite first by: typsite init",&self.config_path)
-            })?;
-
-        let mut registry = KeyRegistry::new();
-
-        // Article Manager, which manages all articles' slugs and paths
-        let mut article_cache = ArticleCache::new(&self.cache_path);
-
-        if overall_compile_needed {
-            registry.register_paths(&config, changed_typst_paths.iter());
+        let generated = site_outputs.generate(&site.articles, &pages)?;
+        let mut output = OutputPlan::default();
+        for page in pages {
+            let relative = page.path.strip_prefix(&paths.input)?.with_extension("html");
+            output.insert(
+                relative,
+                page.html.into_bytes(),
+                page.path.display().to_string(),
+            )?;
         }
-        registry.register_paths(&config, retry_typst_paths.iter());
-        registry.register_paths(&config, retry_html_paths.iter());
-
-        let error_cache_articles = article_cache.load(&config, &deleted_typst_paths, &mut registry);
-
-        let proj_options_errors = verify_proj_options(&config, &registry)?;
-
-        //2. Export typst as HTML
-        // Only compile updated typst files into html
-        let error_typst_articles = compile_typsts(
-            &self.typst,
-            &config,
-            &mut monitor,
-            &self.typst_path,
-            &self.config_path,
-            &self.html_cache_path,
-            &changed_typst_paths,
-            retry_typst_paths,
-        );
-
-        let mut changed_html_paths =
-            monitor.refresh_html(&deleted_typst_paths, overall_compile_needed)?;
-
-        changed_html_paths.extend(retry_html_paths);
-
-        //3. Pass HTML
-        // Pass updated html files
-        let (changed_articles, error_passing_articles) = pass_html(
-            &config,
-            &article_cache,
-            &mut registry,
-            &mut changed_html_paths,
-        );
-
-        let changed_article_slugs = changed_articles
-            .iter()
-            .map(|article| article.slug.clone())
-            .collect::<HashSet<_>>();
-
-        // Collect all updated articles
-        let mut loaded_articles = article_cache
-            .drain() // Drain all articles from Article Manager ( for a simpler lifetime)
-            .chain(changed_articles.into_iter().map(|a| (a.slug.clone(), a)))
-            .collect::<HashMap<_, _>>();
-
-        //4. Analyse articles
-        // Record parents and backlinks
-        let (parents, backlinks) =
-            analyse_parents_and_backlinks(loaded_articles.values().collect());
-
-        // Update parents and backlinks into all loaded articles
-        apply_parents_and_backlinks(&mut loaded_articles, parents, backlinks);
-
-        // Load Reverse Dependency Cache
-        let mut rev_dep = RevDeps::load(
-            &config,
-            &self.cache_path,
-            &deleted_typst_paths,
-            &mut registry,
-        );
-
-        // Refresh Dependency Cache
-        // in which we record all the dependencies(with its exactly indexes) of each article,
-        // and the Reverse Dependencies of each file path are collected. ( Reverse Dependencies = Map<Path -> The files that depend on this file>)
-        rev_dep.refresh(&config, &registry, &loaded_articles);
-
-        // 5. Compose pages
-        let PageData {
-            updated_pages,
-            cache,
-            error_pages,
-        } = compose_pages(
-            &config,
-            changed_article_slugs,
-            changed_typst_paths,
-            &changed_config_paths,
-            &loaded_articles,
-            rev_dep,
-            overall_compile_needed,
-        )?;
-
-        let updated = !loaded_articles.is_empty();
-        let generated_site = generate_site_outputs(&loaded_articles)?;
-
-        // 6. Update cache
-        article_cache.refresh(&mut registry, loaded_articles);
-        article_cache.write_cache(cache)?;
-
-        // 7. Sync files to output
-        let deleted_pages = deleted_typst_paths;
-
-        let mut error_articles = Vec::new();
-        error_articles.extend(error_typst_articles);
-        error_articles.extend(error_cache_articles);
-        error_articles.extend(error_passing_articles);
-        error_articles.extend(error_pages);
-
-        let no_error = error_articles.is_empty();
-
-        let output = Output {
-            monitor,
-            assets_path: &self.assets_path,
-            typst_path: &self.typst_path,
-            html_cache_path: &self.html_cache_path,
-            output_path: &self.output_path,
-            updated_pages,
-            deleted_pages,
-            generated_files: generated_site.files,
-            generated_removed: generated_site.removed,
-            proj_options_errors,
-            error_articles,
-            changed_non_typst,
-            deleted_non_typst,
-            changed_assets,
-            deleted_assets,
-        };
-
-        sync_files_to_output(output);
-
-        Ok((updated, no_error))
+        for relative in input
+            .keys()
+            .filter(|path| !is_typst(path) && !is_library(path, &config))
+        {
+            output.insert(
+                relative.clone(),
+                fs::read(paths.input.join(relative))?,
+                format!("source asset {}", relative.display()),
+            )?;
+        }
+        for relative in configuration
+            .keys()
+            .filter_map(|path| path.strip_prefix("assets").ok())
+            .filter(|path| path.extension().is_none_or(|ext| ext != "html"))
+        {
+            output.insert(
+                relative.to_owned(),
+                fs::read(paths.config.join("assets").join(relative))?,
+                format!("config asset {}", relative.display()),
+            )?;
+        }
+        for generated in generated {
+            output.insert(
+                generated.path,
+                generated.content.into_bytes(),
+                "generated site file",
+            )?;
+        }
+        // Do not publish a mixture of two source/config generations if an edit
+        // raced with a long export. The next normal build will retry safely.
+        if scan(&paths.input)? != input
+            || scan(&paths.config)? != configuration
+            || paths
+                .packages
+                .as_deref()
+                .map(scan)
+                .transpose()?
+                .unwrap_or_default()
+                != packages
+            || !super::cache::exports_current(&cache.exports, &input, &exports_root, &paths.input)?
+        {
+            // Never retain exports whose post-export hashes may describe a
+            // different generation than the bytes Typst read during the build.
+            cache.exports.clear();
+            cache.save(&paths.cache)?;
+            report.error(
+                Stage::Discover,
+                None,
+                "Inputs changed during the build; retrying on the next build",
+            );
+            return Ok(report);
+        }
+        match output.publish(&paths.output, &mut report) {
+            Ok(outputs) => {
+                cache.published = Some(Publication {
+                    key: build_key,
+                    inputs: input_key,
+                    sources: sources.keys().cloned().collect(),
+                    outputs,
+                });
+                if let Err(error) = cache.save(&paths.cache) {
+                    report.error(Stage::Cache, None, format!("{error:#}"));
+                }
+            }
+            Err(error) => report.error(Stage::Publish, None, format!("{error:#}")),
+        }
+        Ok(report)
     }
 }
 
-fn verify_proj_options(config: &TypsiteConfig<'_>, registry: &KeyRegistry) -> Result<Vec<String>> {
-    let mut errors = Vec::new();
-    let options = proj_options()?;
-    let parent = options.default_metadata.graph.parent.clone();
-    if let Some(parent) = parent {
-        let parent = config.format_slug(&parent);
-        if let Err(err) = registry.know(parent, "default_metadata.graph.parent", "options.toml") {
-            errors.push(format!("{err}"))
-        }
-    }
-    Ok(errors)
+pub(super) fn lock(root: &Path) -> Result<File> {
+    fs::create_dir_all(root)
+        .with_context(|| format!("Cannot create managed directory {}", root.display()))?;
+    let path = managed_path(root, Path::new(LOCK))?;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    file.try_lock().with_context(|| {
+        format!(
+            "Project directory is already being built: {}",
+            root.display()
+        )
+    })?;
+    Ok(file)
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-    use crate::compile::compiler::cache::monitor::Monitor;
-    use crate::compile::{
-        init_compile_options, init_proj_options,
-        options::{CompileOptions, ProjOptions},
-    };
-    use crate::config::TypsiteConfig;
-    use std::collections::{HashMap, HashSet};
-    use std::fs;
-    use std::sync::Arc;
-    use std::time::{SystemTime, UNIX_EPOCH};
+fn cpu_budget() -> usize {
+    std::thread::available_parallelism()
+        .map_or(1, NonZeroUsize::get)
+        .min(rayon::current_num_threads())
+        .max(1)
+}
 
-    fn unique_root(label: &str) -> std::path::PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("test timestamp should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!("typsite-{label}-{unique}"))
-    }
+fn is_typst(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "typ")
+}
 
-    fn write_test_config(root: &std::path::Path, options: &str) {
-        fs::create_dir_all(root.join("components/footer")).expect("footer dir");
-        fs::create_dir_all(root.join("rewrite")).expect("rewrite dir");
-        fs::create_dir_all(root.join("schemas")).expect("schema dir");
-        fs::create_dir_all(root.join("syntaxes")).expect("syntaxes dir");
-        fs::create_dir_all(root.join("themes")).expect("themes dir");
-        fs::write(root.join("options.toml"), options).expect("options file");
-        fs::write(
-            root.join("components/section.html"),
-            include_str!("../../resources/.typsite/components/section.html"),
-        )
-        .expect("section");
-        fs::write(
-            root.join("components/heading-numbering.html"),
-            "<html><body>{numbering}</body></html>",
-        )
-        .expect("heading numbering");
-        fs::write(
-            root.join("components/footer.html"),
-            "<html><body><footer>{references}{backlinks}</footer></body></html>",
-        )
-        .expect("footer");
-        fs::write(
-            root.join("components/footer/backlinks.html"),
-            "<html><body>{backlinks}</body></html>",
-        )
-        .expect("backlinks");
-        fs::write(
-            root.join("components/footer/references.html"),
-            "<html><body>{references}</body></html>",
-        )
-        .expect("references");
-        fs::write(root.join("components/anchor_def.html"), "<html><body></body></html>")
-            .expect("anchor def");
-        fs::write(root.join("components/anchor_def_svg.html"), "<html><body></body></html>")
-            .expect("anchor def svg");
-        fs::write(root.join("components/anchor_goto.html"), "<html><body></body></html>")
-            .expect("anchor goto");
-        fs::write(root.join("components/anchor_goto_svg.html"), "<html><body></body></html>")
-            .expect("anchor goto svg");
-        fs::write(root.join("components/sidebar.html"), "<html><body>{children}</body></html>")
-            .expect("sidebar");
-        fs::write(root.join("components/sidebar_each.html"), "<html><body>{title}</body></html>")
-            .expect("sidebar each");
-        fs::write(root.join("components/embed.html"), "<html><body>{content}</body></html>")
-            .expect("embed");
-        fs::write(root.join("components/embed_title.html"), "<html><body>{title}</body></html>")
-            .expect("embed title");
-        fs::write(root.join("schemas/main.html"), "<html><body><content></content></body></html>")
-            .expect("schema");
-        fs::write(root.join("schemas/reference.html"), "<html><body><content></content></body></html>")
-            .expect("reference schema");
-    }
-
-    fn init_options(root: &std::path::Path) {
-        let proj = ProjOptions::load(root).expect("project options should load");
-        init_proj_options(proj).expect("project options should initialize");
-        init_compile_options(CompileOptions {
-            watch: false,
-            short_slug: false,
-            pretty_url: true,
-        })
-        .expect("compile options should initialize");
-    }
-
-    pub(crate) fn run_compose_pages_collects_missing_article_as_error() {
-        let root = unique_root("compose-pages-missing-article");
-        let cache = root.join("cache");
-        let typst = root.join("typst");
-        let html = root.join("html");
-        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
-        fs::create_dir_all(&cache).expect("cache dir");
-        fs::create_dir_all(&typst).expect("typst dir");
-        fs::create_dir_all(&html).expect("html dir");
-        init_options(&root);
-
-        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
-        let mut registry = KeyRegistry::new();
-        let rev_dep = cache::dep::RevDeps::load(&config, &cache, &HashSet::new(), &mut registry);
-        let changed = HashSet::from([Arc::from("/missing")]);
-        let page_data = page_composer::compose_pages(
-            &config,
-            changed,
-            HashSet::new(),
-            &HashSet::new(),
-            &HashMap::new(),
-            rev_dep,
-            false,
-        )
-        .expect("compose pages should collect the missing article as an error entry");
-
-        assert_eq!(page_data.error_pages.len(), 1);
-        assert!(page_data.error_pages[0].1.contains("should be loaded before composition"));
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    pub(crate) fn run_pass_html_collects_registry_errors_without_unreachable_panics() {
-        let root = unique_root("pass-html-registry-errors");
-        let typst = root.join("typst");
-        let html = root.join("html");
-        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
-        fs::create_dir_all(&typst).expect("typst dir");
-        fs::create_dir_all(&html).expect("html dir");
-        init_options(&root);
-
-        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
-        let invalid_html = root.join("outside.html");
-        fs::write(&invalid_html, "<html><body></body></html>").expect("html file");
-        let mut changed_html_paths = vec![invalid_html.clone()];
-        let (articles, errors) = html_pass::pass_html(
-            &config,
-            &cache::article::ArticleCache::new(&root.join("cache")),
-            &mut KeyRegistry::new(),
-            &mut changed_html_paths,
-        );
-
-        assert!(articles.is_empty());
-        assert_eq!(errors.len(), 1);
-        assert!(errors[0].0.ends_with("outside.html"));
-        assert!(changed_html_paths.is_empty());
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    pub(crate) fn run_compile_typsts_reports_missing_cache_parent_without_panic() {
-        let root = unique_root("compile-typsts-cache-parent");
-        let cache = root.join("cache");
-        let typst = root.join("typst");
-        let html_cache_root = root.join("html-cache-root");
-        let rendered_html = root.join("rendered-html");
-        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
-        fs::create_dir_all(&cache).expect("cache dir");
-        fs::create_dir_all(typst.join("nested")).expect("typst dir");
-        fs::create_dir_all(&rendered_html).expect("rendered html dir");
-        fs::write(typst.join("nested/article.typ"), "= Test").expect("typst file");
-        fs::write(&html_cache_root, "occupied by file").expect("blocking html cache path");
-        init_options(&root);
-
-        let config = TypsiteConfig::load(&root, &typst, &rendered_html).expect("config should load");
-        let mut monitor = Monitor::load(&cache, &root, &typst, &rendered_html, None);
-        let errors = typst_pass::compile_typsts(
-            "typst",
-            &config,
-            &mut monitor,
-            &typst,
-            &root,
-            &html_cache_root,
-            &HashSet::from([typst.join("nested/article.typ")]),
-            HashSet::new(),
-        );
-
-        assert_eq!(errors.len(), 1);
-        assert!(errors[0].1.contains("parent") || errors[0].1.contains("Not a directory"));
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    pub(crate) fn run_initialize_reports_packages_path_and_strip_prefix_failures() {
-        let root = unique_root("initialize-packages-path");
-        let cache = root.join("cache");
-        let typst = root.join("typst");
-        let html = root.join("html");
-        let assets = root.join("assets");
-        let packages_dir = root.join("packages");
-        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
-        fs::create_dir_all(&cache).expect("cache dir");
-        fs::create_dir_all(&typst).expect("typst dir");
-        fs::create_dir_all(&html).expect("html dir");
-        fs::create_dir_all(&assets).expect("assets dir");
-        fs::create_dir_all(packages_dir.join("broken-package")).expect("packages dir");
-        fs::write(packages_dir.join("broken-package/README.txt"), "missing typst manifest")
-            .expect("package marker file");
-
-        let err = match initializer::initialize(&cache, &typst, &html, &root, &assets, Some(&packages_dir)) {
-            Ok(_) => panic!("file packages path should be reported as an error"),
-            Err(err) => err,
-        };
-        let err = err.to_string();
-
-        assert!(err.contains("Packages installing failed") || err.contains("typst.toml"));
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    pub(crate) fn run_generate_site_outputs_handles_empty_base_url_without_unwrap() {
-        let root = unique_root("generate-site-empty-base-url");
-        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
-        init_options(&root);
-
-        let generated = site_output::generate_site_outputs(&HashMap::new())
-            .expect("empty base url should disable outputs without panicking");
-
-        assert!(generated.files.is_empty());
-        assert_eq!(generated.removed.len(), 2);
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn references_footer_uses_its_own_template_and_rebuild_dependency() {
-        let _guard = crate::test_lock();
-        let root = unique_root("references-footer");
-        let typst = root.join("typst");
-        let html = root.join("html");
-        let cache = root.join("cache");
-        write_test_config(&root, include_str!("../../resources/.typsite/options.toml"));
-        fs::create_dir_all(&typst).expect("typst dir");
-        fs::create_dir_all(&html).expect("html dir");
-        fs::create_dir_all(&cache).expect("cache dir");
-        for (path, template) in [
-            (
-                "components/footer.html",
-                "<head></head><body><footer>{references}{backlinks}</footer></body>",
-            ),
-            (
-                "components/sidebar_each.html",
-                "<head></head><body>{title}</body>",
-            ),
-            (
-                "components/footer/references.html",
-                "<head><style>.REFS-MARKER { color: red; }</style></head><body><div class=\"REFS-MARKER\">{references}</div></body>",
-            ),
-            (
-                "components/footer/backlinks.html",
-                "<head><style>.BACKLINKS-MARKER { color: blue; }</style></head><body><div class=\"BACKLINKS-MARKER\">{backlinks}</div></body>",
-            ),
-            (
-                "schemas/main.html",
-                "<head></head><body><content></content><footer></footer></body>",
-            ),
-            (
-                "schemas/reference.html",
-                "<head></head><body><a href=\"{slug}\">Reference {slug}</a></body>",
-            ),
-            (
-                "schemas/backlink.html",
-                "<head></head><body><a href=\"{slug}\">Backlink {slug}</a></body>",
-            ),
-        ] {
-            fs::write(root.join(path), template).expect("footer test template");
-        }
-        init_options(&root);
-        let config = TypsiteConfig::load(&root, &typst, &html).expect("config should load");
-        let references_path = root.join("components/footer/references.html");
-        let backlinks_path = root.join("components/footer/backlinks.html");
-        assert_eq!(config.footer.references.path.as_ref(), references_path);
-        assert_eq!(config.footer.backlinks.path.as_ref(), backlinks_path);
-        assert!(config.footer.references.head.contains("REFS-MARKER"));
-        assert!(config.footer.backlinks.head.contains("BACKLINKS-MARKER"));
-        assert_eq!(
-            config.path_ref(&references_path).as_deref(),
-            Some(references_path.as_path())
-        );
-        assert_eq!(
-            config.path_ref(&backlinks_path).as_deref(),
-            Some(backlinks_path.as_path())
-        );
-
-        let mut registry = KeyRegistry::new();
-        let paths = [html.join("a.html"), html.join("b.html")];
-        registry.register_paths(&config, &paths);
-        let mut articles = HashMap::new();
-        for (path, body) in paths.iter().zip(["Page A", "Page B"]) {
-            let (slug, path) = registry
-                .register_article_path(&config, path)
-                .expect("article path");
-            let source = format!("<head><schema name=\"main\"></schema></head><body>{body}</body>");
-            let article =
-                crate::pass::pass_pure(&config, &registry, path, slug.clone(), None, &source)
-                    .unwrap_or_else(|err| panic!("footer article should load: {err}"));
-            articles.insert(slug, article);
-        }
-        // Model page A citing page B; the analysis derives B's backlink to A.
-        articles
-            .get_mut("/a")
-            .expect("page A")
-            .get_mut_meta_node()
-            .references
-            .insert(Arc::from("/b"));
-        let (parents, backlinks) = analyse_parents_and_backlinks(articles.values().collect());
-        apply_parents_and_backlinks(&mut articles, parents, backlinks);
-        let components = config
-            .schemas
-            .get("main")
-            .expect("main schema")
-            .component_paths(&config);
-        assert!(components.contains(references_path.as_path()));
-        assert!(components.contains(backlinks_path.as_path()));
-        let mut rev_dep = RevDeps::load(&config, &cache, &HashSet::new(), &mut registry);
-        rev_dep.refresh(&config, &registry, &articles);
-        let slugs: HashSet<_> = articles.keys().cloned().collect();
-        assert_eq!(rev_dep.get(&references_path), Some(&slugs));
-        assert_eq!(rev_dep.get(&backlinks_path), Some(&slugs));
-
-        // A references-template edit alone must select the pages for recomposition.
-        let pages = compose_pages(
-            &config,
-            HashSet::new(),
-            HashSet::new(),
-            &HashSet::from([references_path]),
-            &articles,
-            rev_dep,
-            false,
-        )
-        .expect("footer pages should compose");
-        assert!(pages.error_pages.is_empty(), "{:?}", pages.error_pages);
-        assert_eq!(pages.updated_pages.len(), 2);
-        let page_a = &pages
-            .updated_pages
-            .iter()
-            .find(|(path, _)| path.ends_with("a.typ"))
-            .expect("page A")
-            .1
-            .body;
-        let page_b = &pages
-            .updated_pages
-            .iter()
-            .find(|(path, _)| path.ends_with("b.typ"))
-            .expect("page B")
-            .1
-            .body;
-        assert!(page_a.contains("<div class=\"REFS-MARKER\">"), "{page_a}");
-        assert!(
-            page_a.contains("<a href=\"/b\">Reference /b</a>"),
-            "{page_a}"
-        );
-        assert!(!page_a.contains("BACKLINKS-MARKER"));
-        assert!(
-            page_b.contains("<div class=\"BACKLINKS-MARKER\">"),
-            "{page_b}"
-        );
-        assert!(
-            page_b.contains("<a href=\"/a\">Backlink /a</a>"),
-            "{page_b}"
-        );
-        assert!(!page_b.contains("REFS-MARKER"));
-        for (_, page) in &pages.updated_pages {
-            assert!(!page.body.contains("{references}"));
-            assert!(!page.body.contains("{backlinks}"));
-        }
-
-        fs::remove_dir_all(root).expect("footer test cleanup");
-    }
-
-    #[test]
-    fn compose_pages_collects_missing_article_as_error() {
-        let _guard = crate::test_lock();
-        run_compose_pages_collects_missing_article_as_error();
-    }
-
-    #[test]
-    fn pass_html_collects_registry_errors_without_unreachable_panics() {
-        let _guard = crate::test_lock();
-        run_pass_html_collects_registry_errors_without_unreachable_panics();
-    }
-
-    #[test]
-    fn compile_typsts_reports_missing_cache_parent_without_panic() {
-        let _guard = crate::test_lock();
-        run_compile_typsts_reports_missing_cache_parent_without_panic();
-    }
-
-    #[test]
-    fn initialize_reports_packages_path_and_strip_prefix_failures() {
-        let _guard = crate::test_lock();
-        run_initialize_reports_packages_path_and_strip_prefix_failures();
-    }
-
-    #[test]
-    fn generate_site_outputs_handles_empty_base_url_without_unwrap() {
-        let _guard = crate::test_lock();
-        run_generate_site_outputs_handles_empty_base_url_without_unwrap();
-    }
+fn is_library(path: &Path, config: &TypsiteConfig<'_>) -> bool {
+    let path = path.to_string_lossy().replace('\\', "/");
+    let library = &config.options.project.typst_lib;
+    library.files.contains(&path) || library.dirs.iter().any(|prefix| path.starts_with(prefix))
 }

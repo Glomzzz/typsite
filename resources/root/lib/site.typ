@@ -21,21 +21,16 @@
 #let auto-filter(content) = html.span(class: "auto-filter", style: "display: inline-block;", content)
 
 
-#let inline-math(body, block: auto, scale: 100%) = {
-  if block == auto {
-    block = body.block
-  }
-  import "lib.typ": inline
+#let inline-math(body, block: auto, scale: 100%) = context {
+  let block = if block == auto { body.block } else { block }
+  import "@local/typsite:0.1.0": inline
+  let footnotes = query(footnote).map(it => it.at("label", default: none)).filter(it => it != none)
   if block {
     html.div(class: "math-container")[
-        #html.span(class: "math-block")[
-            #auto-filter(inline(scale: scale, body))
-        ]
+      #html.span(class: "math-block", auto-filter(inline(scale: scale, body, footnotes)))
     ]
   } else {
-      html.span(class: "math-inline")[
-          #auto-filter(inline(scale: scale + 70%, body))
-      ]
+    html.span(class: "math-inline", auto-filter(inline(scale: scale + 70%, body, footnotes)))
   }
 }
 

@@ -1,0 +1,19 @@
+/* Keep the detailed square diagram legible without overflowing the whole page. */
+.process-diagram {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 1rem auto;
+  text-align: center;
+}
+
+.process-diagram .auto-sized-svg {
+  width: max(42rem, 100%) !important;
+  max-width: 55rem;
+}
+
+.process-diagram svg {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 1;
+}

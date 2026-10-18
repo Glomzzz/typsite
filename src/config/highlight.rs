@@ -1,16 +1,15 @@
 use crate::config::THEMES_DIR;
-use crate::util::error::log_err_or_ok;
+use crate::util::fs::files_with_extension;
 use crate::util::path::file_stem;
-use crate::walk_glob;
-use anyhow::Context;
-use glob::glob;
+use anyhow::{Context, Result, ensure};
 use metadata::{LoadMetadata, RawMetadataEntry};
-use rayon::iter::{ParallelBridge, ParallelIterator};
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
-use std::{collections::BTreeMap, path::PathBuf};
 use syntect::dumps::from_binary;
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::{Metadata, SyntaxDefinition, SyntaxReference, SyntaxSet, SyntaxSetBuilder};
@@ -29,6 +28,7 @@ fn default_syntax_set() -> &'static SyntaxSet {
 type PathMap<T> = BTreeMap<String, (Arc<Path>, T)>;
 type ThemePaths = PathMap<Theme>;
 
+#[derive(Serialize, Deserialize)]
 struct Syntaxes {
     syntax_set: SyntaxSet,
     syntax_paths_by_name: BTreeMap<String, Arc<Path>>,
@@ -36,18 +36,61 @@ struct Syntaxes {
     metadata_paths_by_stem: BTreeMap<String, Arc<Path>>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct CodeHightlightConfig {
     themes: ThemePaths,
     syntaxes: Syntaxes,
 }
 
 impl CodeHightlightConfig {
-    pub fn load(config_path: &Path) -> Self {
-        let themes_path = config_path.join(THEMES_DIR);
-        let themes = load_themes(themes_path);
-        let syntaxes_path = config_path.join(SYNTAXES_DIR);
-        let syntaxes = Syntaxes::load(syntaxes_path);
-        Self { themes, syntaxes }
+    pub fn load(config_path: &Path) -> Result<Self> {
+        let (themes, syntaxes) = rayon::join(
+            || load_themes(&config_path.join(THEMES_DIR)),
+            || Syntaxes::load(&config_path.join(SYNTAXES_DIR)),
+        );
+        Ok(Self {
+            themes: themes?,
+            syntaxes: syntaxes?,
+        })
+    }
+
+    /// Cache only validated resource data, keyed by content hashes and engine
+    /// identity. SyntaxSet skips its metadata in serde, so preserve it explicitly.
+    pub(crate) fn load_cached(config: &Path, cache: &Path, key: &str) -> Result<Self> {
+        #[derive(Serialize, Deserialize)]
+        struct Cached {
+            key: String,
+            config: CodeHightlightConfig,
+            // Syntect metadata contains serde_json values; encode it separately
+            // because bincode does not implement deserialize_any.
+            metadata_json: Vec<u8>,
+        }
+        let path = crate::compile::project::managed_path(cache, Path::new("highlight.bin"))?;
+        if let Ok(bytes) = fs::read(&path)
+            && bytes.starts_with(b"TYPSITE-HIGHLIGHT-1\0")
+            && let Some(rest) = bytes.get(b"TYPSITE-HIGHLIGHT-1\0".len()..)
+            && let Some((checksum, payload)) = rest.split_at_checked(32)
+            && blake3::hash(payload).as_bytes() == checksum
+            && let Ok(mut cached) = bincode::deserialize::<Cached>(payload)
+            && cached.key == key
+            && let Ok(metadata) = serde_json::from_slice::<Metadata>(&cached.metadata_json)
+        {
+            cached.config.syntaxes.syntax_set.set_metadata(metadata);
+            return Ok(cached.config);
+        }
+        let config = Self::load(config)?;
+        let cached = Cached {
+            key: key.to_owned(),
+            metadata_json: serde_json::to_vec(config.syntaxes.syntax_set.metadata())?,
+            config,
+        };
+        let payload =
+            bincode::serialize(&cached).context("Cannot serialize highlighting resources")?;
+        let mut bytes = b"TYPSITE-HIGHLIGHT-1\0".to_vec();
+        bytes.extend_from_slice(blake3::hash(&payload).as_bytes());
+        bytes.extend_from_slice(&payload);
+        crate::util::atomic::write_cache(&path, &bytes)?;
+        Ok(cached.config)
     }
 
     fn find_theme_pair(&self, name: &str, scheme: ColorScheme) -> Option<&(Arc<Path>, Theme)> {
@@ -144,86 +187,78 @@ impl Display for CodeHightlightConfig {
     }
 }
 
-fn load_themes(themes_path: PathBuf) -> ThemePaths {
-    walk_glob!("{}/**/*.tmTheme", themes_path.display())
-        .filter(|entry| entry.is_file())
+fn load_themes(themes_path: &Path) -> Result<ThemePaths> {
+    let mut themes = BTreeMap::new();
+    let paths = files_with_extension(themes_path, "tmTheme")?;
+    let loaded: Vec<_> = paths
+        .par_iter()
         .map(|path| {
-            let name = file_stem(&path)
-                .map(|s| s.to_string())
-                .with_context(|| format!("Failed to load theme {}", path.display()));
-            let theme = ThemeSet::get_theme(&path)
-                .with_context(|| format!("Failed to load theme {}", path.display()));
-            name.and_then(|name| theme.map(|theme| (name, (Arc::from(path), theme))))
+            ThemeSet::get_theme(path)
+                .with_context(|| format!("Failed to load theme {}", path.display()))
         })
-        .filter_map(log_err_or_ok)
-        .collect()
+        .collect();
+    for (path, theme) in paths.into_iter().zip(loaded) {
+        let name = file_stem(&path).context("Theme has no name")?.to_string();
+        let theme = theme?;
+        ensure!(
+            !themes.contains_key(&name),
+            "Duplicate theme {name} in {}",
+            path.display()
+        );
+        themes.insert(name, (Arc::from(path), theme));
+    }
+    Ok(themes)
 }
 
 impl Syntaxes {
-    fn load(syntaxes_path: PathBuf) -> Self {
-        let mut syntax_set = SyntaxSetBuilder::new();
+    fn load(syntaxes_path: &Path) -> Result<Self> {
+        let mut builder = SyntaxSetBuilder::new();
         let mut syntax_paths_by_name = BTreeMap::new();
         let mut syntax_paths_by_stem = BTreeMap::new();
-        walk_glob!("{}/**/*.sublime-syntax", syntaxes_path.display())
-            .par_bridge()
-            .filter(|entry| entry.is_file())
-            .map(|path| {
-                fs::read_to_string(&path)
-                    .with_context(|| format!("Failed to load syntax {}", path.display()))
-                    .and_then(|content| {
-                        SyntaxDefinition::load_from_str(&content, true, None)
-                            .with_context(|| format!("Failed to load syntax {}", path.display()))
-                    })
-                    .map(|syntax| (syntax.name.clone(), (path, syntax)))
-            })
-            .filter_map(log_err_or_ok)
-            .collect::<Vec<(String, (PathBuf, SyntaxDefinition))>>()
-            .into_iter()
-            .for_each(|(name, (path, syntax))| {
-                syntax_set.add(syntax);
-                let path: Arc<Path> = Arc::from(path);
-                syntax_paths_by_name.insert(name, path.clone());
-                let stem = file_stem(&path).expect(
-                    "syntax files matched by *.sublime-syntax should always have a file stem",
-                );
-                syntax_paths_by_stem.insert(stem.to_string(), path.clone());
-            });
-        let mut syntax_set = syntax_set.build();
+        for path in files_with_extension(syntaxes_path, "sublime-syntax")? {
+            let content = fs::read_to_string(&path)
+                .with_context(|| format!("Failed to load syntax {}", path.display()))?;
+            let syntax = SyntaxDefinition::load_from_str(&content, true, None)
+                .with_context(|| format!("Failed to load syntax {}", path.display()))?;
+            let stem = file_stem(&path).context("Syntax has no name")?.to_string();
+            ensure!(
+                !syntax_paths_by_name.contains_key(&syntax.name),
+                "Duplicate syntax {} in {}",
+                syntax.name,
+                path.display()
+            );
+            ensure!(
+                !syntax_paths_by_stem.contains_key(&stem),
+                "Duplicate syntax filename {stem}"
+            );
+            let path: Arc<Path> = Arc::from(path);
+            syntax_paths_by_name.insert(syntax.name.clone(), path.clone());
+            syntax_paths_by_stem.insert(stem, path);
+            builder.add(syntax);
+        }
+        let mut syntax_set = builder.build();
         let mut raw_metadata = LoadMetadata::default();
-        // if entry.path().extension() == Some("tmPreferences".as_ref()) {
-        //     match RawMetadataEntry::load(entry.path()) {
-        //         Ok(meta) => self.raw_metadata.add_raw(meta),
-        //         Err(_err) => (),
-        //     }
-        // }
         let mut metadata_paths_by_stem = BTreeMap::new();
-        walk_glob!("{}/**/*.tmPreferences", syntaxes_path.display())
-            .par_bridge()
-            .filter(|entry| entry.is_file())
-            .map(|path| {
-                RawMetadataEntry::load(&path)
-                    .with_context(|| format!("Failed to load tmPreferences {}", path.display()))
-                    .map(|metadata| (path, metadata))
-            })
-            .filter_map(log_err_or_ok)
-            .collect::<Vec<(PathBuf, RawMetadataEntry)>>()
-            .into_iter()
-            .for_each(|(path, metadata)| {
-                raw_metadata.add_raw(metadata);
-                let path: Arc<Path> = Arc::from(path);
-                let stem = file_stem(&path).expect(
-                    "metadata files matched by *.tmPreferences should always have a file stem",
-                );
-                metadata_paths_by_stem.insert(stem.to_string(), path);
-            });
-        syntax_set.set_metadata(Metadata::from(raw_metadata));
-
-        Self {
+        for path in files_with_extension(syntaxes_path, "tmPreferences")? {
+            let metadata = RawMetadataEntry::load(&path)
+                .with_context(|| format!("Failed to load tmPreferences {}", path.display()))?;
+            let stem = file_stem(&path)
+                .context("Syntax metadata has no name")?
+                .to_string();
+            ensure!(
+                !metadata_paths_by_stem.contains_key(&stem),
+                "Duplicate syntax metadata filename {stem}"
+            );
+            metadata_paths_by_stem.insert(stem, Arc::from(path));
+            raw_metadata.add_raw(metadata);
+        }
+        syntax_set.set_metadata(Metadata::try_from(raw_metadata)?);
+        Ok(Self {
             syntax_set,
             syntax_paths_by_name,
             syntax_paths_by_stem,
             metadata_paths_by_stem,
-        }
+        })
     }
     fn find(&self, token: &str) -> Option<&SyntaxReference> {
         default_syntax_set()
@@ -248,6 +283,56 @@ impl Syntaxes {
         matches!(token, "text" | "shell")
             || (self.syntax_set.find_syntax_by_token(token).is_none()
                 && default_syntax_set().find_syntax_by_token(token).is_some())
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    #[test]
+    fn cached_syntax_metadata_roundtrips_without_reloading_or_losing_settings() {
+        let root = std::env::temp_dir().join(format!(
+            "typsite-highlight-metadata-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config = root.join("config");
+        fs::create_dir_all(config.join("syntaxes")).unwrap();
+        fs::write(config.join("syntaxes/valid.tmPreferences"), r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>scope</key><string>source.rust</string><key>settings</key><dict><key>shellVariables</key><array><dict><key>name</key><string>TM_COMMENT_START</string><key>value</key><string>// </string></dict></array><key>increaseIndentPattern</key><string>[{]</string></dict></dict></plist>"#).unwrap();
+        let cache = root.join("cache");
+        let first = CodeHightlightConfig::load_cached(&config, &cache, "generation").unwrap();
+        let expected = serde_json::to_value(first.syntaxes.syntax_set.metadata()).unwrap();
+        assert!(
+            !first
+                .syntaxes
+                .syntax_set
+                .metadata()
+                .scoped_metadata
+                .is_empty()
+        );
+        let before = fs::metadata(cache.join("highlight.bin"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        let second = CodeHightlightConfig::load_cached(&config, &cache, "generation").unwrap();
+        assert_eq!(
+            expected,
+            serde_json::to_value(second.syntaxes.syntax_set.metadata()).unwrap()
+        );
+        assert_eq!(
+            before,
+            fs::metadata(cache.join("highlight.bin"))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            "cache hit must not rewrite or rebuild resources"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }
 
