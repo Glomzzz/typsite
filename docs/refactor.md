@@ -260,8 +260,9 @@ isolated package/cache namespaces, a fixed timestamp, and no system fonts. The
 updated flowchart uses built-in Typst drawing instead of a preview package, and
 unused `frame-it` setup was removed; no preview-package downloads are needed.
 The detailed process diagram in `resources/root/lib/process.typ` uses a square
-660 pt canvas, nine stages in a three-row snake, cache/no-op decisions, independent
-checkpoints, and a separate failure-recovery band. Its scoped stylesheet keeps
+660 pt canvas with three left-to-right lanes (inputs & cache, build, publish),
+nine numbered stages, a no-op decision exit, parallel/checkpoint tags, and a
+separate failure-recovery band. Its scoped stylesheet keeps
 small-screen scrolling inside the diagram; real-Typst tests check the exported
 square dimensions and stylesheet on both homepages and content-example pages.
 Both READMEs embed `process.png`, regenerated from the same source through

@@ -241,7 +241,7 @@ Add metadata to an article with the existing helpers:
 
 #get-metacontent("process", from: "/index.typ")
 
-Follow the square diagram's numbered snake: left to right across the first row, right to left across the second, then left to right across the third. HIT reuses raw HTML; MISS invokes Typst. An unchanged published site exits at step 03; only dirty publication continues through parsing, graph resolution, and whole-page composition. Independent checkpoints preserve exports and publication state, and the bottom red band explains recovery. On small screens, scroll within the diagram to read the details.
+The diagram has three lanes: read them top to bottom, each left to right. HIT reuses raw HTML; MISS invokes Typst. An unchanged published site takes the no-op exit at step 03; only dirty builds drop into the build lane for parsing, graph resolution, and whole-page composition. Tags mark parallel stages and the two independent checkpoints (A for exports, B for publication ownership), and the bottom red band explains recovery. On small screens, scroll within the diagram to read the details.
 
 Rayon parallelizes independent hashes, article parsing, page rendering, and bounded Typst exports; package setup and publication checkpoints remain ordered.
 The cache stores raw Typst HTML and actual dependency hashes, not old relationships or rendered fragments.

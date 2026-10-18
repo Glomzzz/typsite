@@ -225,14 +225,16 @@ draft publication; local Linux tests alone do not establish cross-platform readi
 
 ## 5. Architecture & Flow
 
-[![Square Typsite build pipeline: nine stages, cache reuse, publication checkpoints, and failure recovery](./process.png)](./process.png)
+[![Typsite build pipeline: three lanes (inputs and cache, build, publish), nine numbered steps, a no-op exit, two checkpoints, and failure recovery](./process.png)](./process.png)
 
-Read the numbered snake left-to-right, then right-to-left, then left-to-right.
-The diagram shows selective Typst export/cache reuse, the true no-op exit,
-fresh article facts and relationships, whole-page/feed composition, and safe
-per-file publication. Independent export/publication checkpoints support retries;
-the red band distinguishes pre-publication failures from partial-publication
-repair. Click the image for the full-size square diagram.
+Each lane reads left to right, top to bottom. Steps 01–03 hash inputs and reuse
+or re-run Typst exports (HIT/MISS); if the published output is already current,
+the build stops at the no-op exit. Otherwise steps 04–06 parse articles, resolve
+the relationship graph, and compose pages and feeds, then steps 07–09 validate
+the output plan, publish only changed bytes, and report. Tags mark Rayon-parallel
+stages and the two checkpoints (A: export cache, B: ownership journal); the red
+band shows how failures before and during publication recover. Click the image
+for the full-size diagram.
 
 This preview and the demo share the same
 [Typst diagram source](resources/root/lib/process.typ). Regenerate the preview
