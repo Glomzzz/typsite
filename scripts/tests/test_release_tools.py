@@ -35,6 +35,20 @@ class ReleaseToolsTests(unittest.TestCase):
             artifacts.package(binary, target, SHA, self.root, self.dist)
         self.report = artifacts.manifest(self.dist, SHA, VERSION)
 
+    def test_gh_decodes_utf8_without_using_windows_locale(self):
+        release = {"draft": True, "target_commitish": SHA, "tag_name": "tag", "body": "发布说明"}
+        payload = json.dumps([[release]], ensure_ascii=False).encode("utf-8")
+
+        def check_output(*arguments, **options):
+            return payload.decode(options.get("encoding", "cp1252"))
+
+        with mock.patch.object(draft.subprocess, "check_output", side_effect=check_output) as command:
+            self.assertEqual(draft.find_release("owner/repo", "tag"), release)
+        command.assert_called_once_with(
+            ["gh", "api", "--paginate", "--slurp", "repos/owner/repo/releases?per_page=100"],
+            text=True, encoding="utf-8",
+        )
+
     def test_complete_manifest_and_downloaded_asset_verification(self):
         self.assertEqual(len(self.report["assets"]), 3)
         for asset in self.report["assets"]:
@@ -147,6 +161,27 @@ class ReleaseToolsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 draft.download("owner/repo", "tag", SHA, next(iter(artifacts.TARGETS.values())), self.root / "download")
             gh.assert_not_called()
+
+    def test_smoke_decodes_utf8_commands_and_diagnostics_without_windows_locale(self):
+        binary = self.root / "typsite.exe"
+        binary.write_bytes(b"binary fixture")
+
+        def run(arguments, **options):
+            success = arguments[-1] == "--version"
+            payload = f"typsite {VERSION}" if success else "初始化失败"
+            output = payload.encode("utf-8").decode(options.get("encoding", "cp1252"))
+            return smoke_binary.subprocess.CompletedProcess(arguments, 0 if success else 1, output, "")
+
+        def check_output(*arguments, **options):
+            return "typst 0.15.1 测试".encode("utf-8").decode(options.get("encoding", "cp1252"))
+
+        with mock.patch.object(smoke_binary.subprocess, "run", side_effect=run) as command, \
+                mock.patch.object(smoke_binary.subprocess, "check_output", side_effect=check_output) as typst:
+            with self.assertRaisesRegex(RuntimeError, "初始化失败"):
+                smoke_binary.smoke(binary, VERSION, "typst")
+        self.assertEqual(command.call_count, 2)
+        for call in command.call_args_list + typst.call_args_list:
+            self.assertEqual(call.kwargs["encoding"], "utf-8")
 
     def test_smoke_snapshot_includes_ownership_and_failures_are_errors(self):
         (self.root / "publish").mkdir()

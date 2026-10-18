@@ -28,7 +28,7 @@ REQUIRED_STAGES = {
 
 
 def gh(*arguments):
-    return subprocess.check_output(["gh", *map(str, arguments)], text=True)
+    return subprocess.check_output(["gh", *map(str, arguments)], text=True, encoding="utf-8")
 
 
 def find_release(repository, tag):

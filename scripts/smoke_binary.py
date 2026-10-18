@@ -55,7 +55,7 @@ def smoke(binary, expected_version, typst, report_path=None, provenance=None):
 
         def run(arguments, success=True):
             result = subprocess.run([str(binary), *arguments], cwd=project, env=env,
-                                    capture_output=True, text=True, timeout=180)
+                                    capture_output=True, text=True, encoding="utf-8", timeout=180)
             require((result.returncode == 0) == success,
                     f"{arguments}: exit {result.returncode}\n{result.stdout}\n{result.stderr}")
             return result.stdout
@@ -68,7 +68,7 @@ def smoke(binary, expected_version, typst, report_path=None, provenance=None):
 
         require(run(["--version"]).strip() == f"typsite {expected_version}",
                 "Executable version differs from the release metadata")
-        typst_version = subprocess.check_output([typst, "--version"], env=env, text=True).strip()
+        typst_version = subprocess.check_output([typst, "--version"], env=env, text=True, encoding="utf-8").strip()
         run(["init"])
         options = project / ".typsite/options.toml"
         options.write_text(options.read_text(encoding="utf-8").replace(
