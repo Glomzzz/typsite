@@ -614,7 +614,11 @@ fn initialized_demo_builds_all_pages_and_migration_with_latest_typst() {
     // Execute the copyable migration examples, not just the surrounding prose.
     // Both use real demo articles and must keep the feed deduplicated.
     for path in ["migrate-to-018.typ", "en/migrate-to-018.typ"] {
-        let guide = std::fs::read_to_string(project.input.join(path)).unwrap();
+        // Git checkouts on Windows can embed CRLF resources. The rendered
+        // articles support either ending; snippet extraction must do so too.
+        let guide = std::fs::read_to_string(project.input.join(path))
+            .unwrap()
+            .replace("\r\n", "\n");
         let rss_section = &guide[guide.find("= RSS").unwrap()..];
         let site_options = rss_section
             .split_once("```toml\n")
