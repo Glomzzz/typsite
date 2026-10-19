@@ -46,7 +46,8 @@
 /// - body(content):
 ///     The body of the article
 /// -> HTML document with a schema ~> HTML Page
-#let schema(name,head:[], body) = {
+#let html-schema(name,head:[], body) = context {
+  if target() != "html" { return body }
   import "@local/typsite:0.1.0": schema
   schema(
     name,
@@ -71,6 +72,14 @@
       body
     },
   )
+}
+
+#let schema(name,head:[], body) = {
+  if sys.inputs.at("typsite-pdf", default: "false") == "true" {
+    import "@local/typsite:0.1.0": schema
+    return schema(name, body, [], body => body)
+  }
+  html-schema(name, head: head, body)
 }
 
 /// Creates an inline-scaled content in HTML.

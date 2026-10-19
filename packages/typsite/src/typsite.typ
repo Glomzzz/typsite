@@ -1,5 +1,7 @@
 #import "html-bindings.typ" as html
 #import "util.typ": *
+#import "pdf.typ" as book
+#let pdf-book = book.book
 
 /// Creates an HTML document with a schema.
 // `~>` means that will be processed by typsite
@@ -14,7 +16,7 @@
 ///     A function that processes the body content before it is placed inside the HTML document.
 ///     The returned content will be placed inside the `<body>` tag of the HTML document.
 /// -> HTML document with a schema ~> HTML Page
-#let schema(name, body, head, handle-body) = context {
+#let html-schema(name, body, head, handle-body) = context {
   if target() != "html" {
     return body
   }
@@ -25,6 +27,11 @@
     ]
     #html.tag("body", handle-body(body))
   ]
+}
+
+#let schema(name, body, head, handle-body) = {
+  if book.enabled { return book.prepare(body) }
+  html-schema(name, body, head, handle-body)
 }
 
 /// Creates an unique HTML element in HTML head.
@@ -38,6 +45,7 @@
 ///    The content to be placed inside the unique element.
 /// -> unique element ~> unique HTML element
 #let unique(content) = {
+  if book.enabled { return [] }
   html.tag("unique", content)
 }
 
@@ -53,12 +61,12 @@
 /// - content (content):
 ///     The content to be placed inside the rewrite element.
 /// -> typsite rewrite - (HTML element)
-#let rewrite(id, ..attrs, content) = html.tag(
-  "rewrite",
-  id: id,
-  ..attrs,
-  content,
-)
+#let rewrite(id, ..attrs, content) = {
+  if book.enabled {
+    return book.marker("rewrite", id: id, attrs: attrs.named(), body: content)
+  }
+  html.tag("rewrite", id: id, ..attrs, content)
+}
 
 // Anchor & Goto
 // `~>` means that will be processed by typsite
@@ -69,6 +77,7 @@
 ///     The identifier for the anchor, which can be used to link to a specific section in the document.
 /// -> anchor definition component ~> anchor definition element
 #let anchor(id) = {
+  if book.enabled { return book.marker("anchor", id: str(id)) }
   box(html.tag("anchordef", id: str(id))[])
 }
 
@@ -80,6 +89,7 @@
 ///     The content to be placed inside the anchor goto element.
 /// -> anchor goto component ~> anchor goto element
 #let goto(id, content) = {
+  if book.enabled { return book.marker("goto", id: str(id), body: content) }
   box(html.tag("anchorgoto", id: str(id), content))
 }
 
@@ -100,9 +110,9 @@
 ///     Values will be converted to string using `to-str` function.
 ///     You can use these attributes by `{key}` in the embed component config (.typsite/components/embed.html)
 /// -> embed component ~> HTML embed article  (not a `<embed>` tag)
-#let embed(slug, open: true, sidebar: "full", heading-level: "child", ..attrs) = context {
+#let html-embed(slug, open: true, sidebar: "full", heading-level: "child", ..attrs) = context {
   if target() != "html" {
-    return pdf.embed(slug)
+    panic("Use typsite pdf to compile embeds into a native book")
   }
   if sidebar != "none" and sidebar != "full" and sidebar != "only-title" and sidebar != "only_title" {
     panic("Expect 'none' | 'full' | 'only-title' of #embed.sidebar, but got: " + sidebar)
@@ -134,6 +144,11 @@
 }
 
 
+#let embed(slug, open: true, sidebar: "full", heading-level: "child", ..attrs) = {
+  if book.enabled { return book.marker("embed", slug: slug, heading-level: heading-level) }
+  html-embed(slug, open: open, sidebar: sidebar, heading-level: heading-level, ..attrs)
+}
+
 // MetaContent
 
 /// Creates a get-metacontent rewrite in HTML.
@@ -146,11 +161,16 @@
 ///     If "parent", it will retrieve the meta content from the parent article.
 ///     If "$self", it will retrieve the meta content from the current article.
 /// -> get-metacontent rewrite ~> HTML element of the metacontent
-#let get-metacontent(meta-key, from: "$self") = context {
-  if target() == "html" {
-    box(html.elem("metacontent", attrs: ("get": meta-key, from: from))[])
-  } else {
-    content
+#let get-metacontent(meta-key, from: "$self") = {
+  if book.enabled { return book.marker("get", key: meta-key, from: from) }
+  context {
+    if target() == "html" {
+      box(html.elem("metacontent", attrs: ("get": meta-key, from: from))[])
+    } else {
+      assert(from == "$self", message: "Cross-article metadata requires typsite pdf")
+      let values = query(metadata).filter(it => book.kind(it.value) == "standalone-meta" and it.value.key == meta-key)
+      if values.len() > 0 { values.last().value.body }
+    }
   }
 }
 
@@ -163,11 +183,14 @@
 ///     The content to be placed inside the metacontent element.
 ///     This content will be used as the value for the meta key.
 /// -> set-metacontent rewrite ~> none
-#let metacontent(meta-key, content) = context {
-  if target() == "html" {
-    html.elem("metacontent", attrs: ("set": meta-key), content)
-  } else {
-    content
+#let metacontent(meta-key, content) = {
+  if book.enabled { return book.marker("set", key: meta-key, body: content) }
+  context {
+    if target() == "html" {
+      html.elem("metacontent", attrs: ("set": meta-key), content)
+    } else {
+      book.marker("standalone-meta", key: meta-key, body: content)
+    }
   }
 }
 
@@ -300,7 +323,7 @@
 ///     Additional attributes to be applied to the metagraph element.
 ///     Values will be converted to string using `to-str` function.
 /// -> set-metagraph tag ~> none
-#let metagraph(key, ..attrs) = context {
+#let html-metagraph(key, ..attrs) = context {
   if target() == "html" {
     html.tag(
       "metagraph",
@@ -308,6 +331,14 @@
       ..attrs,
     )[]
   }
+}
+
+#let metagraph(key, ..attrs) = {
+  if book.enabled {
+    if key == "parent" { return book.marker("parent", slug: attrs.named().slug) }
+    return []
+  }
+  html-metagraph(key, ..attrs)
 }
 
 /// Set parent metagraph
@@ -370,6 +401,7 @@
 ///     The content to be placed inside the inline-scaled element.
 /// -> inline-scaled content ~> HTML svg (auto-sized)
 #let inline(fit-font: 1em, scale: 100%, content, footnotes) = context {
+  if target() != "html" { return content }
   let size = measure(content)
   let scale = scale
   if fit-font == true {
@@ -382,9 +414,6 @@
     panic("CONTENT WITH ZERO SIZE")
   }
   
-  if target() != "html" {
-    return content
-  }
   let content = [
     #inline-content.update(true)
     #auto-sized-svg(scale, fit-font, html.frame(context {

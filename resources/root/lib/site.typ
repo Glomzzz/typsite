@@ -2,10 +2,12 @@
 #import "html.typ" as html
 
 
-#let link-local-style(content) = {
+#let link-local-style(content) = context {
+  if target() != "html" { return content }
   html.span(class: "link local", content)
 }
-#let link-external-style(content) = {
+#let link-external-style(content) = context {
+  if target() != "html" { return content }
   html.span(class: "link external", content)
 }
 
@@ -18,10 +20,14 @@
   link-external-style(href(url, content))
 }
 
-#let auto-filter(content) = html.span(class: "auto-filter", style: "display: inline-block;", content)
+#let auto-filter(content) = context {
+  if target() != "html" { return content }
+  html.span(class: "auto-filter", style: "display: inline-block;", content)
+}
 
 
 #let inline-math(body, block: auto, scale: 100%) = context {
+  if target() != "html" { return body }
   let block = if block == auto { body.block } else { block }
   import "@local/typsite:0.1.0": inline
   let footnotes = query(footnote).map(it => it.at("label", default: none)).filter(it => it != none)
@@ -71,7 +77,8 @@
 }
 
 
-#let block-quote(content) = {
+#let block-quote(content) = context {
+  if target() != "html" { return quote(block: true, content) }
   html.blockquote(class: "block-quote", content)
 }
 

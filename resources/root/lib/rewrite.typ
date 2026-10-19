@@ -76,11 +76,13 @@
 /// - slug (str):
 ///     The slug of the citation, which is used to reference the citation in the document.
 /// -> rewrite ~> HTML citation element
-#let cite-title(slug) = context {
-  if target() == "html" {
-    box(rewrite("cite-with-title", slug: str(slug))[])
-  } else {
-    []
+#let cite-title(slug) = {
+  if sys.inputs.at("typsite-pdf", default: "false") == "true" {
+    return rewrite("cite-with-title", slug: str(slug))[]
+  }
+  context {
+    if target() == "html" { box(rewrite("cite-with-title", slug: str(slug))[]) }
+    else { text(slug) }
   }
 }
 
@@ -92,10 +94,12 @@
 /// - anchor (str):
 ///     An optional anchor for the citation, which can be used to link to a specific section
 /// -> rewrite ~> HTML citation element
-#let cite(slug, anchor: "", content) = context {
-  if target() == "html" {
-    box(rewrite("cite", slug: str(slug), anchor: anchor, content))
-  } else {
-    content
+#let cite(slug, anchor: "", content) = {
+  if sys.inputs.at("typsite-pdf", default: "false") == "true" {
+    return rewrite("cite", slug: str(slug), anchor: anchor, content)
+  }
+  context {
+    if target() == "html" { box(rewrite("cite", slug: str(slug), anchor: anchor, content)) }
+    else { content }
   }
 }

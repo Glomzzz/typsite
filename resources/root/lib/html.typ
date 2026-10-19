@@ -1,6 +1,17 @@
 #import "@local/typsite:0.1.0": html-bindings as _html, to-str
 #import _html: *
 
+// Keep the generated HTML bindings untouched. These common authoring wrappers
+// use the package's target-aware boundary instead of evaluating std.html in PDF.
+#let div(body, ..attrs) = _html.tag("div", ..attrs, body)
+#let span(body, ..attrs) = _html.tag("span", ..attrs, body)
+#let blockquote(body, ..attrs) = context {
+  if target() != "html" { return std.quote(block: true, body) }
+  _html.tag("blockquote", ..attrs, body)
+}
+#let a(body, ..attrs) = _html.tag("a", ..attrs, body)
+#let img(body, ..attrs) = _html.tag("img", ..attrs, body)
+
 /// Creates a text decoration element.
 ///
 /// - decoration (str): overline | underline | line-through | "$decoration $decoration"
@@ -8,16 +19,13 @@
 /// - content (content):
 ///     The content to be decorated.
 /// -> HTML with text-decoration style
-#let text-decoration(decoration, content) = {
+#let text-decoration(decoration, content) = context {
   if target() != "html" {
-    let frame(content) = content
-    if decoration.contains("overline") {
-      frame = content => overline(frame(content))
-    }
-    if decoration.contains("underline") {
-      frame = content => underline(frame(content))
-    }
-    frame(content)
+    let decorated = content
+    if decoration.contains("overline") { decorated = overline(decorated) }
+    if decoration.contains("underline") { decorated = underline(decorated) }
+    if decoration.contains("line-through") { decorated = strike(decorated) }
+    return decorated
   }
   span(style: "text-decoration: " + str(decoration) + ";", content)
 }
@@ -83,6 +91,14 @@
     size * 0.75
   } else {
     panic("Invalid type " + type(size) + " for size: " + to-str([#size]))
+  }
+  if target() != "html" {
+    let attrs = (:)
+    if font != none { attrs.insert("font", font) }
+    if fill != none { attrs.insert("fill", fill) }
+    let native = std.text(style: style, weight: weight, size: text-size,
+      tracking: tracking, spacing: spacing, ..attrs, content)
+    return if align == none { native } else { std.align(align, native) }
   }
   let content = std.text(
     style: style,

@@ -121,7 +121,16 @@
 /// - body (content): 
 ///     The content to be placed inside the HTML element.
 /// -> html.elem(tag, attrs: attrs, body)
-#let elem(tag, attrs:(), body) = html.elem(tag, attrs: attrs, body)
+#let elem(tag, attrs:(), body) = context {
+  if target() != "html" {
+    if ("script", "style", "head", "link", "meta").contains(tag) { return [] }
+    if tag == "a" and "href" in attrs { return std.link(attrs.href, body) }
+    if tag == "iframe" and "src" in attrs { return std.link(attrs.src)[Embedded media] }
+    if tag == "img" { return [\[Image: #attrs.at("alt", default: "use native image() for print")\]] }
+    return body
+  }
+  html.elem(tag, attrs: attrs, body)
+}
 
 /// Wrapper of html.elem, with flattened attributes.
 ///
@@ -143,6 +152,8 @@
 
 /// Wrapper of html.frame
 /// -> html.frame(body)   [svg]
-#let frame(body) = html.frame(body)
+#let frame(body) = context {
+  if target() == "html" { html.frame(body) } else { body }
+}
 
 
