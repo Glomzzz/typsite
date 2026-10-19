@@ -339,6 +339,51 @@ fn appendix_order_and_print_options_are_part_of_the_cache_key() {
 }
 
 #[test]
+fn shared_layout_paths_are_validated_and_changes_invalidate_the_book() {
+    let (project, runner, output) = fixture();
+    let original = fs::read_to_string(project.config.join("options.toml")).unwrap();
+    for module in ["../outside.typ", "missing.typ", "C:/outside.typ"] {
+        project.configure(
+            "options.toml",
+            &original.replace("module = \"\"", &format!("module = \"{module}\"")),
+        );
+        assert!(
+            compiler(&project, runner.clone(), PdfOptions::default(), &output)
+                .compile()
+                .is_err()
+        );
+    }
+    assert_eq!(runner.calls.load(Ordering::SeqCst), 0);
+    // Layout modules outside typst_lib are still excluded from implicit articles.
+    project.source(
+        "page layout.typ",
+        "#let page-header(info) = [Hello]\n#let page-footer(info) = []",
+    );
+    project.configure(
+        "options.toml",
+        &original.replace("module = \"\"", "module = \"page layout.typ\""),
+    );
+    let compiler = compiler(&project, runner.clone(), PdfOptions::default(), &output);
+    compiler.compile().unwrap();
+    let driver = fs::read_to_string(&output).unwrap();
+    assert!(driver.contains("#import \"/page layout.typ\": page-header, page-footer"));
+    assert!(!driver.contains("\"/page layout\": () => include"));
+    assert!(!compiler.compile().unwrap().compiled);
+    project.source(
+        "page layout.typ",
+        "#let page-header(info) = [Updated]\n#let page-footer(info) = []",
+    );
+    assert!(compiler.compile().unwrap().compiled);
+    project.configure("options.toml", &original);
+    assert!(compiler.compile().unwrap().compiled);
+    assert!(
+        !fs::read_to_string(output)
+            .unwrap()
+            .contains("#import \"/page layout.typ\"")
+    );
+}
+
+#[test]
 fn pdf_cache_is_recognized_by_safe_cleanup() {
     let (project, runner, output) = fixture();
     compiler(&project, runner, PdfOptions::default(), &output)

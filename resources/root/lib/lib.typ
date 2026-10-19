@@ -49,9 +49,21 @@
 #let html-schema(name,head:[], body) = context {
   if target() != "html" { return body }
   import "@local/typsite:0.1.0": schema
+  let layout = sys.inputs.at("typsite-layout", default: "")
+  let furniture = if layout == "" { [] } else {
+    import layout as module
+    let info = (target: "html", source: sys.inputs.at("typsite-source", default: none),
+      title: text("{title}"), page: none)
+    assert(type(module.page-header) == function and type(module.page-footer) == function,
+      message: "Layout module must export page-header(info) and page-footer(info) functions")
+    [
+      #metacontent("__typsite-page-header", (module.page-header)(info))
+      #metacontent("__typsite-page-footer", (module.page-footer)(info))
+    ]
+  }
   schema(
     name,
-    body,
+    [#body #furniture],
     [
       #import "@local/typsite:0.1.0": mathyml
       #mathyml.include-mathfont()

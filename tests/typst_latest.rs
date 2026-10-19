@@ -58,6 +58,7 @@ fn main() {}
             input: &input,
             output: &output,
             font_path: &fonts,
+            layout: None,
             jobs: std::num::NonZeroUsize::MIN,
         })
         .unwrap();

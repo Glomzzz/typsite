@@ -140,10 +140,45 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
         };
 
         let body = metadata.inline(&self.schema.body);
+        // Furniture is exported as reserved native metadata, not body content:
+        // embeds reuse their article bodies without duplicating page furniture.
+        let furniture = |key: &str, tag: &str| {
+            if !self.schema.content
+                || self.config.options.project.layout.module.trim().is_empty()
+                || !metadata.contents.contents.contains_key(key)
+            {
+                return String::new();
+            }
+            metadata
+                .contents
+                .get(key)
+                .map(|content| {
+                    if content.trim().is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            "<{tag} class=\"page-{tag}\">{}</{tag}>",
+                            metadata.inline(&content)
+                        )
+                    }
+                })
+                .unwrap_or_default()
+        };
+        let page_header = furniture("__typsite-page-header", "header");
+        let page_footer = furniture("__typsite-page-footer", "footer");
+        let tokens: Vec<_> = Tokenizer::new(&body).collect();
+        let has_slot = |name: &[u8]| {
+            tokens.iter().any(
+                |token| matches!(token, Ok(Token::StartTag(tag)) if tag.name.as_slice() == name),
+            )
+        };
+        let has_header_slot = has_slot(b"page-header");
+        let has_footer_slot = has_slot(b"page-footer");
+        let mut header_written = false;
+        let mut footer_written = false;
         // Body
-        let tokenizer = Tokenizer::new(&body);
         let mut err = TypError::new_schema(self.article.slug.clone(), self.schema.id.as_str());
-        for result in tokenizer {
+        for result in tokens {
             match result {
                 Ok(Token::StartTag(tag)) if tag.name == b"metadata" => {
                     let attrs = Attributes::new(tag.attributes);
@@ -185,14 +220,38 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
                     let tail = metadata.inline(self.config.sidebar.block.tail.as_str());
                     err.ok(write_into!(self.body, "{body}\n{}\n{tail}", self.sidebar))
                 }
+                Ok(Token::StartTag(tag)) if tag.name == b"page-header" => {
+                    if !header_written {
+                        self.body.push_str(&page_header);
+                        header_written = true;
+                    }
+                    None
+                }
+                Ok(Token::StartTag(tag)) if tag.name == b"page-footer" => {
+                    if !footer_written {
+                        self.body.push_str(&page_footer);
+                        footer_written = true;
+                    }
+                    None
+                }
                 Ok(Token::StartTag(tag)) if tag.name == b"content" => {
-                    err.ok(write_into!(self.body, "{}\n", self.content))
+                    if !has_header_slot && !header_written {
+                        self.body.push_str(&page_header);
+                        header_written = true;
+                    }
+                    err.ok(write_into!(self.body, "{}\n", self.content));
+                    if !has_footer_slot && !footer_written {
+                        self.body.push_str(&page_footer);
+                        footer_written = true;
+                    }
+                    None
                 }
                 Ok(Token::StartTag(tag)) if tag.name == b"footer" => {
                     err.ok(write_into!(self.body, "{}\n", footer.body))
                 }
                 Ok(Token::EndTag(tag)) => match tag.name.as_slice() {
-                    b"metadata" | b"sidebar" | b"content" | b"footer" => None,
+                    b"metadata" | b"sidebar" | b"content" | b"footer" | b"page-header"
+                    | b"page-footer" => None,
                     _ => err.ok(write_token(&mut self.body, &Token::EndTag(tag))),
                 },
                 Ok(token) => err.ok(write_token(&mut self.body, &token)),

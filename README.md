@@ -245,7 +245,10 @@ ownership journal are untouched; the default PDF output is `book/site.pdf`.
 Existing sites should merge the updated authoring helpers from a reference
 `typsite init` project. Native Typst labels remain document-global, so repeated
 articles with numbered native references need unique labels or occurrence-local
-Typsite anchors. See [PDF setup, semantics, styling, safety, and limitations](docs/pdf.md).
+Typsite anchors. To customize both HTML page furniture and PDF running
+headers/footers, set `[layout] module = "lib/layout.typ"` in `.typsite/options.toml`
+and edit `page-header(info)` / `page-footer(info)` in that module.
+See [PDF setup, covers, shared layout, safety, and limitations](docs/pdf.md).
 
 ## 5. Architecture & Flow
 

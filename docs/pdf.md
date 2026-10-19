@@ -154,6 +154,69 @@ be collected before layout; declarations there fail rather than emit phantom
 markers or entries. The internal label prefix `typsite-pdf-note-` is reserved.
 HTML footnotes retain their existing behavior.
 
+## Shared HTML/PDF headers and footers
+
+Enable one editable **Typst module** in `.typsite/options.toml`:
+
+```toml
+[layout]
+module = "lib/layout.typ"
+```
+
+Paths are relative to `--input` (a leading `/` means that source root). The
+module must exist there and export both functions below. An absent `[layout]`
+section or `module = ""` disables it; existing sites retain their old layout.
+The selected module is excluded from implicit article discovery. `typsite init`
+ships an editable `root/lib/layout.typ` example. Keep it independent of
+`lib.typ`/`schema` to avoid a circular import.
+
+```typ
+#let page-header(info) = {
+  link("https://example.org")[My collected notes]
+}
+#let page-footer(info) = {
+  if info.target == "pdf" {
+    align(center)[#info.title #h(1em) #info.page]
+  } else {
+    [Copyright 2026. #link("https://example.org/about")[About]]
+  }
+}
+```
+
+Both functions receive a dictionary:
+
+| Field | HTML | PDF |
+| --- | --- | --- |
+| `target` | `"html"` | `"pdf"` |
+| `title` | Rich standalone article title | PDF document title (`--title`/`site.title`/entry slug) |
+| `source` | Canonical standalone article slug | First article starting on this page, otherwise last preceding article; `none` on contents pages |
+| `page` | `none` | Printed page number (starting at 1 after a front cover) |
+
+Return native content such as text, links, and images. Use `info.target` for
+format-specific styling; PDF does not interpret CSS. In HTML, `info.title` and
+literal metadata placeholders such as `{author}` resolve during composition;
+`get-metacontent` must not be nested in this reserved layout metadata. For PDF,
+use the supplied dictionary or static content rather than article helpers in
+running furniture. Avoid article embeds and footnotes in headers/footers.
+
+HTML page furniture is rendered once per standalone article, not per embedded
+occurrence. The bundled schema places it at `<page-header />` and
+`<page-footer />` slots, wrapped in `<header class="page-header">` and
+`<footer class="page-footer">`. Custom schemas can move those slots. Schemas
+without slots get a fallback immediately before/after `<content />`. Returning
+`[]` leaves that part empty. Existing navigation, backlinks, and references are
+not replaced; the old `<footer>` component slot still controls relationship
+footers. The metadata names `__typsite-page-header` and
+`__typsite-page-footer` are reserved.
+
+PDF uses the functions on every contents/body/appendix page, never on covers.
+Its header always preserves the footnote reset. A custom footer replaces the
+default page-number footer, so include `info.page` if you want numbers. Page
+margins, header/footer ascent/descent, typography, and alignment remain normal
+Typst settings in `--template lib/pdf.typ`. Layout edits invalidate both
+formats; failed layout evaluation preserves their last successful outputs.
+Existing sites need the updated `root/lib/lib.typ` schema helper to opt in.
+
 ## Styling and print-specific content
 
 `--template lib/pdf.typ` loads a source-root module exporting

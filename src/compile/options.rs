@@ -45,6 +45,38 @@ pub struct ProjOptions {
     pub code_fallback_style: CodeFallbackStyle,
     #[serde(default)]
     pub site: SiteOptions,
+    #[serde(default)]
+    pub layout: LayoutOptions,
+}
+
+#[derive(Debug, Default, Deserialize, PartialEq)]
+pub struct LayoutOptions {
+    /// One source-root module exporting page-header(info) and page-footer(info).
+    #[serde(default)]
+    pub module: String,
+}
+
+impl LayoutOptions {
+    pub(super) fn module_path(
+        &self,
+        input: &super::project::Snapshot,
+    ) -> anyhow::Result<Option<String>> {
+        use anyhow::ensure;
+        if self.module.trim().is_empty() {
+            return Ok(None);
+        }
+        let path = super::project::source_path(&self.module)?;
+        ensure!(
+            path.extension().is_some_and(|extension| extension == "typ")
+                && input.contains_key(&path),
+            "Layout module must be an existing .typ file inside the source root: {}",
+            self.module
+        );
+        Ok(Some(format!(
+            "/{}",
+            path.to_string_lossy().replace('\\', "/")
+        )))
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

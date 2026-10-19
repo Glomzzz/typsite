@@ -355,6 +355,24 @@ native structure, links, metadata, deep nesting, recovery, clean equivalence,
 standalone appendices, templates, the CLI, and the initialized demo. Both native
 and HTML compatibility suites are included in the cross-platform CI matrix.
 
+PDF named footnotes are collected before layout and materialized at the first
+reference on each page, with occurrence-scoped IDs and per-page numbering.
+Vector helpers share scale/font-fit semantics in HTML and native output;
+current Typst frames no longer need the old `typst-frame` class for scaling.
+Sparse local heading depths are normalized before placement, eliminating zero
+counter components without introducing phantom headings. Optional single-page
+front/back covers are native source loaders with isolated furniture/numbering.
+
+`[layout].module` supplies one pair of Typst page-header/page-footer functions.
+HTML exports receive validated module/source inputs and store layout content in
+reserved metadata. Schema composition emits it once per standalone page via
+optional slots (or a legacy content fallback), not during embed composition.
+PDF calls the same functions in running page furniture, preserving footnote
+resets and suppressing furniture on covers. Module selection participates in
+HTML export identity; module contents and dependencies invalidate both formats.
+Blank/missing configuration preserves existing projects. Shared layout tests
+cover edits, failures, no-ops, covers, clean equivalence, and legacy schemas.
+
 ## Baseline
 
 Before semantic changes: 56 tests passed; build and Clippy completed (with lint

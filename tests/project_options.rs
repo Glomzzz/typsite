@@ -43,6 +43,40 @@ fn independent_projects_keep_options_and_metadata_defaults() {
 }
 
 #[test]
+fn shared_layout_is_optional_for_existing_projects() {
+    let project = Project::new();
+    let options = std::fs::read_to_string(project.config.join("options.toml")).unwrap();
+    project.configure(
+        "options.toml",
+        &options
+            .replace("[layout]", "# [layout]")
+            .replace("module = \"\"", "# module = \"\""),
+    );
+    assert!(
+        project
+            .load(CompileOptions::default())
+            .options
+            .project
+            .layout
+            .module
+            .is_empty()
+    );
+    project.configure(
+        "options.toml",
+        &options.replace("module = \"\"", "module = \"lib/custom.typ\""),
+    );
+    assert_eq!(
+        project
+            .load(CompileOptions::default())
+            .options
+            .project
+            .layout
+            .module,
+        "lib/custom.typ"
+    );
+}
+
+#[test]
 fn missing_site_section_uses_the_same_defaults_as_an_empty_section() {
     let project = Project::new();
     let options = std::fs::read_to_string(project.config.join("options.toml")).unwrap();

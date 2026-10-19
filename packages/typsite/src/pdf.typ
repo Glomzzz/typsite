@@ -346,19 +346,15 @@
       let last = records("cover-end").find(it => it.value.side == side)
       assert(first.location().page() == last.location().page(), message: "PDF " + side + " cover must fit on one page")
     }
+    // Set the count before the next page's header is evaluated, not in that
+    // page's body (which would leave its header one page ahead).
+    if side == "front" { counter(page).update(0) }
   })
 }
 
-// Exported by the package as pdf-book; normal authors keep using schema/embed.
-#let book(pages: (:), entry: "/index", appendices: (), title: "", defaults: (:), default-parent: none, urls: (:), front-cover: none, back-cover: none) = {
-  assert(enabled, message: "Use typsite pdf to prepare a native book")
-  let backend = (render: render, decorate: decorate)
-  let env = (pages: pages, defaults: defaults, default-parent: default-parent, urls: urls)
-  set document(title: if title == "" { entry } else { title })
-  set page(header: counter(footnote).update(0))
+#let book-body(backend, env, entry, appendices, front-cover, back-cover) = {
   if front-cover != none {
     cover(front-cover, "front")
-    counter(page).update(1)
   }
   outline(title: [Contents])
   pagebreak(weak: true)
@@ -373,4 +369,33 @@
     }
   }
   if back-cover != none { cover(back-cover, "back") }
+}
+
+// Exported by the package as pdf-book; normal authors keep using schema/embed.
+#let book(pages: (:), entry: "/index", appendices: (), title: "", defaults: (:), default-parent: none, urls: (:), front-cover: none, back-cover: none, page-header: none, page-footer: none) = {
+  assert(enabled, message: "Use typsite pdf to prepare a native book")
+  let backend = (render: render, decorate: decorate)
+  let env = (pages: pages, defaults: defaults, default-parent: default-parent, urls: urls)
+  let title = if title == "" { entry } else { title }
+  set document(title: title)
+  assert(page-header == none or type(page-header) == function, message: "Layout page-header must be a function")
+  assert(page-footer == none or type(page-footer) == function, message: "Layout page-footer must be a function")
+  let furniture(render) = context {
+    let physical = here().page()
+    let articles = records("article").filter(it => it.location().page() <= physical)
+    let on-page = articles.filter(it => it.location().page() == physical)
+    let source = if on-page.len() > 0 { on-page.first().value.scope.source }
+      else if articles.len() > 0 { articles.last().value.scope.source }
+    render((target: "pdf", source: source, title: text(title), page: counter(page).get().first()))
+  }
+  // Reset independently of custom furniture so headers cannot break per-page
+  // footnotes. Covers explicitly opt out of both furniture and page numbering.
+  let header = [#counter(footnote).update(0)#if page-header != none { furniture(page-header) }]
+  if page-footer != none {
+    set page(header: header, footer: furniture(page-footer))
+    book-body(backend, env, entry, appendices, front-cover, back-cover)
+  } else {
+    set page(header: header)
+    book-body(backend, env, entry, appendices, front-cover, back-cover)
+  }
 }

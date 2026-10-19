@@ -4,7 +4,9 @@ use super::cache::fingerprint;
 use super::compiler::lock;
 use super::options::ProjOptions;
 use super::output::OWNERSHIP;
-use super::project::{Snapshot, digest, managed_path, resolve, scan, validate_relative};
+use super::project::{
+    Snapshot, digest, managed_path, resolve, scan, source_path, validate_relative,
+};
 use super::typst::{CommandTypst, PdfRequest, TypstRunner};
 use crate::util::atomic::{PendingFile, write, write_cache};
 use anyhow::{Context, Result, ensure};
@@ -359,10 +361,15 @@ impl PdfCompiler {
     }
 
     fn driver(&self, input: &Snapshot, options: &ProjOptions) -> Result<String> {
+        let layout = options.layout.module_path(input)?;
         let mut pages = BTreeMap::new();
         let mut portable = BTreeSet::new();
         for path in input.keys().filter(|path| {
-            path.extension().is_some_and(|ext| ext == "typ") && !options.typst_lib.contains(path)
+            path.extension().is_some_and(|ext| ext == "typ")
+                && !options.typst_lib.contains(path)
+                && layout
+                    .as_deref()
+                    .is_none_or(|module| *path != Path::new(&module[1..]))
         }) {
             validate_relative(path)?;
             let slug = format!(
@@ -419,6 +426,14 @@ impl PdfCompiler {
                 ))
             ));
         }
+        if let Some(module) = layout {
+            driver.push_str(&format!(
+                "#import {}: page-header, page-footer\n",
+                typst_string(&module)
+            ));
+        } else {
+            driver.push_str("#let page-header = none\n#let page-footer = none\n");
+        }
         let mut covers = String::new();
         for (name, path) in [
             ("front-cover", &self.options.front_cover),
@@ -442,7 +457,7 @@ impl PdfCompiler {
                 ));
             }
         }
-        driver.push_str("#pdf-book(\n");
+        driver.push_str("#pdf-book(\n  page-header: page-header,\n  page-footer: page-footer,\n");
         driver.push_str(&covers);
         driver.push_str("  pages: (\n");
         for (slug, path) in &pages {
@@ -582,30 +597,6 @@ fn source_reference(reference: &str) -> Result<String> {
             .to_string_lossy()
             .replace('\\', "/")
     ))
-}
-
-fn source_path(reference: &str) -> Result<PathBuf> {
-    let relative = reference.trim_start_matches('/');
-    let mut parts = Vec::new();
-    for part in relative.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                ensure!(
-                    parts.pop().is_some(),
-                    "PDF source escapes input root: {reference}"
-                );
-            }
-            part => parts.push(part),
-        }
-    }
-    ensure!(
-        !parts.is_empty() && !reference.contains(['\\', ':', '\0']),
-        "Invalid PDF source path: {reference}"
-    );
-    let path = PathBuf::from(parts.join("/"));
-    validate_relative(&path)?;
-    Ok(path)
 }
 
 fn json_value(value: &impl Serialize) -> Result<String> {

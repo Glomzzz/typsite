@@ -27,6 +27,7 @@ pub fn export_batch(
     expected: &Snapshot,
     concurrent: usize,
     typst_jobs: NonZeroUsize,
+    layout: Option<&str>,
 ) -> Result<Vec<Result<Export>>> {
     let pool = if concurrent > 1 {
         Some(
@@ -54,6 +55,7 @@ pub fn export_batch(
                 input: &source,
                 output: file.path(),
                 font_path: &paths.config.join("assets/fonts"),
+                layout,
                 jobs: typst_jobs,
             })?;
             dependencies.push(source.clone());

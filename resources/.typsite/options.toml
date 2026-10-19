@@ -18,6 +18,12 @@ parent = "" # the default parent page
 # if ends with `/`, it's considerred as a directory
 paths = [ "lib/" ]
 
+# One optional Typst module for both HTML and PDF page furniture.
+# Paths are relative to the source root; blank disables the shared layout.
+[layout]
+module = ""
+# module = "lib/layout.typ"
+
 [code_fallback_style]
 dark = "#d3c6aa"
 light = "#5c6a72"

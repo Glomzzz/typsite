@@ -13,6 +13,8 @@ pub struct ExportRequest<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
     pub font_path: &'a Path,
+    /// Validated source-root-anchored shared page layout module.
+    pub layout: Option<&'a str>,
     /// Worker budget inside this Typst subprocess (not concurrent articles).
     pub jobs: NonZeroUsize,
 }
@@ -107,7 +109,7 @@ impl CommandTypst {
     }
 
     fn command(&self, request: &ExportRequest<'_>, dependencies: &Path) -> Result<Command> {
-        self.compile_command(
+        let mut command = self.compile_command(
             request.root,
             Some(request.input),
             request.output,
@@ -115,7 +117,19 @@ impl CommandTypst {
             request.jobs,
             dependencies,
             Format::Html,
-        )
+        )?;
+        if let Some(layout) = request.layout {
+            let source = request.input.strip_prefix(request.root)?.with_extension("");
+            command
+                .arg("--input")
+                .arg(format!("typsite-layout={layout}"))
+                .arg("--input")
+                .arg(format!(
+                    "typsite-source=/{}",
+                    source.to_string_lossy().replace('\\', "/")
+                ));
+        }
+        Ok(command)
     }
 
     fn compile_command(
@@ -374,6 +388,7 @@ mod tests {
             input: &input,
             output: &output,
             font_path: &fonts,
+            layout: Some("/lib/layout with spaces.typ"),
             jobs: NonZeroUsize::new(2).unwrap(),
         };
         let runner = CommandTypst::new("typst");
@@ -394,6 +409,11 @@ mod tests {
         let jobs_arg = args.iter().position(|arg| *arg == "--jobs").unwrap();
         assert_eq!(args[jobs_arg + 1], "2");
         assert!(!args.iter().any(|arg| *arg == "powershell"));
+        assert!(
+            args.iter()
+                .any(|arg| *arg == "typsite-layout=/lib/layout with spaces.typ")
+        );
+        assert!(args.iter().any(|arg| *arg == "typsite-source=/article"));
     }
 
     #[test]

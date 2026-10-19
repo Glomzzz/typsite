@@ -90,6 +90,29 @@ impl ProjectPaths {
     }
 }
 
+/// Normalize a portable Typst source-root-relative reference without allowing
+/// filesystem prefixes or traversal beyond the source root.
+pub(super) fn source_path(reference: &str) -> Result<PathBuf> {
+    let mut parts = Vec::new();
+    for part in reference.trim_start_matches('/').split('/') {
+        match part {
+            "" | "." => {}
+            ".." => ensure!(
+                parts.pop().is_some(),
+                "Typst source escapes input root: {reference}"
+            ),
+            part => parts.push(part),
+        }
+    }
+    ensure!(
+        !parts.is_empty() && !reference.contains(['\\', ':', '\0']),
+        "Invalid Typst source path: {reference}"
+    );
+    let path = PathBuf::from(parts.join("/"));
+    validate_relative(&path)?;
+    Ok(path)
+}
+
 /// Resolve existing ancestors too, so a symlink cannot disguise overlapping roots.
 pub fn resolve(path: &Path) -> Result<PathBuf> {
     let absolute = std::path::absolute(path)?;

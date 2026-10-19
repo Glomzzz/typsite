@@ -229,7 +229,9 @@ typsite pdf --front-cover lib/front-cover.typ --back-cover lib/back-cover.typ
 
 已有站点需要从参考 `typsite init` 项目合并更新后的辅助库。原生 Typst 标签仍是文档全局的；
 重复文章中的原生编号引用需要唯一标签，或使用按嵌入实例隔离的 Typsite 锚点。
-[PDF 使用说明](docs/pdf.md)列出了附录、样式、缓存、安全保证和已知限制。
+在 `.typsite/options.toml` 设置 `[layout] module = "lib/layout.typ"`，
+编辑模块中的 `page-header(info)` / `page-footer(info)`，即可同时定制 HTML 和 PDF 的页眉页脚。
+[PDF 使用说明](docs/pdf.md)列出了封面、封底、共享布局、附录、缓存和已知限制。
 
 ## 5. 架构 & 流程
 

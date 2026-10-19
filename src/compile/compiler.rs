@@ -176,9 +176,16 @@ impl Compiler {
         )
         .context("Cannot load project configuration")?;
         let site_outputs = super::site_output::SiteOutputs::new(&config.options)?;
+        let layout = config.options.project.layout.module_path(&input)?;
         let sources: Snapshot = input
             .iter()
-            .filter(|(path, _)| is_typst(path) && !is_library(path, &config))
+            .filter(|(path, _)| {
+                is_typst(path)
+                    && !is_library(path, &config)
+                    && layout
+                        .as_deref()
+                        .is_none_or(|module| *path != Path::new(&module[1..]))
+            })
             .map(|(path, hash)| (path.clone(), hash.clone()))
             .collect();
         let fonts: Snapshot = configuration
@@ -195,6 +202,7 @@ impl Compiler {
             &paths.packages,
             &packages,
             &fonts,
+            &layout,
         ))?;
         // Hash known external dependencies before exporting, not just after.
         // New dependencies discovered by Typst require a verification export.
@@ -290,6 +298,7 @@ impl Compiler {
             &expected,
             concurrent,
             typst_jobs,
+            layout.as_deref(),
         )?;
         for ((relative, _, _), result) in dirty.into_iter().zip(results) {
             match result {

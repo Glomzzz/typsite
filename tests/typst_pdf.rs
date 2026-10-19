@@ -424,6 +424,138 @@ fn pdf_cli_does_not_touch_html_outputs_and_is_a_true_noop() {
 
 #[test]
 #[ignore = "requires latest stable Typst; CI runs this explicitly"]
+fn one_shared_layout_customizes_html_and_pdf_without_repeating_embed_furniture() {
+    let (project, runner, output) = setup(
+        r#"
+#context {
+  let furniture = query(metadata).filter(it => type(it.value) == dictionary and it.value.at("layout", default: none) != none)
+  let front = query(metadata).find(it => it.value == "front")
+  let back = query(metadata).find(it => it.value == "back")
+  let headers = furniture.filter(it => it.value.layout == "header")
+  let footers = furniture.filter(it => it.value.layout == "footer")
+  let pages = range(front.location().page() + 1, back.location().page())
+  assert(headers.map(it => it.location().page()) == pages, message: "Exactly one running header on each non-cover page")
+  assert(footers.map(it => it.location().page()) == pages, message: "Exactly one running footer on each non-cover page")
+  assert(headers.map(it => it.value.page) == range(1, pages.len() + 1), message: "Layout receives printed page numbers: " + repr(headers.map(it => it.value.page)))
+  assert(headers.all(it => it.value.target == "pdf"))
+  let notes = query(footnote).filter(it => type(it.body) == content)
+  assert(notes.map(it => counter(footnote).at(it.location())) == ((1,), (1,)), message: "Custom headers preserve per-page footnote reset")
+}
+"#,
+    );
+    project.source("index.typ", &format!("{LIB}\n#title[Root $x^2$]\n#embed(\"child.typ\", heading-level: 1)\nFirst#footnote[First note].\n#pagebreak()\nSecond#footnote[Second note].\n#cite(\"outside.typ\")[Outside article]."));
+    project.source(
+        "child.typ",
+        &format!("{LIB}\n#title[Child]\nEmbedded body."),
+    );
+    project.source(
+        "outside.typ",
+        &format!("{LIB}\n#title[Outside]\nUnselected body."),
+    );
+    project.source("lib/front.typ", "#metadata(\"front\")\nFront cover");
+    project.source("lib/back.typ", "#metadata(\"back\")\nBack cover");
+    let module = r#"
+#let page-header(info) = {
+  metadata((layout: "header", target: info.target, page: info.page, source: info.source))
+  [Shared header version one: #info.title. #link("https://example.org/layout")[Layout link]]
+}
+#let page-footer(info) = {
+  metadata((layout: "footer", target: info.target))
+  [Shared footer #if info.target == "pdf" { info.page }]
+}
+"#;
+    project.source("lib/shared layout.typ", module);
+    let config = fs::read_to_string(project.config.join("options.toml"))
+        .unwrap()
+        .replace("module = \"\"", "module = \"lib/shared layout.typ\"")
+        .replace("base_url = \"\"", "base_url = \"https://example.org/\"");
+    project.configure("options.toml", &config);
+    let html_runner = Arc::new(
+        CommandTypst::new(std::env::var_os("TYPST").unwrap_or_else(|| "typst".into()))
+            .with_package_path(project.root.join("package namespace")),
+    );
+    let html = project.compiler(html_runner);
+    let pdf = compiler(
+        &project,
+        runner,
+        PdfOptions {
+            front_cover: Some("lib/front.typ".into()),
+            back_cover: Some("lib/back.typ".into()),
+            ..PdfOptions::default()
+        },
+        &output,
+    );
+    let build_html = || {
+        let report = html.compile().unwrap();
+        assert!(report.is_success(), "{:?}", report.diagnostics);
+        let index = fs::read_to_string(project.output.join("index.html")).unwrap();
+        assert_eq!(index.matches("class=\"page-header\"").count(), 1, "{index}");
+        assert_eq!(index.matches("class=\"page-footer\"").count(), 1, "{index}");
+        assert_eq!(index.matches("Shared header version").count(), 1, "{index}");
+        assert!(index.contains("Shared footer") && index.contains("https://example.org/layout"));
+        assert!(
+            !index.contains("{title}"),
+            "Furniture titles resolve after metadata composition"
+        );
+        assert!(!index.contains("<page-header") && !index.contains("<page-footer"));
+        report
+    };
+    build_html();
+    assert!(pdf.compile().unwrap().written);
+    assert!(!build_html().changed());
+    assert!(!pdf.compile().unwrap().compiled);
+    project.source(
+        "lib/shared layout.typ",
+        &module.replace("version one", "version two"),
+    );
+    assert!(build_html().changed());
+    assert!(pdf.compile().unwrap().written);
+    let snapshot = project.snapshot();
+    let pdf_bytes = fs::read(&output).unwrap();
+    fs::remove_dir_all(&project.cache).unwrap();
+    build_html();
+    pdf.compile().unwrap();
+    assert_eq!(
+        project.snapshot(),
+        snapshot,
+        "Shared-layout incremental HTML equals clean output"
+    );
+    assert_eq!(
+        fs::read(&output).unwrap(),
+        pdf_bytes,
+        "Shared-layout incremental PDF equals clean output"
+    );
+    // Legacy custom templates without slots still receive furniture around content.
+    project.configure(
+        "schemas/page.html",
+        "<head></head><body><content></content><footer></footer></body>",
+    );
+    build_html();
+    project.source(
+        "lib/shared layout.typ",
+        "#let page-header(info) = panic(\"layout failure\")\n#let page-footer(info) = []",
+    );
+    let last_html = project.snapshot();
+    let report = html.compile().unwrap();
+    assert!(!report.is_success());
+    assert_eq!(project.snapshot(), last_html);
+    assert!(format!("{:#}", pdf.compile().unwrap_err()).contains("layout failure"));
+    assert_eq!(fs::read(&output).unwrap(), pdf_bytes);
+    project.configure(
+        "options.toml",
+        &config.replace("module = \"lib/shared layout.typ\"", "module = \"\""),
+    );
+    // The bad module is no longer imported after disabling page furniture.
+    assert!(html.compile().unwrap().is_success());
+    assert!(
+        !fs::read_to_string(project.output.join("index.html"))
+            .unwrap()
+            .contains("class=\"page-header\"")
+    );
+}
+
+#[test]
+#[ignore = "requires latest stable Typst; CI runs this explicitly"]
 fn optional_covers_are_isolated_first_and_last_pages_and_cache_dependencies() {
     let (project, runner, output) = setup(
         r#"
