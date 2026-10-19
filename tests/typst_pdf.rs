@@ -654,12 +654,20 @@ fn inline_vectors_share_intrinsic_scale_and_font_fit_in_html_and_pdf() {
   let b = inline(rect(width: 20pt, height: 10pt), fit-font: true)
   let c = inline(rect(width: 20pt, height: 10pt), fit-font: 2em)
   if target() != "html" {{
-    for (body, width, height) in ((a, 30pt, 15pt), (b, 36pt, 18pt), (c, 72pt, 36pt)) {{
+    let bounded = inline(rect(width: 660pt, height: 660pt), max-width: 180pt, max-height: 150pt)
+    let wide = measure(inline(rect(width: 1000pt, height: 100pt)), width: 200pt)
+    assert(calc.abs(wide.width - 200pt) < 0.001pt, message: "Default inline width respects the text column")
+    for (body, width, height) in ((a, 30pt, 15pt), (b, 36pt, 18pt), (c, 72pt, 36pt), (bounded, 150pt, 150pt)) {{
       let actual = measure(body)
       assert(calc.abs(actual.width - width) < 0.001pt and calc.abs(actual.height - height) < 0.001pt, message: "Native inline geometry")
     }}
   }}
   a; b; c
+}}
+#context if target() != "html" {{
+  let nested = html.text(size: 40pt)[#html.text[Typst]]
+  let expected = text(size: 30pt)[Typst]
+  assert(calc.abs(measure(nested).width - measure(expected).width) < 0.001pt, message: "Nested HTML text inherits its native font size")
 }}
 "#));
     assert!(

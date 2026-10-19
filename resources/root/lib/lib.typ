@@ -105,9 +105,9 @@
 /// - content (content):
 ///     The content to be placed inside the inline-scaled element.
 /// -> inline-scaled content ~> HTML svg (auto-sized)
-#let inline(fit-font: false, scale: 100%, content) = context  {
+#let inline(fit-font: false, scale: 100%, max-width: 100%, max-height: none, content) = context  {
   import "@local/typsite:0.1.0": inline
-  inline(fit-font: fit-font,scale: scale, content, footnotes.get())
+  inline(fit-font: fit-font, scale: scale, max-width: max-width, max-height: max-height, content, footnotes.get())
 }
 
 

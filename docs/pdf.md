@@ -259,6 +259,14 @@ native vectors in PDF rather than rasterizing them:
   width and height. HTML frame dimensions use a fixed calibration independent
   of the article's Typst font size and work with current and older frame markup.
 
+Native `inline` frames shrink to the available text-column width by default.
+Use `max-width: 130mm` and/or `max-height: 120mm` for tighter print limits; these
+are shrink-only limits, so smaller figures are not enlarged. `max-width: none`
+disables the width limit. Limits apply only to PDF, leaving web CSS responsive.
+The demo support table and pipeline have conservative print-specific limits.
+Nested `html.text(size: 100%)[...]` inherits the enclosing PDF text size instead
+of resetting it, keeping the LaTeX and Typst wordmarks in proportion.
+
 Responsive CSS can still constrain web diagrams, and changing the browser's
 root font size intentionally resizes HTML's rem-based intrinsic frames.
 

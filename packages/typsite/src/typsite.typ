@@ -400,7 +400,7 @@
 /// - content (content):
 ///     The content to be placed inside the inline-scaled element.
 /// -> inline-scaled content ~> HTML svg (auto-sized)
-#let inline(fit-font: 1em, scale: 100%, content, footnotes) = context {
+#let inline(fit-font: 1em, scale: 100%, max-width: 100%, max-height: none, content, footnotes) = context {
   assert(type(scale) == ratio and scale >= 0%, message: "inline scale must be a nonnegative ratio")
   assert(type(fit-font) == bool or type(fit-font) == length, message: "inline fit-font must be a boolean or em length")
   if type(fit-font) == length {
@@ -420,7 +420,19 @@
     calc.max(font / size.width, font / size.height) * scale
   } else { scale }
   if target() != "html" {
-    return std.scale(scale, reflow: true, box(content))
+    let bound(value, available, natural) = {
+      assert(value == none or type(value) == ratio or type(value) == length,
+        message: "inline max-width/max-height must be a ratio, length, or none")
+      if value == none { return scale }
+      let length = if type(value) == ratio { available * value }
+        else { value.abs + value.em * text.size }
+      assert(length > 0pt, message: "inline size limits must be positive")
+      calc.min(scale, length / natural * 100%)
+    }
+    return layout(region => {
+      let fitted = calc.min(bound(max-width, region.width, size.width), bound(max-height, region.height, size.height))
+      std.scale(fitted, reflow: true, box(content))
+    })
   }
   let content = [
     #inline-content.update(true)

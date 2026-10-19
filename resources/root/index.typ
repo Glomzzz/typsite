@@ -33,7 +33,7 @@
 
 #metacontent("process")[
   #html.div(class: "process-diagram", role: "img", aria-label: "Typsite build pipeline: export cache, no-op branch, graph resolution, page and feed composition, atomic publication, and failure recovery")[
-    #inline(process-diagram())
+    #inline(max-width: 135mm, max-height: 135mm, process-diagram())
   ]
 ]
 
@@ -57,7 +57,11 @@
 
 #metacontent("typst-support")[
   #html.align(center)[
-    #inline(scale: 150%, _typst-support)
+    #context {
+      let print = target() != "html"
+      set text(size: if print { 8.5pt } else { text.size })
+      inline(scale: if print { 100% } else { 150% }, max-width: 130mm, max-height: 120mm, _typst-support)
+    }
   ]
 ]
 

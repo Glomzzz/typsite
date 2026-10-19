@@ -96,7 +96,10 @@
     let attrs = (:)
     if font != none { attrs.insert("font", font) }
     if fill != none { attrs.insert("fill", fill) }
-    let native = std.text(style: style, weight: weight, size: text-size,
+    // Percentages inherit the enclosing native size; resetting nested 100%
+    // text to 11pt made a large LaTeX logo dwarf its adjacent Typst wordmark.
+    let native-size = if type(size) == ratio { std.text.size * size } else { text-size }
+    let native = std.text(style: style, weight: weight, size: native-size,
       tracking: tracking, spacing: spacing, ..attrs, content)
     return if align == none { native } else { std.align(align, native) }
   }
