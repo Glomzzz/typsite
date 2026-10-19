@@ -164,6 +164,13 @@
   body
 }
 
+#let normalized-heading-body(body) = {
+  if body.func() == metadata { return kind(body.value) == "normalized-heading" }
+  if body.has("children") { return body.children.any(normalized-heading-body) }
+  if body.has("child") { return normalized-heading-body(body.child) }
+  false
+}
+
 // Compress structural gaps per article in source order. Authors often start at
 // == because the website supplies a title. That is the first local level, not
 // a missing section that should become a zero component in the book counter.
@@ -187,7 +194,7 @@
       let _ = fields.remove("level", default: none)
       let _ = fields.remove("offset", default: none)
       fields.insert("depth", normalized)
-      let result = heading(..fields, title)
+      let result = heading(..fields, [#marker("normalized-heading")#title])
       if id == none { result } else { [#result #id] }
     }
     return (body: rebuilt, stack: stack)
@@ -315,6 +322,7 @@
       if it.at("label", default: none) == label("typsite-pdf-title") { return it }
       let data = heading-embed(it.body)
       assert(data == none, message: "PDF heading embed inside opaque context: move the heading embed out of context, or use a plain #embed with heading-level")
+      assert(normalized-heading-body(it.body), message: "PDF heading inside opaque context or unsupported container cannot be normalized safely: move the heading out of context (keep only its content contextual), or into a supported block/box container")
       {
         marker("heading-record", scope: scope, level: it.level)
         it

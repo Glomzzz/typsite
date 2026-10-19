@@ -819,6 +819,42 @@ fn sparse_local_headings_are_rebased_without_zero_counter_components() {
 
 #[test]
 #[ignore = "requires latest stable Typst; CI runs this explicitly"]
+fn opaque_headings_fail_instead_of_silently_publishing_wrong_numbering() {
+    let (project, runner, output) = setup("");
+    project.source(
+        "index.typ",
+        &format!("{LIB}\n#title[Root]\n== Normalized section\nBody."),
+    );
+    let compiler = compiler(&project, runner, PdfOptions::default(), &output);
+    compiler.compile().unwrap();
+    let good = fs::read(&output).unwrap();
+    for headings in [
+        "#context [\n== Context section\n]",
+        "= Existing section\n#context [\n== Context subsection\n]",
+        "#context [\n= Even a first-level contextual heading\n]",
+        "#align(center)[\n== Heading in an unsupported container\n]",
+    ] {
+        project.source("index.typ", &format!("{LIB}\n#title[Root]\n{headings}"));
+        let error = format!("{:#}", compiler.compile().unwrap_err());
+        assert!(
+            error.contains("heading inside opaque context or unsupported container")
+                && error.contains("cannot be normalized safely")
+                && error.contains("move the heading out of context"),
+            "{error}"
+        );
+        assert_eq!(
+            fs::read(&output).unwrap(),
+            good,
+            "Unsafe heading must preserve last-good output"
+        );
+    }
+    project.source("index.typ", &format!("{LIB}\n#title[Root]\n== Context section\n#context [Content stays contextual.]\n#block[\n==== Nested section\n]\n== #context [Contextual title content]"));
+    assert!(compiler.compile().unwrap().written);
+    assert!(!compiler.compile().unwrap().compiled);
+}
+
+#[test]
+#[ignore = "requires latest stable Typst; CI runs this explicitly"]
 fn inline_vectors_share_intrinsic_scale_and_font_fit_in_html_and_pdf() {
     let (project, runner, output) = setup("");
     project.source("index.typ", &format!(r#"{LIB}

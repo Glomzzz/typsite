@@ -328,11 +328,22 @@ root font size intentionally resizes HTML's rem-based intrinsic frames.
 
 Heading embeds are normalized **before layout**, so the removed wrapper cannot
 leave a blank outline entry or increment a counter twice. They work in ordinary
-source sequences, native style wrappers, and supported block containers. A
-heading embed produced inside an opaque layout `context` cannot be normalized;
-it fails explicitly. Move that heading out of `context`, or use a plain
-`embed(..., heading-level: 1)` inside it. Nonconverging Typst layouts are rejected,
-not published as incomplete books.
+source sequences, native style wrappers, and supported block/box containers.
+**All article headings** must pass this pre-layout normalization. A normal
+heading or heading embed produced inside an opaque layout `context` (or an
+unsupported container) fails explicitly rather than publishing misleading
+numbers such as `1.0.1`, an incorrect hierarchy, or a phantom outline entry.
+Move the heading outside `context` and keep only its content contextual:
+
+```typ
+== Context section
+#context [Content using contextual values.]
+```
+
+For a dynamic embed inside `context`, use a plain
+`embed(..., heading-level: 1)` instead of a heading wrapper. HTML behavior is
+unchanged. Nonconverging Typst layouts are rejected, not published as incomplete
+books.
 
 ## Caching, safety, and failure recovery
 
