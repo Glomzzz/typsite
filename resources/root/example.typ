@@ -1,12 +1,6 @@
 #import "/lib/lib.typ": *
 
-#show: schema.with("page", head: [
-  #unique(html.tag(
-    "link",
-    rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC&amp;display=swap",
-  )[])
-])
+#show: schema.with("page")
 
 
 #title[内容示例]
@@ -52,8 +46,7 @@
 带着好看字体的 Blockquote ：
 
 #block-quote[
-  // 注意本文章的head, 引入了 LXGW WenKai TC 字体
-  #html.text(size: 85%, font: "LXGW WenKai TC", style: "normal", frame: html.div)[
+  #html.text(size: 85%, style: "normal", frame: html.div)[
     Typst 是一种现代化的排版系统，类似于 LaTeX，但设计更为简洁、易学，它主要用于创建学术论文、书籍、报告等需要精美排版的文档。
 
     你可以在这里查看其官方英文文档：#link("https://typst.app/docs/")[Typst Document]; \

@@ -1,12 +1,6 @@
 #import "/lib/lib.typ": *
 
-#show: schema.with("page", head: [
-  #unique(html.tag(
-    "link",
-    rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC&amp;display=swap",
-  )[])
-])
+#show: schema.with("page")
 
 
 
@@ -56,8 +50,7 @@ This is #LaTeX
 Blockquote with a nice font:
 
 #block-quote[
-  // Check this article's head, where we imported the LXGW WenKai TC font
-  #html.text(size: 85%, font: "LXGW WenKai TC", style: "normal", frame: html.div)[
+  #html.text(size: 85%, style: "normal", frame: html.div)[
 
     Typst is a modern typesetting system, similar to LaTeX, but designed to be more concise and easier to learn. It is primarily used to create beautifully typeset documents such as academic papers, books, and reports.
 
