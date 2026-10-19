@@ -233,6 +233,9 @@ typsite pdf --entry index.typ --output book/site.pdf
 # Optional standalone appendices and an editable native Typst style:
 typsite pdf --appendix appendices/notation.typ --template lib/pdf.typ
 typsite pdf --front-cover lib/front-cover.typ --back-cover lib/back-cover.typ
+# Remote Chinese font (verified download to .cache only; no installation):
+typsite pdf --template lib/pdf.typ --font-profile noto-serif-sc
+# After warming the cache, add --offline to prohibit downloads.
 ```
 
 Existing embed calls, including `= #embed("./child.typ")`, expand in source order.
@@ -248,7 +251,9 @@ articles with numbered native references need unique labels or occurrence-local
 Typsite anchors. To customize both HTML page furniture and PDF running
 headers/footers, set `[layout] module = "lib/layout.typ"` in `.typsite/options.toml`
 and edit `page-header(info)` / `page-footer(info)` in that module.
-See [PDF setup, covers, shared layout, safety, and limitations](docs/pdf.md).
+The sample `lib/pdf.typ` uses restrained headings and editable local/external
+link styles from `lib/links.typ`. Large inline figures shrink to the text width.
+See [PDF setup, remote fonts, link styles, covers, and limitations](docs/pdf.md).
 
 ## 5. Architecture & Flow
 

@@ -373,6 +373,18 @@ HTML export identity; module contents and dependencies invalidate both formats.
 Blank/missing configuration preserves existing projects. Shared layout tests
 cover edits, failures, no-ops, covers, clean equivalence, and legacy schemas.
 
+Remote PDF font profiles are explicit opt-ins (`--font-profile noto-serif-sc`),
+not downloaded during HTML builds, initialization, or ordinary offline tests.
+HTTPS downloads use a pinned upstream revision and SHA-256 for each font/license,
+bounded reads/timeouts, and atomic cache writes. Verified cached assets are
+fingerprinted before compilation and support `--offline` without writes/network.
+They are stored under the managed PDF cache, never bundled resources or system
+fonts. Network tests are a separate explicitly ignored suite. The sample print
+style uses regular/medium Noto Serif SC, restrained heading sizes, and editable
+local/external link decoration; the shared links module retains HTML's classes.
+Native inline frames shrink to bounds without becoming block paragraphs, and
+nested text percentages inherit the outer print size.
+
 ## Baseline
 
 Before semantic changes: 56 tests passed; build and Clippy completed (with lint

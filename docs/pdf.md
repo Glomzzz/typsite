@@ -47,6 +47,37 @@ Chinese/emoji content needs suitable local fonts; configuring a font family does
 not install that font. The bundled Inria Sans font is not a full CJK font.
 Web font CSS does not install PDF fonts.
 
+## Remote Chinese fonts (no installation or bundling)
+
+Add `--font-profile noto-serif-sc` to download **Noto Serif SC 2.003** Regular
+and Medium from the official `notofonts/noto-cjk` repository. Both files are
+pinned to commit `9b0f1436e455d902de067a2501422e5dc71ad16b` and SHA-256 verified.
+The SIL OFL 1.1 license is fetched and verified alongside them.
+
+```sh
+typsite pdf --template lib/pdf.typ --font-profile noto-serif-sc
+# Subsequent builds can run without network access:
+typsite pdf --template lib/pdf.typ --font-profile noto-serif-sc --offline
+```
+
+The files live only in `.cache/pdf/fonts/noto-serif-sc-<revision>/` (about 23 MB),
+not in your source/configuration, executable, published HTML assets, or system
+font directories. `--font-profile none` is the default and never downloads fonts.
+HTTPS, certificate validation, time/size limits, checksum verification, and
+atomic cache replacement protect downloads. A verified warm cache does not
+contact the server or rewrite files. Corrupt caches are repaired online;
+`--offline` reports missing/corrupt resources without touching the last PDF.
+`clean` removes downloaded font caches, so offline builds need them prewarmed.
+
+The driver selects the family, and the sample print template receives it as
+`sys.inputs.at("typsite-font-family", default: "")`. Keep it in custom font lists
+rather than overriding the entire list with a Latin-only font. The sample uses
+10pt body text, medium-weight 15/12.5/11pt headings, and 500-weight strong text
+instead of oversized, artificially heavy CJK fallback headings. All sizes and
+weights are editable in `root/lib/pdf.typ`. HTML still uses its own CSS/web-font
+setup; the remote profile applies only to PDF. Typst needs a local file while
+compiling, but the download/cache is managed automatically—no manual install.
+
 ## Selection and ordering
 
 - The entry is printed first. Embeds expand **in place**, preserving surrounding
@@ -116,6 +147,25 @@ are unique. Typsite-managed anchors, explicit-supplement refs to unnumbered
 content, and label links have occurrence-local indexes; these do not turn every
 arbitrary native label operation into a scoped one.
 The internal label `typsite-pdf-title` is reserved for article headings.
+
+## Customizable link styles
+
+The sample PDF template applies `style-links` from **`root/lib/links.typ`** to
+all native links: article citations, anchors/`goto`, native references, and URLs.
+Defaults match the website: **dotted underlines for local links**, **solid
+underlines for external links**, with subdued text colors. HTTP(S), `mailto:`,
+protocol-relative URLs, and other URI schemes count as external; document
+locations, labels, and relative/root paths count as local. An outside-book
+citation that resolves to a website URL therefore gets the external style.
+Destinations remain real clickable Typst links, not painted text substitutes.
+
+Edit `local-color`, `external-color`, `local-stroke`, `external-stroke`, or the
+`local-style` / `external-style` functions in `links.typ`. The same module supplies
+HTML's `.link.local` / `.link.external` wrappers; browser colors, hover treatment,
+and underline styles remain customizable in `.typsite/assets/schemas/page.css`.
+Custom print templates can `#import "links.typ": style-links` and
+`show: style-links`, or replace that show rule with their own. Without the sample
+print template, native Typst's default presentation remains available.
 
 ## Front and back covers (PDF only)
 
@@ -326,6 +376,8 @@ internals does not make a site print-ready.
 cargo test --test pdf --locked
 cargo test --test typst_pdf --locked -- --ignored
 cargo test --test typst_latest --locked -- --ignored
+# Optional real HTTPS download/cache test (not required by offline CI):
+cargo test --test pdf_fonts_network --locked -- --ignored
 ```
 
 The native suite uses isolated package namespaces and Typst-side assertions,

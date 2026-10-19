@@ -219,6 +219,9 @@ typsite pdf --entry index.typ --output book/site.pdf
 # 可选：独立附录及可编辑的原生 Typst 样式
 typsite pdf --appendix appendices/notation.typ --template lib/pdf.typ
 typsite pdf --front-cover lib/front-cover.typ --back-cover lib/back-cover.typ
+# 远程中文字体：校验后仅缓存于 .cache，不打包、不安装到系统
+typsite pdf --template lib/pdf.typ --font-profile noto-serif-sc
+# 首次下载后可加 --offline，禁止联网。
 ```
 
 现有的嵌入写法（包括 `= #embed("./child.typ")`）按原文顺序展开；重复嵌入会再次打印正文，
@@ -231,7 +234,9 @@ typsite pdf --front-cover lib/front-cover.typ --back-cover lib/back-cover.typ
 重复文章中的原生编号引用需要唯一标签，或使用按嵌入实例隔离的 Typsite 锚点。
 在 `.typsite/options.toml` 设置 `[layout] module = "lib/layout.typ"`，
 编辑模块中的 `page-header(info)` / `page-footer(info)`，即可同时定制 HTML 和 PDF 的页眉页脚。
-[PDF 使用说明](docs/pdf.md)列出了封面、封底、共享布局、附录、缓存和已知限制。
+示例 `lib/pdf.typ` 使用较轻、较小的标题，并从 `lib/links.typ` 读取可定制的内外链样式；
+大型内联图形默认缩放到正文宽度以内。
+[PDF 使用说明](docs/pdf.md)列出了远程字体、链接样式、封面、共享布局、附录和已知限制。
 
 ## 5. 架构 & 流程
 
