@@ -6,6 +6,7 @@ mod export;
 mod graph;
 pub mod options;
 mod output;
+pub mod pdf;
 pub mod project;
 pub mod registry;
 mod render;

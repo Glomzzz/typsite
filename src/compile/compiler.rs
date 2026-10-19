@@ -495,7 +495,5 @@ fn is_typst(path: &Path) -> bool {
 }
 
 fn is_library(path: &Path, config: &TypsiteConfig<'_>) -> bool {
-    let path = path.to_string_lossy().replace('\\', "/");
-    let library = &config.options.project.typst_lib;
-    library.files.contains(&path) || library.dirs.iter().any(|prefix| path.starts_with(prefix))
+    config.options.project.typst_lib.contains(path)
 }

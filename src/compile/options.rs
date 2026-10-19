@@ -52,6 +52,13 @@ pub struct TypstLib {
     pub files: HashSet<String>,
     pub dirs: HashSet<String>,
 }
+impl TypstLib {
+    pub fn contains(&self, path: &Path) -> bool {
+        let path = path.to_string_lossy().replace('\\', "/");
+        self.files.contains(&path) || self.dirs.iter().any(|prefix| path.starts_with(prefix))
+    }
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct DefaultMetadata {
     pub content: metadata::Content,

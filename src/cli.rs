@@ -4,6 +4,7 @@ use std::num::NonZeroUsize;
 use crate::compile::clean::clean_roots;
 use crate::compile::compiler::Compiler;
 use crate::compile::options::CompileOptions;
+use crate::compile::pdf::{PdfCompiler, PdfOptions};
 use crate::config::highlight::CodeHightlightConfig;
 use crate::resource::default::copy_default_typsite;
 use anyhow::{Context, Result, ensure};
@@ -27,6 +28,7 @@ impl Executor {
         match command {
             Command::Init(init_cmd) => Self::execute_init(init_cmd),
             Command::Compile(compile_cmd) => Self::execute_compile(compile_cmd).await,
+            Command::Pdf(cmd) => Self::execute_pdf(cmd).await,
             Command::Clean(clean_cmd) => Self::execute_clean(clean_cmd),
             Command::Syntect(syntect_cmd) => Self::execute_syntect(syntect_cmd),
         }
@@ -137,6 +139,47 @@ impl Executor {
         Ok(())
     }
 
+    async fn execute_pdf(cmd: PdfCmd) -> Result<()> {
+        let compiler = PdfCompiler::new(
+            cmd.input,
+            cmd.config,
+            cmd.cache,
+            cmd.output.clone(),
+            cmd.packages,
+            PdfOptions {
+                entry: cmd.entry,
+                appendices: cmd.appendix,
+                template: cmd.template,
+                title: cmd.title,
+                pretty_url: !cmd.no_pretty_url,
+            },
+            cmd.typst,
+        )?;
+        let compiler = if let Some(jobs) = cmd.jobs {
+            compiler.with_jobs(jobs)
+        } else {
+            compiler
+        };
+        let report = tokio::task::spawn_blocking(move || compiler.compile())
+            .await
+            .context("PDF build task panicked")??;
+        println!(
+            "PDF {}: {} ({}).",
+            if report.written {
+                "written"
+            } else {
+                "unchanged"
+            },
+            cmd.output.display(),
+            if report.compiled {
+                "compiled"
+            } else {
+                "cached"
+            }
+        );
+        Ok(())
+    }
+
     fn execute_syntect(syntect_cmd: SyntectCmd) -> Result<()> {
         let config_path = Path::new(&syntect_cmd.config);
         let config = CodeHightlightConfig::load(config_path)?;
@@ -154,6 +197,9 @@ enum Command {
     /// Compile or watch the project with specified input and output directories.
     #[command(visible_alias = "c")]
     Compile(CompileCmd),
+
+    /// Compile an entry article and its embeds into one native PDF book.
+    Pdf(PdfCmd),
 
     /// Clean the cache & output directory.
     Clean(CleanCmd),
@@ -214,6 +260,41 @@ struct CompileCmd {
     #[arg(long, default_value_t = false)]
     no_short_slug: bool,
 }
+#[derive(clap::Args)]
+struct PdfCmd {
+    /// Typst source root.
+    #[arg(short, long, default_value = "./root")]
+    input: PathBuf,
+    #[arg(long, default_value = "./.typsite", alias = "cfg")]
+    config: PathBuf,
+    #[arg(long, default_value = "./.cache")]
+    cache: PathBuf,
+    /// One PDF file, separate from the HTML output set.
+    #[arg(short, long, default_value = "./book/site.pdf")]
+    output: PathBuf,
+    /// Entry source path, relative to --input.
+    #[arg(long, default_value = "index.typ")]
+    entry: String,
+    /// Additional appendix root; repeat to preserve a chosen order.
+    #[arg(long)]
+    appendix: Vec<String>,
+    /// Module inside --input exporting book-style(body).
+    #[arg(long)]
+    template: Option<String>,
+    /// PDF document title (defaults to site.title).
+    #[arg(long)]
+    title: Option<String>,
+    #[arg(short, long)]
+    packages: Option<PathBuf>,
+    #[arg(short = 'j', long)]
+    jobs: Option<NonZeroUsize>,
+    #[arg(short, long, default_value = "typst")]
+    typst: String,
+    /// Keep .html on website links to articles outside the book.
+    #[arg(long)]
+    no_pretty_url: bool,
+}
+
 #[derive(clap::Args)]
 struct SyntectCmd {
     /// Project config path

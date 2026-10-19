@@ -95,6 +95,7 @@ impl Manifest {
 
     pub fn owns_directory(root: &Path) -> bool {
         Self::read(root).is_some_and(|manifest| manifest.version != 0)
+            || super::pdf::owns_cache_root(root)
             || std::fs::read(root.join("manifest.json"))
                 .ok()
                 .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())

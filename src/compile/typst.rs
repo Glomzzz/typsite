@@ -3,9 +3,10 @@
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use std::ffi::OsString;
+use std::io::Write;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 pub struct ExportRequest<'a> {
     pub root: &'a Path,
@@ -16,8 +17,24 @@ pub struct ExportRequest<'a> {
     pub jobs: NonZeroUsize,
 }
 
-/// Implementations must write HTML to `output` and return the files actually read
-/// by Typst. `export` may be called concurrently for distinct output artifacts;
+/// A single native book, compiled from a generated driver without writing into
+/// the user's source tree. All source loaders remain inside `root`.
+pub struct PdfRequest<'a> {
+    pub root: &'a Path,
+    pub driver: &'a str,
+    pub output: &'a Path,
+    pub font_path: &'a Path,
+    pub jobs: NonZeroUsize,
+}
+
+#[derive(Clone, Copy)]
+enum Format {
+    Html,
+    Pdf,
+}
+
+/// The HTML `export` operation writes `output` and returns the files actually
+/// read by Typst. `export` may be called concurrently for distinct output artifacts;
 /// `prepare` always completes before any exports in that build. This small seam
 /// lets build tests run without a shell or package installs.
 pub trait TypstRunner: Send + Sync {
@@ -30,6 +47,11 @@ pub trait TypstRunner: Send + Sync {
         Ok(Vec::new())
     }
     fn export(&self, request: &ExportRequest<'_>) -> Result<Vec<PathBuf>>;
+    /// Write one PDF and return its actual read set. Existing HTML-only runners
+    /// need not implement books. Both operations share preparation and identity.
+    fn pdf(&self, _request: &PdfRequest<'_>) -> Result<Vec<PathBuf>> {
+        anyhow::bail!("This Typst runner does not support PDF books")
+    }
 }
 
 pub struct CommandTypst {
@@ -85,6 +107,27 @@ impl CommandTypst {
     }
 
     fn command(&self, request: &ExportRequest<'_>, dependencies: &Path) -> Result<Command> {
+        self.compile_command(
+            request.root,
+            Some(request.input),
+            request.output,
+            request.font_path,
+            request.jobs,
+            dependencies,
+            Format::Html,
+        )
+    }
+
+    fn compile_command(
+        &self,
+        root: &Path,
+        input: Option<&Path>,
+        output: &Path,
+        fonts: &Path,
+        jobs: NonZeroUsize,
+        dependencies: &Path,
+        format: Format,
+    ) -> Result<Command> {
         let mut command = Command::new(self.executable()?);
         for (key, value) in Self::environment()? {
             if let Some(value) = value {
@@ -94,27 +137,38 @@ impl CommandTypst {
             }
         }
         command
-            .current_dir(std::path::absolute(request.root)?)
+            .current_dir(std::path::absolute(root)?)
             .arg("compile")
-            .arg(std::path::absolute(request.input)?)
-            .arg(std::path::absolute(request.output)?)
+            .arg(match input {
+                Some(input) => std::path::absolute(input)?.into_os_string(),
+                None => "-".into(),
+            })
+            .arg(std::path::absolute(output)?)
             .arg("--root")
-            .arg(std::path::absolute(request.root)?)
-            .args([
-                "--format",
-                "html",
-                "--features",
-                "html",
-                "--input",
-                "html-frames=true",
-            ])
+            .arg(std::path::absolute(root)?);
+        match format {
+            Format::Html => {
+                command.args([
+                    "--format",
+                    "html",
+                    "--features",
+                    "html",
+                    "--input",
+                    "html-frames=true",
+                ]);
+            }
+            Format::Pdf => {
+                command.args(["--format", "pdf", "--input", "typsite-pdf=true"]);
+            }
+        }
+        command
             .arg("--font-path")
-            .arg(std::path::absolute(request.font_path)?)
+            .arg(std::path::absolute(fonts)?)
             .arg("--deps")
             .arg(std::path::absolute(dependencies)?)
             .args(["--deps-format", "json"])
             .arg("--jobs")
-            .arg(request.jobs.to_string());
+            .arg(jobs.to_string());
         if let Some(packages) = &self.package_path {
             command
                 .arg("--package-path")
@@ -186,29 +240,87 @@ impl TypstRunner for CommandTypst {
                 request.input.display(),
                 String::from_utf8_lossy(&output.stderr)
             );
-            #[derive(Deserialize)]
-            struct Dependencies {
-                inputs: Vec<PathBuf>,
-            }
-            let dependencies: Dependencies = serde_json::from_slice(&std::fs::read(&dependencies)
-                .context("Typst did not produce dependency metadata; use the latest stable Typst (tested with 0.15.1)")?)
-                .context("Invalid Typst dependency metadata")?;
-            let root = std::path::absolute(request.root)?;
-            Ok(dependencies
-                .inputs
-                .into_iter()
-                .map(|path| {
-                    if path.is_absolute() {
-                        path
-                    } else {
-                        root.join(path)
-                    }
-                })
-                .collect())
+            read_dependencies(request.root, &dependencies, false)
         })();
         let _ = std::fs::remove_file(dependencies);
         result
     }
+
+    fn pdf(&self, request: &PdfRequest<'_>) -> Result<Vec<PathBuf>> {
+        crate::util::fs::create_all_parent_dir(request.output)?;
+        let dependencies = request.output.with_extension("deps.json");
+        let result = (|| {
+            let mut command = self.compile_command(
+                request.root,
+                None,
+                request.output,
+                request.font_path,
+                request.jobs,
+                &dependencies,
+                Format::Pdf,
+            )?;
+            let mut child = command
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .context("Failed to start Typst PDF compilation")?;
+            let mut stdin = child.stdin.take().context("Cannot open Typst stdin")?;
+            // Drain stdout/stderr while writing even a large source catalog.
+            let (output, written) = std::thread::scope(|scope| {
+                let writer = scope.spawn(move || stdin.write_all(request.driver.as_bytes()));
+                let output = child.wait_with_output();
+                let written = writer.join();
+                (output, written)
+            });
+            let output = output.context("Cannot wait for Typst PDF compilation")?;
+            let diagnostic = String::from_utf8_lossy(&output.stderr);
+            ensure!(
+                output.status.success(),
+                "Typst PDF compilation failed:\n{diagnostic}{}",
+                if diagnostic.contains("occurs multiple times") {
+                    "\nNative Typst labels are document-global. Repeated articles must use unique native labels, or Typsite #anchor/#goto helpers for occurrence-local anchors."
+                } else {
+                    ""
+                }
+            );
+            written.map_err(|_| anyhow::anyhow!("Typst stdin writer panicked"))??;
+            ensure!(
+                !diagnostic.contains("did not converge")
+                    && !diagnostic.contains("did not stabilize"),
+                "Typst PDF layout did not converge; refusing to publish an incomplete book:\n{diagnostic}"
+            );
+            if !diagnostic.trim().is_empty() {
+                eprint!("{diagnostic}");
+            }
+            read_dependencies(request.root, &dependencies, true)
+        })();
+        let _ = std::fs::remove_file(dependencies);
+        result
+    }
+}
+
+fn read_dependencies(root: &Path, path: &Path, stdin: bool) -> Result<Vec<PathBuf>> {
+    #[derive(Deserialize)]
+    struct Dependencies {
+        inputs: Vec<PathBuf>,
+    }
+    let dependencies: Dependencies = serde_json::from_slice(&std::fs::read(path)
+        .context("Typst did not produce dependency metadata; use the latest stable Typst (tested with 0.15.1)")?)
+        .context("Invalid Typst dependency metadata")?;
+    let root = std::path::absolute(root)?;
+    Ok(dependencies
+        .inputs
+        .into_iter()
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            }
+        })
+        .filter(|path| !stdin || path.file_name().is_none_or(|name| name != "<stdin>"))
+        .collect())
 }
 
 fn absolute_environment_value(key: &str, value: OsString) -> Result<OsString> {
@@ -282,5 +394,30 @@ mod tests {
         let jobs_arg = args.iter().position(|arg| *arg == "--jobs").unwrap();
         assert_eq!(args[jobs_arg + 1], "2");
         assert!(!args.iter().any(|arg| *arg == "powershell"));
+    }
+
+    #[test]
+    fn native_pdf_command_uses_stdin_and_an_explicit_format_not_html_features() {
+        let root = std::path::absolute("source with spaces").unwrap();
+        let command = CommandTypst::new("typst")
+            .compile_command(
+                &root,
+                None,
+                &root.join("book.pending.tmp"),
+                &root.join("fonts"),
+                NonZeroUsize::new(3).unwrap(),
+                &root.join("book.deps.json"),
+                Format::Pdf,
+            )
+            .unwrap();
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(args[1], "-");
+        assert!(args.windows(2).any(|pair| pair == ["--format", "pdf"]));
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--input", "typsite-pdf=true"])
+        );
+        assert!(!args.iter().any(|arg| *arg == "--features"));
+        assert!(args.windows(2).any(|pair| pair == ["--jobs", "3"]));
     }
 }
