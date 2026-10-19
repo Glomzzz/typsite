@@ -26,6 +26,8 @@ pub struct PdfRequest<'a> {
     pub driver: &'a str,
     pub output: &'a Path,
     pub font_path: &'a Path,
+    pub extra_font_paths: &'a [PathBuf],
+    pub font_family: Option<&'a str>,
     pub jobs: NonZeroUsize,
 }
 
@@ -128,6 +130,27 @@ impl CommandTypst {
                     "typsite-source=/{}",
                     source.to_string_lossy().replace('\\', "/")
                 ));
+        }
+        Ok(command)
+    }
+
+    fn pdf_command(&self, request: &PdfRequest<'_>, dependencies: &Path) -> Result<Command> {
+        let mut command = self.compile_command(
+            request.root,
+            None,
+            request.output,
+            request.font_path,
+            request.jobs,
+            dependencies,
+            Format::Pdf,
+        )?;
+        for fonts in request.extra_font_paths {
+            command.arg("--font-path").arg(std::path::absolute(fonts)?);
+        }
+        if let Some(family) = request.font_family {
+            command
+                .arg("--input")
+                .arg(format!("typsite-font-family={family}"));
         }
         Ok(command)
     }
@@ -264,15 +287,7 @@ impl TypstRunner for CommandTypst {
         crate::util::fs::create_all_parent_dir(request.output)?;
         let dependencies = request.output.with_extension("deps.json");
         let result = (|| {
-            let mut command = self.compile_command(
-                request.root,
-                None,
-                request.output,
-                request.font_path,
-                request.jobs,
-                &dependencies,
-                Format::Pdf,
-            )?;
+            let mut command = self.pdf_command(request, &dependencies)?;
             let mut child = command
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -439,5 +454,35 @@ mod tests {
         );
         assert!(!args.iter().any(|arg| *arg == "--features"));
         assert!(args.windows(2).any(|pair| pair == ["--jobs", "3"]));
+        let fonts = [root.join("downloaded fonts with spaces")];
+        let command = CommandTypst::new("typst")
+            .pdf_command(
+                &PdfRequest {
+                    root: &root,
+                    driver: "",
+                    output: &root.join("book.pdf"),
+                    font_path: &root.join("fonts"),
+                    extra_font_paths: &fonts,
+                    font_family: Some("Noto Serif SC"),
+                    jobs: NonZeroUsize::MIN,
+                },
+                &root.join("book.deps.json"),
+            )
+            .unwrap();
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(
+            args.iter()
+                .filter(|argument| **argument == "--font-path")
+                .count(),
+            2
+        );
+        assert!(
+            args.windows(2)
+                .any(|pair| pair[0] == "--font-path" && Path::new(pair[1]) == fonts[0])
+        );
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--input", "typsite-font-family=Noto Serif SC"])
+        );
     }
 }

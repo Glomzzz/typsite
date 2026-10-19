@@ -154,6 +154,8 @@ impl Executor {
                 back_cover: cmd.back_cover,
                 title: cmd.title,
                 pretty_url: !cmd.no_pretty_url,
+                font_profile: cmd.font_profile,
+                offline: cmd.offline,
             },
             cmd.typst,
         )?;
@@ -298,6 +300,12 @@ struct PdfCmd {
     jobs: Option<NonZeroUsize>,
     #[arg(short, long, default_value = "typst")]
     typst: String,
+    /// Download a pinned font family into the PDF cache (never system-installed).
+    #[arg(long, value_enum, default_value = "none")]
+    font_profile: crate::compile::pdf::fonts::FontProfile,
+    /// Disallow font downloads; verified cached fonts remain usable.
+    #[arg(long)]
+    offline: bool,
     /// Keep .html on website links to articles outside the book.
     #[arg(long)]
     no_pretty_url: bool,

@@ -18,6 +18,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use url::Url;
 
+#[path = "pdf_fonts.rs"]
+pub mod fonts;
+
 const CACHE_MARKER: &[u8] = b"TYPSITE-PDF-CACHE-1\n";
 
 pub(super) fn owns_cache_root(root: &Path) -> bool {
@@ -36,6 +39,11 @@ pub struct PdfOptions {
     pub back_cover: Option<String>,
     pub title: Option<String>,
     pub pretty_url: bool,
+    /// Explicit opt-in; font files are downloaded into the managed PDF cache.
+    pub font_profile: fonts::FontProfile,
+    /// Disallow font downloads; a verified cache is still usable.
+    #[serde(skip)]
+    pub offline: bool,
 }
 
 impl Default for PdfOptions {
@@ -48,6 +56,8 @@ impl Default for PdfOptions {
             back_cover: None,
             title: None,
             pretty_url: true,
+            font_profile: fonts::FontProfile::None,
+            offline: false,
         }
     }
 }
@@ -226,10 +236,19 @@ impl PdfCompiler {
         let _cache_lock = lock(&self.cache)?;
         let _output_lock = lock(self.output.parent().unwrap())?;
         self.validate()?;
+        let cache_dir = managed_path(&self.cache, Path::new("pdf"))?;
+        fs::create_dir_all(&cache_dir)?;
+        let marker = managed_path(&cache_dir, Path::new("format"))?;
+        if !fs::read(&marker).is_ok_and(|bytes| bytes == CACHE_MARKER) {
+            write_cache(&marker, CACHE_MARKER)?;
+        }
+        let remote_fonts =
+            fonts::prepare(&cache_dir, self.options.font_profile, self.options.offline)?;
         let installed = self.runner.prepare(self.packages.as_deref())?;
         let mut roots = vec![self.input.clone(), self.config.clone()];
         roots.extend(self.packages.iter().cloned());
         roots.extend(installed);
+        roots.extend(remote_fonts.iter().cloned());
         let mut roots: BTreeMap<_, _> = roots.into_iter().map(|root| (root, false)).collect();
         if let Some(fonts) = std::env::var_os("TYPST_FONT_PATHS") {
             for root in std::env::split_paths(&fonts).filter(|path| path.is_dir()) {
@@ -254,12 +273,6 @@ impl PdfCompiler {
             &driver,
             &before,
         ))?;
-        let cache_dir = managed_path(&self.cache, Path::new("pdf"))?;
-        fs::create_dir_all(&cache_dir)?;
-        let marker = managed_path(&cache_dir, Path::new("format"))?;
-        if !fs::read(&marker).is_ok_and(|bytes| bytes == CACHE_MARKER) {
-            write_cache(&marker, CACHE_MARKER)?;
-        }
         let name = fingerprint(&self.output)?;
         let manifest = managed_path(&cache_dir, Path::new(&format!("{name}.json")))?;
         let artifact = managed_path(&cache_dir, Path::new(&format!("{name}.pdf")))?;
@@ -298,6 +311,8 @@ impl PdfCompiler {
                 driver: &driver,
                 output: pending.path(),
                 font_path: &self.config.join("assets/fonts"),
+                extra_font_paths: &remote_fonts,
+                font_family: self.options.font_profile.family(),
                 jobs: self.jobs,
             })?;
             report.compiled = true;
@@ -412,6 +427,9 @@ impl PdfCompiler {
         let mut driver = String::from(
             "#import \"@local/typsite:0.1.0\": pdf-book\n#set page(paper: \"a4\", margin: 2cm, numbering: \"1\")\n#set heading(numbering: \"1.1\")\n",
         );
+        if let Some(family) = self.options.font_profile.family() {
+            driver.push_str(&format!("#let typsite-print-font = {}\n#set text(font: (\"Inria Sans\", typsite-print-font))\n", typst_string(family)));
+        }
         if let Some(template) = &self.options.template {
             let relative = source_path(template)?;
             ensure!(

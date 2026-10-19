@@ -384,6 +384,48 @@ fn shared_layout_paths_are_validated_and_changes_invalidate_the_book() {
 }
 
 #[test]
+fn unavailable_offline_fonts_retain_the_last_good_book_without_compiling() {
+    use typsite::compile::pdf::fonts::FontProfile;
+    let (project, runner, output) = fixture();
+    compiler(&project, runner.clone(), PdfOptions::default(), &output)
+        .compile()
+        .unwrap();
+    let good = fs::read(&output).unwrap();
+    let offline = compiler(
+        &project,
+        runner.clone(),
+        PdfOptions {
+            font_profile: FontProfile::NotoSerifSc,
+            offline: true,
+            ..PdfOptions::default()
+        },
+        &output,
+    );
+    assert!(
+        offline
+            .compile()
+            .unwrap_err()
+            .to_string()
+            .contains("missing or corrupt")
+    );
+    assert_eq!(fs::read(&output).unwrap(), good);
+    assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
+    let cached = compiler(
+        &project,
+        runner,
+        PdfOptions {
+            offline: true,
+            ..PdfOptions::default()
+        },
+        &output,
+    );
+    assert!(
+        !cached.compile().unwrap().compiled,
+        "Offline is a transport policy, not a PDF content input"
+    );
+}
+
+#[test]
 fn pdf_cache_is_recognized_by_safe_cleanup() {
     let (project, runner, output) = fixture();
     compiler(&project, runner, PdfOptions::default(), &output)

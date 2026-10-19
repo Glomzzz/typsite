@@ -41,6 +41,8 @@ plist = "*"
 home = "*"
 time = { version = "0.3.41", features = ["formatting", "parsing"] }
 url = "2.5.8"
+ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
+sha2 = "0.10.9"
 
 [build-dependencies]
 blake3 = "1.8.2"

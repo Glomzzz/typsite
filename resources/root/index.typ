@@ -53,7 +53,9 @@
   }
 ]
 
-#set text(font: "Inria Sans") // From .typsite/assets/font
+// Keep the web font, but do not discard the selected PDF CJK family.
+#set text(font: if sys.inputs.at("typsite-font-family", default: "") == "" { "Inria Sans" }
+  else { ("Inria Sans", sys.inputs.at("typsite-font-family")) })
 
 #metacontent("typst-support")[
   #html.align(center)[
