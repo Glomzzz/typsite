@@ -143,8 +143,9 @@
   if body.func() == heading {
     let data = heading-embed(body.body)
     if data != none {
-      return marker("embed", slug: data.slug,
-        heading-level: body.at("level", default: body.at("depth", default: 1)) + body.at("offset", default: 0))
+      let level = body.at("level", default: auto)
+      let depth = if level == auto { body.at("depth", default: 1) + body.at("offset", default: 0) } else { level }
+      return marker("embed", slug: data.slug, heading-level: depth, local-depth: depth)
     }
   }
   if body.has("child") and body.has("styles") {
@@ -161,6 +162,58 @@
     return if id == none { rebuilt } else { [#rebuilt #id] }
   }
   body
+}
+
+// Compress structural gaps per article in source order. Authors often start at
+// == because the website supplies a title. That is the first local level, not
+// a missing section that should become a zero component in the book counter.
+#let normalize-headings(body, stack: ()) = {
+  if type(body) != content { return (body: body, stack: stack) }
+  let embed = body.func() == metadata and kind(body.value) == "embed" and body.value.at("local-depth", default: none) != none
+  if body.func() == heading or embed {
+    let depth = if embed { body.value.local-depth } else {
+      let level = body.at("level", default: auto)
+      if level == auto { body.at("depth", default: 1) + body.at("offset", default: 0) } else { level }
+    }
+    while stack.len() > 0 and stack.last() >= depth { let _ = stack.pop() }
+    stack.push(depth)
+    let normalized = stack.len()
+    let rebuilt = if embed {
+      marker("embed", slug: body.value.slug, heading-level: normalized)
+    } else {
+      let fields = body.fields()
+      let title = fields.remove("body")
+      let id = fields.remove("label", default: none)
+      let _ = fields.remove("level", default: none)
+      let _ = fields.remove("offset", default: none)
+      fields.insert("depth", normalized)
+      let result = heading(..fields, title)
+      if id == none { result } else { [#result #id] }
+    }
+    return (body: rebuilt, stack: stack)
+  }
+  if body.has("child") and body.has("styles") {
+    let result = normalize-headings(body.child, stack: stack)
+    return (body: (body.func())(result.body, body.styles), stack: result.stack)
+  }
+  if body.func() == [].func() {
+    let result = []
+    for child in body.children {
+      let next = normalize-headings(child, stack: stack)
+      result += next.body
+      stack = next.stack
+    }
+    return (body: result, stack: stack)
+  }
+  if (block, box, quote, list.item, enum.item).contains(body.func()) {
+    let fields = body.fields()
+    let child = fields.remove("body")
+    let id = fields.remove("label", default: none)
+    let result = normalize-headings(child, stack: stack)
+    let rebuilt = (body.func())(result.body, ..fields)
+    return (body: if id == none { rebuilt } else { [#rebuilt #id] }, stack: result.stack)
+  }
+  (body: body, stack: stack)
 }
 
 #let placement(scope, element, option) = {
@@ -279,7 +332,7 @@
   marker("article", scope: scope)
   marker("heading-record", scope: scope, level: level)
   [#heading(level: level, meta(backend, env, scope, "title")) #label("typsite-pdf-title")]
-  decorate(backend, env, scope, prepare(env.pages.at(source)()))
+  decorate(backend, env, scope, normalize-headings(prepare(env.pages.at(source)())).body)
 }
 
 // Exported by the package as pdf-book; normal authors keep using schema/embed.

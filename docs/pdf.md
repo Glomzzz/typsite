@@ -66,11 +66,13 @@ Web font CSS does not install PDF fonts.
 - Missing embed targets and recursive embed stacks are errors. Repeated siblings
   and ordinary citation cycles are legal. Unselected sources are not compiled.
 
-The book adds an article-title heading above each article. Its local `=` headings
-are one level below that heading. Heading embeds use their source heading depth;
-plain embeds support `heading-level: "child"`, `"peer"`, or a positive numeric
-local level. A source that intentionally skips levels can produce numbering such
-as `1.2.0.1`; the renderer does not silently renumber its structure.
+The book adds an article-title heading above each article. Local headings are
+normalized beneath it in source order: a first `==` becomes the first local
+level, and skipped levels descend by one structural level rather than inserting
+zero counter components. Thus an article at `1.3` with `==` subsections prints
+`1.3.1` and `1.3.2`, not `1.3.0.1`. Heading embeds participate in the same local
+hierarchy. Plain embeds support `heading-level: "child"`, `"peer"`, or a positive
+numeric local level. HTML heading structure is unchanged.
 
 ## Metadata and links
 

@@ -416,6 +416,37 @@ fn pdf_cli_does_not_touch_html_outputs_and_is_a_true_noop() {
 
 #[test]
 #[ignore = "requires latest stable Typst; CI runs this explicitly"]
+fn sparse_local_headings_are_rebased_without_zero_counter_components() {
+    let (project, runner, output) = setup(
+        r#"
+#context {
+  let headings = query(heading).filter(it => it.numbering != none)
+  assert(headings.map(it => it.level) == (1, 2, 3, 2, 3, 3, 4, 2), message: "Sparse local hierarchy: " + repr(headings.map(it => (body: it.body, level: it.level))))
+  for item in headings {
+    assert(not counter(heading).at(item.location()).contains(0), message: "No missing ancestors: " + repr(counter(heading).at(item.location())))
+  }
+  assert(counter(heading).at(headings.at(4).location()) == (1, 2, 1))
+  assert(counter(heading).at(headings.at(5).location()) == (1, 2, 2))
+  let target = query(label("subsection")).first()
+  assert(target.level == 3, message: "Labels survive normalization")
+}
+"#,
+    );
+    project.source("index.typ", &format!("{LIB}\n#title[Root]\n== First\n==== Subsection <subsection>\n== #embed(\"child.typ\")\n== Last\nSee @subsection."));
+    project.source(
+        "child.typ",
+        &format!("{LIB}\n#title[Typst]\n== HTML export\n== Typsite\n==== Deeper"),
+    );
+    assert!(
+        compiler(&project, runner, PdfOptions::default(), &output)
+            .compile()
+            .unwrap()
+            .written
+    );
+}
+
+#[test]
+#[ignore = "requires latest stable Typst; CI runs this explicitly"]
 fn inline_vectors_share_intrinsic_scale_and_font_fit_in_html_and_pdf() {
     let (project, runner, output) = setup("");
     project.source("index.typ", &format!(r#"{LIB}
@@ -520,6 +551,9 @@ fn initialized_demo_compiles_into_a_native_book_with_appendices() {
 #context {
   let articles = query(metadata).filter(it => type(it.value) == dictionary and it.value.at("typsite-pdf", default: none) == "article")
   assert(articles.map(it => it.value.scope.source) == ("/index", "/typst", "/article", "/migrate-to-016", "/migrate-to-017", "/migrate-to-018", "/example", "/typst"))
+  for item in query(heading).filter(it => it.numbering != none) {
+    assert(not counter(heading).at(item.location()).contains(0), message: "Demo headings must not contain zero components: " + repr((item.body, item.level, counter(heading).at(item.location()))))
+  }
 }
 "#,
     );
