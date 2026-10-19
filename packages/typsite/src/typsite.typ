@@ -401,29 +401,40 @@
 ///     The content to be placed inside the inline-scaled element.
 /// -> inline-scaled content ~> HTML svg (auto-sized)
 #let inline(fit-font: 1em, scale: 100%, content, footnotes) = context {
-  if target() != "html" { return content }
+  assert(type(scale) == ratio and scale >= 0%, message: "inline scale must be a nonnegative ratio")
+  assert(type(fit-font) == bool or type(fit-font) == length, message: "inline fit-font must be a boolean or em length")
+  if type(fit-font) == length {
+    assert(fit-font.abs == 0pt and fit-font.em > 0, message: "inline fit-font length must be a positive em length")
+  }
+  // Capture the author's font size before normalizing the HTML frame's host.
+  // Its 11pt em is calibrated to a 12pt CSS rem by the HTML tokenizer (11/12).
+  // Keeping that host fixed makes intrinsic vector dimensions target-independent.
+  let content = std.text(size: text.size, content)
   let size = measure(content)
-  let scale = scale
-  if fit-font == true {
-    let width-ratio = text.size / (size.width) * 100%
-    let height-ratio = text.size / (size.height) * 100%
-    scale = calc.max(width-ratio, height-ratio) * scale
+  assert(size.width > 0pt and size.height > 0pt, message: "CONTENT WITH ZERO SIZE")
+  let fitted = fit-font != false
+  let scale = if fitted {
+    let font = if target() == "html" { 12pt }
+      else if fit-font == true { text.size }
+      else { fit-font.em * text.size }
+    calc.max(font / size.width, font / size.height) * scale
+  } else { scale }
+  if target() != "html" {
+    return std.scale(scale, reflow: true, box(content))
   }
-  // [#size \* #scale => (#{float(size.width.pt() * scale * 4 / 3)}px, #{float(size.height.pt() * scale  * 4 / 3)}px) \ ]
-  if size.width == 0 or size.height == 0 {
-    panic("CONTENT WITH ZERO SIZE")
-  }
-  
   let content = [
     #inline-content.update(true)
-    #auto-sized-svg(scale, fit-font, html.frame(context {
-    import "svg-rule.typ": *
-    show: rule-rewrite-link
-    show: rule-rewrite-label
-    show: rule-footnote(footnotes)
-    show: rule-ref-footnote(footnotes)
-    content
-  }))
+    #auto-sized-svg(scale, fit-font, {
+      set text(size: 11pt)
+      html.frame(context {
+        import "svg-rule.typ": *
+        show: rule-rewrite-link
+        show: rule-rewrite-label
+        show: rule-footnote(footnotes)
+        show: rule-ref-footnote(footnotes)
+        content
+      })
+    })
     #inline-content.update(false)
   ]
   content

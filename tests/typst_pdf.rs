@@ -416,6 +416,81 @@ fn pdf_cli_does_not_touch_html_outputs_and_is_a_true_noop() {
 
 #[test]
 #[ignore = "requires latest stable Typst; CI runs this explicitly"]
+fn inline_vectors_share_intrinsic_scale_and_font_fit_in_html_and_pdf() {
+    let (project, runner, output) = setup("");
+    project.source("index.typ", &format!(r#"{LIB}
+#title[Inline geometry]
+#set text(size: 18pt)
+#context {{
+  let a = inline(rect(width: 20pt, height: 10pt), fit-font: false, scale: 150%)
+  let b = inline(rect(width: 20pt, height: 10pt), fit-font: true)
+  let c = inline(rect(width: 20pt, height: 10pt), fit-font: 2em)
+  if target() != "html" {{
+    for (body, width, height) in ((a, 30pt, 15pt), (b, 36pt, 18pt), (c, 72pt, 36pt)) {{
+      let actual = measure(body)
+      assert(calc.abs(actual.width - width) < 0.001pt and calc.abs(actual.height - height) < 0.001pt, message: "Native inline geometry")
+    }}
+  }}
+  a; b; c
+}}
+"#));
+    assert!(
+        compiler(&project, runner, PdfOptions::default(), &output)
+            .compile()
+            .unwrap()
+            .written
+    );
+    let html_runner = Arc::new(
+        CommandTypst::new(std::env::var_os("TYPST").unwrap_or_else(|| "typst".into()))
+            .with_package_path(project.root.join("package namespace")),
+    );
+    let report = project.compiler(html_runner).compile().unwrap();
+    assert!(report.is_success(), "{:?}", report.diagnostics);
+    let html = fs::read_to_string(project.output.join("index.html")).unwrap();
+    let dimension = |style: &str, key: &str| -> Option<f64> {
+        style
+            .split(';')
+            .filter_map(|part| part.trim().split_once(':'))
+            .find(|(name, _)| *name == key)
+            .and_then(|(_, value)| value.trim().strip_suffix("em"))
+            .and_then(|value| value.parse().ok())
+    };
+    let mut font = 1.0;
+    let mut sizes = Vec::new();
+    for token in html5gum::Tokenizer::new(&html).map(Result::unwrap) {
+        if let html5gum::Token::StartTag(tag) = token {
+            let class = tag
+                .attributes
+                .get(b"class".as_slice())
+                .map(|value| value.as_slice())
+                .unwrap_or_default();
+            let style = tag
+                .attributes
+                .get(b"style".as_slice())
+                .map(|value| std::str::from_utf8(value).unwrap())
+                .unwrap_or_default();
+            if class == b"auto-sized-svg" {
+                font = dimension(style, "font-size").unwrap_or(1.0);
+            }
+            if tag.name == b"svg" {
+                sizes.push((
+                    dimension(style, "width").unwrap() * font,
+                    dimension(style, "height").unwrap() * font,
+                ));
+            }
+        }
+    }
+    assert_eq!(sizes.len(), 3);
+    for (actual, expected) in sizes.iter().zip([(2.5, 1.25), (2.0, 1.0), (4.0, 2.0)]) {
+        assert!(
+            (actual.0 - expected.0).abs() < 0.00001 && (actual.1 - expected.1).abs() < 0.00001,
+            "HTML geometry: {sizes:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires latest stable Typst; CI runs this explicitly"]
 fn named_footnotes_are_reference_only_and_restart_on_each_pdf_page() {
     let (project, runner, output) = setup(
         r#"

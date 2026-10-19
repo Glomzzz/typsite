@@ -161,6 +161,20 @@ print images. Custom HTML helpers and rewrites may need explicit native
 fallbacks. Unknown rewrite helpers retain their body, not their web behavior.
 Large diagrams/tables may need print-specific sizing.
 
+`inline(...)` uses the same sizing contract in both targets, while keeping
+native vectors in PDF rather than rasterizing them:
+
+- `fit-font: false` preserves intrinsic point dimensions, multiplied by `scale`.
+  At the browser's standard 16px root size, 1pt maps to 4/3 CSS pixels.
+- `fit-font: true` fits the smaller dimension to the surrounding font's em;
+  `fit-font: 2em` fits it to two em. Both retain the aspect ratio and honor `scale`.
+- PDF scaling reflows the layout box, so surrounding text reserves the scaled
+  width and height. HTML frame dimensions use a fixed calibration independent
+  of the article's Typst font size and work with current and older frame markup.
+
+Responsive CSS can still constrain web diagrams, and changing the browser's
+root font size intentionally resizes HTML's rem-based intrinsic frames.
+
 Heading embeds are normalized **before layout**, so the removed wrapper cannot
 leave a blank outline entry or increment a counter twice. They work in ordinary
 source sequences, native style wrappers, and supported block containers. A

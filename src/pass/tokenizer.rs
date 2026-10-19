@@ -374,7 +374,6 @@ const CLASS_KEY: &[u8] = b"class";
 const AUTO_SVG_KEY: &[u8] = b"auto-svg"; // will be removed 10 versions later
 const AUTO_SIZED_SVG_KEY: &[u8] = b"auto-sized-svg";
 const SCALE_KEY: &[u8] = b"scale";
-const TYPST_DOC_KEY: &[u8] = b"typst-frame";
 const STYLE_KEY: &[u8] = b"style";
 const WIDTH_KEY: &[u8] = b"width";
 const HEIGHT_KEY: &[u8] = b"height";
@@ -427,10 +426,9 @@ fn emit_other_start(
             );
             state.auto_svg = Some(scale)
         }
-        "svg"
-            if state.auto_svg.is_some()
-                && matches!(start_tag.attributes.get(CLASS_KEY),Some(class) if class == &TYPST_DOC_KEY) =>
-        {
+        // Typst 0.15 no longer adds class="typst-frame". The explicit
+        // auto-sized wrapper, not a version-specific class, identifies frames.
+        "svg" if state.auto_svg.is_some() => {
             let svg = &mut start_tag.attributes;
             if let Some(ratio) = state.auto_svg {
                 let mut svg_style = svg
@@ -592,6 +590,41 @@ pub(crate) mod tests {
             assert!(
                 std::iter::from_fn(|| tokenizer.next()).any(|event| event.is_err()),
                 "{scale}"
+            );
+        }
+    }
+
+    #[test]
+    fn scales_frames_with_or_without_the_legacy_typst_class() {
+        use html5gum::Token;
+        for class in ["", " class=\"typst-frame\""] {
+            let html = format!(
+                r#"<body><span class="auto-sized-svg" scale="150%"><svg{class} style="width: 2em; height: 1em" viewBox="0 0 22 11"></svg></span></body>"#
+            );
+            let mut raw = html5gum::Tokenizer::new(&html).peekable();
+            let mut tokenizer = Tokenizer::<BodyTag>::new(&mut raw);
+            let svg = std::iter::from_fn(|| tokenizer.next())
+                .map(Result::unwrap)
+                .find_map(|event| {
+                    if let Event::Other(Token::StartTag(tag)) = event
+                        && tag.name == b"svg"
+                    {
+                        Some(tag)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+            let style =
+                std::str::from_utf8(svg.attributes.get(b"style".as_slice()).unwrap()).unwrap();
+            assert!(style.contains("width: 2.75em"), "{style}");
+            assert!(style.contains("height: 1.375em"), "{style}");
+            assert_eq!(
+                svg.attributes
+                    .get(b"viewbox".as_slice())
+                    .unwrap()
+                    .as_slice(),
+                b"0 0 22 11"
             );
         }
     }
