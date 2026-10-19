@@ -358,6 +358,8 @@ fn pdf_cli_does_not_touch_html_outputs_and_is_a_true_noop() {
         &format!("{LIB}\n#title[CLI book]\n= #embed(\"child.typ\")"),
     );
     project.source("child.typ", &format!("{LIB}\n#title[Child]\nCLI child"));
+    project.source("lib/front.typ", "Front cover");
+    project.source("lib/back.typ", "Back cover");
     fs::create_dir_all(&project.output).unwrap();
     let ownership = br#"{"files":["index.html"]}"#;
     fs::write(project.output.join(".typsite-outputs.json"), ownership).unwrap();
@@ -379,6 +381,12 @@ fn pdf_cli_does_not_touch_html_outputs_and_is_a_true_noop() {
             .arg(&project.cache)
             .arg("--output")
             .arg(&output)
+            .args([
+                "--front-cover",
+                "lib/front.typ",
+                "--back-page",
+                "lib/back.typ",
+            ])
             .env("TYPST_PACKAGE_PATH", project.root.join("cli packages"))
             .env(
                 "TYPST_PACKAGE_CACHE_PATH",
@@ -412,6 +420,63 @@ fn pdf_cli_does_not_touch_html_outputs_and_is_a_true_noop() {
         fs::read_to_string(project.output.join("index.html")).unwrap(),
         "Keep the site"
     );
+}
+
+#[test]
+#[ignore = "requires latest stable Typst; CI runs this explicitly"]
+fn optional_covers_are_isolated_first_and_last_pages_and_cache_dependencies() {
+    let (project, runner, output) = setup(
+        r#"
+#context {
+  let facts = query(metadata).filter(it => type(it.value) == dictionary and it.value.at("typsite-pdf", default: none) == "article")
+  let front = query(metadata).find(it => it.value == "front")
+  let back = query(metadata).find(it => it.value == "back")
+  assert(front.location().page() == 1, message: "Front cover is the first physical page")
+  assert(back.location().page() == counter(page).final().first() + 1, message: "Back cover is the last physical page")
+  assert(facts.map(it => it.value.scope.source) == ("/index", "/appendix"), message: "Covers are not article roots")
+  assert(facts.first().location().page() > 1 and facts.last().location().page() < back.location().page())
+  assert(query(image).len() == 1, message: "Cover retains source-relative image context")
+  let covers = query(heading).filter(it => it.body == [Cover heading])
+  assert(covers.len() == 1 and covers.first().numbering == none and not covers.first().outlined)
+}
+"#,
+    );
+    project.source("index.typ", &format!("{LIB}\n#title[Root]\nBody."));
+    project.source(
+        "appendix.typ",
+        &format!("{LIB}\n#title[Appendix]\nEnd of book."),
+    );
+    project.source(
+        "lib/covers/front.typ",
+        "#metadata(\"front\")\n= Cover heading\n#image(\"art.svg\", width: 10mm)",
+    );
+    project.source("lib/covers/back.typ", "#metadata(\"back\")\nBack cover.");
+    project.source("lib/covers/art.svg", r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>"#);
+    let options = PdfOptions {
+        front_cover: Some("lib/covers/front.typ".into()),
+        back_cover: Some("lib/covers/back.typ".into()),
+        appendices: vec!["appendix.typ".into()],
+        ..PdfOptions::default()
+    };
+    let compiler = compiler(&project, runner, options, &output);
+    assert!(compiler.compile().unwrap().written);
+    assert!(!compiler.compile().unwrap().compiled);
+    project.source(
+        "lib/covers/back.typ",
+        "#metadata(\"back\")\nRevised back cover.",
+    );
+    assert!(compiler.compile().unwrap().written);
+    let good = fs::read(&output).unwrap();
+    fs::remove_dir_all(&project.cache).unwrap();
+    compiler.compile().unwrap();
+    assert_eq!(fs::read(&output).unwrap(), good);
+    project.source(
+        "lib/covers/back.typ",
+        "#metadata(\"back\")\nToo long\n#pagebreak()\nSecond page",
+    );
+    let error = format!("{:#}", compiler.compile().unwrap_err());
+    assert!(error.contains("cover must fit on one page"), "{error}");
+    assert_eq!(fs::read(output).unwrap(), good);
 }
 
 #[test]

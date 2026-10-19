@@ -335,13 +335,31 @@
   decorate(backend, env, scope, normalize-headings(prepare(env.pages.at(source)())).body)
 }
 
+#let cover(load, side) = {
+  page(header: none, footer: none, numbering: none, {
+    set heading(numbering: none, outlined: false, bookmarked: false)
+    marker("cover-start", side: side)
+    load()
+    marker("cover-end", side: side)
+    context {
+      let first = records("cover-start").find(it => it.value.side == side)
+      let last = records("cover-end").find(it => it.value.side == side)
+      assert(first.location().page() == last.location().page(), message: "PDF " + side + " cover must fit on one page")
+    }
+  })
+}
+
 // Exported by the package as pdf-book; normal authors keep using schema/embed.
-#let book(pages: (:), entry: "/index", appendices: (), title: "", defaults: (:), default-parent: none, urls: (:)) = {
+#let book(pages: (:), entry: "/index", appendices: (), title: "", defaults: (:), default-parent: none, urls: (:), front-cover: none, back-cover: none) = {
   assert(enabled, message: "Use typsite pdf to prepare a native book")
   let backend = (render: render, decorate: decorate)
   let env = (pages: pages, defaults: defaults, default-parent: default-parent, urls: urls)
   set document(title: if title == "" { entry } else { title })
   set page(header: counter(footnote).update(0))
+  if front-cover != none {
+    cover(front-cover, "front")
+    counter(page).update(1)
+  }
   outline(title: [Contents])
   pagebreak(weak: true)
   render(backend, env, entry)
@@ -354,4 +372,5 @@
       render(backend, env, source, occurrence: "appendix-" + str(index))
     }
   }
+  if back-cover != none { cover(back-cover, "back") }
 }

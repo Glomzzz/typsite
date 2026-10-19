@@ -29,6 +29,9 @@ pub struct PdfOptions {
     pub appendices: Vec<String>,
     /// Source-root-relative module exporting `book-style(body)`.
     pub template: Option<String>,
+    /// Optional source-root-relative single-page covers (not article roots).
+    pub front_cover: Option<String>,
+    pub back_cover: Option<String>,
     pub title: Option<String>,
     pub pretty_url: bool,
 }
@@ -39,6 +42,8 @@ impl Default for PdfOptions {
             entry: "index.typ".into(),
             appendices: Vec::new(),
             template: None,
+            front_cover: None,
+            back_cover: None,
             title: None,
             pretty_url: true,
         }
@@ -414,7 +419,32 @@ impl PdfCompiler {
                 ))
             ));
         }
-        driver.push_str("#pdf-book(\n  pages: (\n");
+        let mut covers = String::new();
+        for (name, path) in [
+            ("front-cover", &self.options.front_cover),
+            ("back-cover", &self.options.back_cover),
+        ] {
+            if let Some(path) = path {
+                let relative = source_path(path)?;
+                ensure!(
+                    relative
+                        .extension()
+                        .is_some_and(|extension| extension == "typ")
+                        && input.contains_key(&relative),
+                    "PDF {name} must be an existing .typ file inside the source root: {path}"
+                );
+                covers.push_str(&format!(
+                    "  {name}: () => include {},\n",
+                    typst_string(&format!(
+                        "/{}",
+                        relative.to_string_lossy().replace('\\', "/")
+                    ))
+                ));
+            }
+        }
+        driver.push_str("#pdf-book(\n");
+        driver.push_str(&covers);
+        driver.push_str("  pages: (\n");
         for (slug, path) in &pages {
             driver.push_str(&format!(
                 "    {}: () => include {},\n",

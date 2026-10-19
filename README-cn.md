@@ -218,6 +218,7 @@ typsite compile --jobs 1  # 串行导出文章，降低峰值内存
 typsite pdf --entry index.typ --output book/site.pdf
 # 可选：独立附录及可编辑的原生 Typst 样式
 typsite pdf --appendix appendices/notation.typ --template lib/pdf.typ
+typsite pdf --front-cover lib/front-cover.typ --back-cover lib/back-cover.typ
 ```
 
 现有的嵌入写法（包括 `= #embed("./child.typ")`）按原文顺序展开；重复嵌入会再次打印正文，

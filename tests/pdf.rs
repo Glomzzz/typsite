@@ -282,6 +282,14 @@ fn missing_and_escaping_roots_fail_but_explicit_standalone_pages_are_allowed() {
             template: Some("../template.typ".into()),
             ..PdfOptions::default()
         },
+        PdfOptions {
+            front_cover: Some("../cover.typ".into()),
+            ..PdfOptions::default()
+        },
+        PdfOptions {
+            back_cover: Some("missing.typ".into()),
+            ..PdfOptions::default()
+        },
     ] {
         assert!(
             compiler(&project, runner.clone(), options, &output)

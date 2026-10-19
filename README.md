@@ -232,6 +232,7 @@ draft publication; local Linux tests alone do not establish cross-platform readi
 typsite pdf --entry index.typ --output book/site.pdf
 # Optional standalone appendices and an editable native Typst style:
 typsite pdf --appendix appendices/notation.typ --template lib/pdf.typ
+typsite pdf --front-cover lib/front-cover.typ --back-cover lib/back-cover.typ
 ```
 
 Existing embed calls, including `= #embed("./child.typ")`, expand in source order.

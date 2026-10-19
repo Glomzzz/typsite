@@ -150,6 +150,8 @@ impl Executor {
                 entry: cmd.entry,
                 appendices: cmd.appendix,
                 template: cmd.template,
+                front_cover: cmd.front_cover,
+                back_cover: cmd.back_cover,
                 title: cmd.title,
                 pretty_url: !cmd.no_pretty_url,
             },
@@ -281,6 +283,12 @@ struct PdfCmd {
     /// Module inside --input exporting book-style(body).
     #[arg(long)]
     template: Option<String>,
+    /// Optional single-page front cover inside --input (before the contents).
+    #[arg(long, alias = "front-page")]
+    front_cover: Option<String>,
+    /// Optional single-page back cover inside --input (after all appendices).
+    #[arg(long, alias = "back-page")]
+    back_cover: Option<String>,
     /// PDF document title (defaults to site.title).
     #[arg(long)]
     title: Option<String>,

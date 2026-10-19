@@ -117,6 +117,28 @@ content, and label links have occurrence-local indexes; these do not turn every
 arbitrary native label operation into a scoped one.
 The internal label `typsite-pdf-title` is reserved for article headings.
 
+## Front and back covers (PDF only)
+
+Use `--front-cover lib/front-cover.typ` and `--back-cover lib/back-cover.typ` to
+add custom **front and back covers**. The aliases `--front-page` and `--back-page`
+are also accepted. Editable examples ship in `root/lib/`, excluded from normal
+HTML article discovery. Neither cover is included unless requested.
+
+Covers are plain native Typst content, not articles: do not apply `schema` or use
+article metadata/embeds there. They can use local images, rich text, links, and
+normal layout functions. Paths resolve from the original cover source file.
+Each cover gets its own page without running headers, footers, or printed page
+numbers. A cover that overflows one page is an error; the last good PDF remains
+untouched. Cover headings are excluded from the book's numbering and outline.
+The front cover precedes the contents; the back cover follows every appendix.
+Visible page numbering starts at 1 after the front cover. Cover options and
+contents participate in normal cache invalidation and clean-build equivalence.
+
+```sh
+typsite pdf --template lib/pdf.typ \
+  --front-cover lib/front-cover.typ --back-cover lib/back-cover.typ
+```
+
 ## Footnotes
 
 In PDF, a labeled definition such as `#footnote[Note text]<note>` is invisible
