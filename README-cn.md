@@ -197,8 +197,9 @@ typsite compile --jobs 1  # 串行导出文章，降低峰值内存
 1. 备份文章、`root/lib` 和 `.typsite`。使用 Typst 最新稳定版（已测试 **0.15.1**）；
    从源码构建需要 **Rust 1.89+**。
 2. 通过 `typsite init --dir ../typsite-018-reference` 生成参考项目，对照合并辅助函数与
-   配置，不要在现有站点上直接初始化。更新 `root/lib/site.typ` 的公式回退函数；
-   需要订阅集合时，在 `root/lib/lib.typ` 中导入 `rss`。内置 Typst 包仍使用
+   配置，不要在现有站点上直接初始化。一起合并 `lib.typ`、`site.typ`、`html.typ`、
+   `rewrite.typ`、`rule.typ` 及新增的 **`root/lib/links.typ`**；即使只构建 HTML，
+   `site.typ` 与 `rule.typ` 也依赖它。需要订阅集合时，在 `root/lib/lib.typ` 中导入 `rss`。内置 Typst 包仍使用
    **`@local/typsite:0.1.0`**，不要改成 0.1.8。
 3. 保留输出目录里的 `.typsite-outputs.json`。旧内部缓存会自动重建；只有明确清理
    没有标记的旧目录时，才应检查路径后使用 `clean --force`。
@@ -230,7 +231,8 @@ typsite pdf --template lib/pdf.typ --font-profile noto-serif-sc
 不是网页打印件。`--output` 指定 **PDF 文件**，默认是 `book/site.pdf`，不会改动 HTML
 输出及其归属记录。
 
-已有站点需要从参考 `typsite init` 项目合并更新后的辅助库。原生 Typst 标签仍是文档全局的；
+已有站点需要从参考 `typsite init` 项目合并更新后的辅助库，**包括新增的 `root/lib/links.typ`**。
+原生 Typst 标签仍是文档全局的；
 重复文章中的原生编号引用需要唯一标签，或使用按嵌入实例隔离的 Typsite 锚点。
 在 `.typsite/options.toml` 设置 `[layout] module = "lib/layout.typ"`，
 编辑模块中的 `page-header(info)` / `page-footer(info)`，即可同时定制 HTML 和 PDF 的页眉页脚。

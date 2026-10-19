@@ -385,6 +385,21 @@ local/external link decoration; the shared links module retains HTML's classes.
 Native inline frames shrink to bounds without becoming block paragraphs, and
 nested text percentages inherit the outer print size.
 
+Release-readiness regressions now cover inherited/contextual template headers,
+automatic top page numbers, and composition with shared headers while resetting
+footnotes. Article headings that bypass pre-layout normalization fail explicitly
+instead of producing zero-filled counters. Relationship preview schemas do not
+emit standalone HTML page furniture. The helper migration checklist names the
+complete required set (including `links.typ` and `rule.typ`); its real-Typst test
+copies that set into a legacy-style project and compiles HTML and native PDF.
+The supplied-binary release smoke harness now compiles the full demo PDF with
+ordered appendices, covers, native/template/shared furniture, and assertions.
+It checks cache no-op bytes/mtimes, edits, last-good recovery, HTML ownership
+isolation, and clean equivalence. Native platform, MSRV, Nix, and actual draft
+asset jobs all use that harness; release readiness rejects HTML-only evidence.
+Exact-revision remote CI and draft downloads remain pending until an authorized
+push and observed green runs; local checks do not establish those results.
+
 ## Baseline
 
 Before semantic changes: 56 tests passed; build and Clippy completed (with lint

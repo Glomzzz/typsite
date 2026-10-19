@@ -26,6 +26,9 @@ If you are upgrading from an earlier release, also read #cite-title("migrate-to-
   ```
 
 + Compare that project's `root/lib` and `.typsite` with yours. Merge the updated helpers without overwriting your customizations.
+  Merge `lib.typ`, `site.typ`, `html.typ`, `rewrite.typ`, `rule.typ`, and the new *`links.typ`* together.
+  Both `site.typ` and `rule.typ` require `links.typ`, including HTML-only builds.
+  `pdf.typ`, `layout.typ`, `front-cover.typ`, and `back-cover.typ` are optional print/layout examples.
 + Run your usual compile command. Old internal caches are automatically treated as cache misses; a manual clean is not normally necessary.
 
   ```sh

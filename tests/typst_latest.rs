@@ -146,6 +146,86 @@ fn main() {}
 
 #[test]
 #[ignore = "requires the latest stable Typst executable; CI runs this explicitly"]
+fn documented_helper_migration_is_complete_for_html_and_native_pdf() {
+    let project = Project::named("typsite helper migration [fixture]");
+    let reference = project.root.join("reference");
+    typsite::resource::default::copy_default_typsite(&reference).unwrap();
+    // Model an older customized site: no new links/style/layout/cover helpers.
+    project.source("lib/custom.typ", "#let custom = [Preserved custom helper]");
+    let required = [
+        "lib.typ",
+        "site.typ",
+        "html.typ",
+        "rewrite.typ",
+        "rule.typ",
+        "links.typ",
+    ];
+    let guide =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/pdf.md")).unwrap();
+    for name in required {
+        assert!(
+            guide.contains(&format!("`{name}`")),
+            "Missing required migration file: {name}"
+        );
+        std::fs::copy(
+            reference.join("root/lib").join(name),
+            project.input.join("lib").join(name),
+        )
+        .unwrap();
+    }
+    let customization = std::fs::read(project.input.join("lib/custom.typ")).unwrap();
+    assert!(
+        !project.input.join("lib/pdf.typ").exists(),
+        "Print templates remain optional"
+    );
+    project.source(
+        "index.typ",
+        r#"
+#import "/lib/lib.typ": *
+#import "/lib/custom.typ": custom
+#show: schema.with("page")
+#title[Migrated site]
+#custom. #LaTeX. Native math $x^2$.
+#link("https://example.org")[External link].
+= #embed("child.typ")
+"#,
+    );
+    project.source(
+        "child.typ",
+        "#import \"/lib/lib.typ\": *\n#show: schema.with(\"page\")\n#title[Child]\nChild body.",
+    );
+    let runner = std::sync::Arc::new(
+        CommandTypst::new(std::env::var_os("TYPST").unwrap_or_else(|| "typst".into()))
+            .with_package_path(project.root.join("migration packages")),
+    );
+    let html = project.compiler(runner.clone());
+    common::successful(&html);
+    let published = std::fs::read_to_string(project.output.join("index.html")).unwrap();
+    assert!(
+        published.contains("Preserved custom helper")
+            && published.contains("class=\"link external\"")
+    );
+    let pdf = typsite::compile::pdf::PdfCompiler::with_runner(
+        project.input.clone(),
+        project.config.clone(),
+        project.cache.clone(),
+        project.root.join("book/site.pdf"),
+        None,
+        typsite::compile::pdf::PdfOptions::default(),
+        runner,
+    )
+    .unwrap();
+    assert!(pdf.compile().unwrap().written);
+    assert!(!pdf.compile().unwrap().compiled);
+    assert!(!common::successful(&html).changed());
+    assert_eq!(
+        std::fs::read(project.input.join("lib/custom.typ")).unwrap(),
+        customization
+    );
+}
+
+#[test]
+#[ignore = "requires the latest stable Typst executable; CI runs this explicitly"]
 fn shipped_templates_support_relationship_edits_with_latest_typst() {
     let project = Project::named("typsite shipped templates [fixture]");
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"));

@@ -208,8 +208,9 @@ The upgrade checklist is:
    (tested with **0.15.1**); source builds need **Rust 1.89+**.
 2. Generate a reference project with `typsite init --dir ../typsite-018-reference`.
    Compare and merge its helpers/configuration; do not initialize over your site.
-   Update `root/lib/site.typ` for math fallback and import `rss` in
-   `root/lib/lib.typ` if you want feed collections. The bundled Typst package
+   Merge `lib.typ`, `site.typ`, `html.typ`, `rewrite.typ`, `rule.typ`, and the new
+   **`root/lib/links.typ`** together; `site.typ` and `rule.typ` now require it even
+   for HTML builds. Import `rss` in `root/lib/lib.typ` if you want feed collections. The bundled Typst package
    keeps the **`@local/typsite:0.1.0`** import identity.
 3. Keep `.typsite-outputs.json` in the output directory. Old internal caches
    rebuild automatically; `clean --force` is only needed for explicitly cleaning
@@ -245,8 +246,8 @@ The result is one native Typst document with math, footnotes, links, and an outl
 not an HTML printout. `--output` names a **PDF file**. HTML outputs and their
 ownership journal are untouched; the default PDF output is `book/site.pdf`.
 
-Existing sites should merge the updated authoring helpers from a reference
-`typsite init` project. Native Typst labels remain document-global, so repeated
+Existing sites should merge the updated authoring helpers, **including the new
+`root/lib/links.typ`**, from a reference `typsite init` project. Native Typst labels remain document-global, so repeated
 articles with numbered native references need unique labels or occurrence-local
 Typsite anchors. To customize both HTML page furniture and PDF running
 headers/footers, set `[layout] module = "lib/layout.typ"` in `.typsite/options.toml`

@@ -380,19 +380,37 @@ Back up your customized `root/lib`, then generate a reference project:
 typsite init --dir ../typsite-pdf-reference
 ```
 
-Merge `lib.typ`, `site.typ`, `html.typ`, and `rewrite.typ` rather than overwriting
-customizations. In particular, the PDF path of a custom schema must delegate to
-the package's native schema **before** hiding the body in an HTML-only context or
-constructing HTML head content. The new sample `lib/pdf.typ` is optional. Article
-embed calls do not need migration; blindly keeping old HTML-only helper
-internals does not make a site print-ready.
+Merge the following files from the reference project's **`root/lib/`** into
+your existing `root/lib/`, retaining your customizations:
+
+- **Required helper set:** `lib.typ`, `site.typ`, `html.typ`, `rewrite.typ`,
+  `rule.typ`, and **`links.typ`**. Copy the new `links.typ` even if you only build
+  HTML: `site.typ` and `rule.typ` import it. Omitting it breaks those imports.
+- **Optional PDF style:** `pdf.typ`; it also imports `links.typ`. Add it if you
+  use `--template lib/pdf.typ`.
+- **Optional page furniture:** `layout.typ` if you enable `[layout].module`, plus
+  `front-cover.typ` / `back-cover.typ` if you want the example covers. A custom
+  layout or cover can be used instead.
+- **HTML configuration:** merge `.typsite/assets/schemas/page.css` for link and
+  furniture styling. Merge the `<page-header />` / `<page-footer />` slots from
+  `.typsite/schemas/page.html` if you want their explicit placement; old schemas
+  without slots retain the content-adjacent fallback. Add `[layout]` only when
+  opting into shared furniture; its absence remains valid.
+
+In particular, the PDF path of a custom schema must delegate to the package's
+native schema **before** hiding the body in an HTML-only context or constructing
+HTML head content. Keep `@local/typsite:0.1.0`; upgrading the executable does not
+change that package identity. Article embed calls do not need migration.
+Blindly keeping old HTML-only helper internals does not make a site print-ready.
+Run both `typsite compile` and your `typsite pdf` command and check their exit
+statuses after merging; the old published outputs are retained on failure.
 
 ## Verification
 
 ```sh
 cargo test --test pdf --locked
-cargo test --test typst_pdf --locked -- --ignored
-cargo test --test typst_latest --locked -- --ignored
+cargo test --test typst_pdf --locked -- --ignored --test-threads=1
+cargo test --test typst_latest --locked -- --ignored --test-threads=1
 # Optional real HTTPS download/cache test (not required by offline CI):
 cargo test --test pdf_fonts_network --locked -- --ignored
 ```

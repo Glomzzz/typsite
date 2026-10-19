@@ -26,6 +26,9 @@ Typsite #version 更换了构建引擎，修复了增量构建残留旧输出的
   ```
 
 + 对照参考项目的 `root/lib` 和 `.typsite` 合并更新，保留自己的定制。
+  一起合并 `lib.typ`、`site.typ`、`html.typ`、`rewrite.typ`、`rule.typ` 和新增的 *`links.typ`*。
+  `site.typ` 与 `rule.typ` 都依赖 `links.typ`，即使只构建 HTML，也不能漏掉它。
+  `pdf.typ`、`layout.typ`、`front-cover.typ` 与 `back-cover.typ` 是按需添加的打印和布局示例。
 + 执行平常使用的编译命令。旧内部缓存会自动按缓存未命中处理，通常不需要先手动清理。
 
   ```sh
