@@ -36,6 +36,7 @@ Typsite 是一个用于构建静态网站的工具，其文章内容由纯 `Typs
 - 链接/注脚 SVG (0.1.7+)
 - 增量编译, 实时预览
 - RSS 2.0 订阅，可选摘要或全文，并生成站点地图
+- 从入口文章的嵌入结构生成原生 PDF，可按顺序添加附录
 
 ## 3. Typst 简介
 
@@ -88,7 +89,7 @@ nix build .
 cargo build --release --locked
 cargo test --workspace --all-targets --locked
 # 真实 Typst 测试，使用隔离的包目录，覆盖辅助函数、模板和完整演示站点：
-cargo test --test typst_latest --locked -- --ignored
+cargo test --test typst_latest --test typst_pdf --locked -- --ignored
 ```
 
 现有写作辅助函数、模板和命令行选项保持支持。构建过程现在会报告导出、渲染和写入失败，
@@ -210,6 +211,24 @@ typsite compile --jobs 1  # 串行导出文章，降低峰值内存
 迁移指南还包含可复制的配置、安全清理、包隔离、RSS 排错及失败恢复步骤。
 [稳定版发布检查](docs/releasing.md)说明同一提交的 CI、锁定依赖构建、下载二进制冒烟测试
 和草稿手动发布流程；本地 Linux 测试通过不代表跨平台验证完成。
+
+### 4.5 原生 PDF 文集
+
+```sh
+typsite pdf --entry index.typ --output book/site.pdf
+# 可选：独立附录及可编辑的原生 Typst 样式
+typsite pdf --appendix appendices/notation.typ --template lib/pdf.typ
+```
+
+现有的嵌入写法（包括 `= #embed("./child.typ")`）按原文顺序展开；重复嵌入会再次打印正文，
+引用不会自动追加目标文章；书外引用需要 `site.base_url`，或将目标作为附录加入。
+输出是保留原生数学公式、脚注、链接和目录的单个 Typst 文档，
+不是网页打印件。`--output` 指定 **PDF 文件**，默认是 `book/site.pdf`，不会改动 HTML
+输出及其归属记录。
+
+已有站点需要从参考 `typsite init` 项目合并更新后的辅助库。原生 Typst 标签仍是文档全局的；
+重复文章中的原生编号引用需要唯一标签，或使用按嵌入实例隔离的 Typsite 锚点。
+[PDF 使用说明](docs/pdf.md)列出了附录、样式、缓存、安全保证和已知限制。
 
 ## 5. 架构 & 流程
 

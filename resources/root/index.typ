@@ -80,9 +80,21 @@ Typsite 是一个用于构建静态网站的工具，其文章内容由纯 *Typs
 - 将 Typst math 转换为 Mathml （自动检测math-font)
 - 支持现代 Web 技术规范，如 HTML5、CSS3 和 JavaScript（ES6+）
 - 增量编译, 实时预览
+- 按嵌入结构生成原生 PDF 文集，可添加有序附录
 
 
 = #embed("./typst.typ", sidebar: "only-title")
+
+= 原生 PDF
+
+```shell
+typsite pdf --entry index.typ --output book/site.pdf
+typsite pdf --appendix migrate-to-018.typ --template lib/pdf.typ
+```
+
+入口文章的嵌入按原文顺序展开，重复嵌入会再次打印；附录按参数顺序追加。
+引用不自动追加正文，书外引用需要站点的 `base_url`。默认输出是单个 `book/site.pdf`，
+不会清理 HTML 输出。已有站点先合并新版 `root/lib` 辅助函数；原生 Typst 标签仍是文档全局的。
 
 = 安装
 

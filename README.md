@@ -32,6 +32,7 @@ For a real-world example, see [glomzzz.com](https://glomzzz.com/) ([source code]
 -   Links, Footnotes in SVG (0.1.7+)
 -   Incremental compilation and real-time preview
 -   RSS 2.0 feeds with configurable summaries/full articles, plus sitemap output
+-   Native PDF books from an entry article's embeds, with ordered appendices
 
 
 ## 3. About Typst
@@ -84,7 +85,7 @@ Use stable Rust **1.89 or newer** and the latest stable Typst:
 cargo build --release --locked
 cargo test --workspace --all-targets --locked
 # Real Typst tests (isolated packages, helpers, templates, and the entire demo):
-cargo test --test typst_latest --locked -- --ignored
+cargo test --test typst_latest --test typst_pdf --locked -- --ignored
 ```
 
 Existing authoring helpers, templates, and CLI options remain supported. The
@@ -224,6 +225,26 @@ See the migration guide for copyable configuration, safe cleanup, package
 isolation, RSS troubleshooting, and failure recovery. See [stable release gates](docs/releasing.md)
 for exact-revision CI, locked builds, downloaded-binary smoke tests, and manual
 draft publication; local Linux tests alone do not establish cross-platform readiness.
+
+### 4.5 Native PDF books
+
+```sh
+typsite pdf --entry index.typ --output book/site.pdf
+# Optional standalone appendices and an editable native Typst style:
+typsite pdf --appendix appendices/notation.typ --template lib/pdf.typ
+```
+
+Existing embed calls, including `= #embed("./child.typ")`, expand in source order.
+Repeated embeds print again; citations do not automatically include their targets.
+For outside-book citations, set `site.base_url` or include the target as an appendix.
+The result is one native Typst document with math, footnotes, links, and an outline,
+not an HTML printout. `--output` names a **PDF file**. HTML outputs and their
+ownership journal are untouched; the default PDF output is `book/site.pdf`.
+
+Existing sites should merge the updated authoring helpers from a reference
+`typsite init` project. Native Typst labels remain document-global, so repeated
+articles with numbered native references need unique labels or occurrence-local
+Typsite anchors. See [PDF setup, semantics, styling, safety, and limitations](docs/pdf.md).
 
 ## 5. Architecture & Flow
 

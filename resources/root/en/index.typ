@@ -25,8 +25,22 @@
 - Typst math -> Mathml （auto detected math-font)
 - Supports modern web standards such as HTML5, CSS3, and JavaScript (ES6+)
 - Incremental compilation and real-time preview
+- Native PDF books from the embed forest, with ordered appendices
 
 = #embed("./typst.typ", sidebar: "only-title")
+
+= Native PDF books
+
+```shell
+typsite pdf --entry index.typ --output book/site.pdf
+typsite pdf --appendix migrate-to-018.typ --template lib/pdf.typ
+```
+
+Embeds expand in source order and repeat at every occurrence. Appendices follow
+command-line order; citations do not select bodies and outside-book citations
+need the site's `base_url`. The default output is one `book/site.pdf`, without
+cleaning HTML outputs. Merge the updated `root/lib` helpers into existing sites.
+Native Typst labels remain document-global.
 
 = Installation
 

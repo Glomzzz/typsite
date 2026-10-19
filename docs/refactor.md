@@ -327,6 +327,34 @@ those validations.
 - Older Typst releases are not a compatibility target. Latest stable is required
   and the rolling CI job is intended to catch future CLI/export changes.
 
+## Native PDF books (feature #58)
+
+`typsite pdf` is a separate single-file build path, not a format switch on the
+HTML parser/render pipeline. It reuses the external runner boundary, project
+options/library exclusions, dependency fingerprints, locks, and atomic writes.
+The native package resolves original article content through a deterministic
+source catalog, lexically scoped rendering, and distinct occurrence identities.
+It does not regex-rewrite source, embed a compiler, or depend on rendered HTML.
+
+Books preserve repeated embeds and ordered standalone appendices. Rich metadata
+is nonprinting and occurrence-local; native heading embeds are normalized before
+layout to avoid phantom outline/counter entries. Native labels still require an
+explicit document-global compatibility policy. Known excluded citations use the
+configured website URL or fail clearly; they never select extra article bodies.
+
+PDF cache entries live under `cache/pdf` and are independent of HTML export and
+publication checkpoints. A PDF-only output plan is never passed to HTML's
+complete-set ownership publisher. Standalone PDFs use atomic single-file writes,
+reject protected/HTML-owned destinations, retain last-good output on failure,
+and can restore missing outputs from verified cached artifacts.
+
+See [native PDF documentation](pdf.md) for the CLI, helper migration, styles,
+font/reproducibility settings, source selection, and deliberate limitations.
+Portable fake-runner tests cover caching and safety; real Typst tests check
+native structure, links, metadata, deep nesting, recovery, clean equivalence,
+standalone appendices, templates, the CLI, and the initialized demo. Both native
+and HTML compatibility suites are included in the cross-platform CI matrix.
+
 ## Baseline
 
 Before semantic changes: 56 tests passed; build and Clippy completed (with lint
