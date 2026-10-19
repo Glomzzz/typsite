@@ -645,6 +645,12 @@ fn one_shared_layout_customizes_html_and_pdf_without_repeating_embed_furniture()
         .replace("module = \"\"", "module = \"lib/shared layout.typ\"")
         .replace("base_url = \"\"", "base_url = \"https://example.org/\"");
     project.configure("options.toml", &config);
+    // Relationship schemas may include full article bodies, but must never
+    // insert standalone page furniture (including explicit shared-layout slots).
+    project.configure(
+        "schemas/backlink.html",
+        "<head></head><body><section><page-header/><content/><page-footer/></section></body>",
+    );
     let html_runner = Arc::new(
         CommandTypst::new(std::env::var_os("TYPST").unwrap_or_else(|| "typst".into()))
             .with_package_path(project.root.join("package namespace")),
@@ -664,8 +670,19 @@ fn one_shared_layout_customizes_html_and_pdf_without_repeating_embed_furniture()
         let report = html.compile().unwrap();
         assert!(report.is_success(), "{:?}", report.diagnostics);
         let index = fs::read_to_string(project.output.join("index.html")).unwrap();
-        assert_eq!(index.matches("class=\"page-header\"").count(), 1, "{index}");
-        assert_eq!(index.matches("class=\"page-footer\"").count(), 1, "{index}");
+        for page in ["index.html", "child.html", "outside.html"] {
+            let rendered = fs::read_to_string(project.output.join(page)).unwrap();
+            assert_eq!(
+                rendered.matches("class=\"page-header\"").count(),
+                1,
+                "{page}: repeated page headers in backlink previews"
+            );
+            assert_eq!(
+                rendered.matches("class=\"page-footer\"").count(),
+                1,
+                "{page}: repeated page footers in backlink previews"
+            );
+        }
         assert_eq!(index.matches("Shared header version").count(), 1, "{index}");
         assert!(index.contains("Shared footer") && index.contains("https://example.org/layout"));
         assert!(

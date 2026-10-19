@@ -143,7 +143,8 @@ impl<'d, 'c: 'd, 'b: 'c, 'a: 'b> SchemaPass<'a, 'b, 'c, 'd> {
         // Furniture is exported as reserved native metadata, not body content:
         // embeds reuse their article bodies without duplicating page furniture.
         let furniture = |key: &str, tag: &str| {
-            if !self.schema.content
+            if footer_schema
+                || !self.schema.content
                 || self.config.options.project.layout.module.trim().is_empty()
                 || !metadata.contents.contents.contains_key(key)
             {
