@@ -429,10 +429,10 @@
       assert(length > 0pt, message: "inline size limits must be positive")
       calc.min(scale, length / natural * 100%)
     }
-    return layout(region => {
+    return box(layout(region => {
       let fitted = calc.min(bound(max-width, region.width, size.width), bound(max-height, region.height, size.height))
       std.scale(fitted, reflow: true, box(content))
-    })
+    }))
   }
   let content = [
     #inline-content.update(true)

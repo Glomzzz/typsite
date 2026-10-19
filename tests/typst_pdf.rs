@@ -668,6 +668,8 @@ fn inline_vectors_share_intrinsic_scale_and_font_fit_in_html_and_pdf() {
   let nested = html.text(size: 40pt)[#html.text[Typst]]
   let expected = text(size: 30pt)[Typst]
   assert(calc.abs(measure(nested).width - measure(expected).width) < 0.001pt, message: "Nested HTML text inherits its native font size")
+  let row = [L #inline(rect(width: 20pt, height: 10pt)) R]
+  assert(measure(row).height < 30pt, message: "Native inline vectors must not create separate block paragraphs")
 }}
 "#));
     assert!(
