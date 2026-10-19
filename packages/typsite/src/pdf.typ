@@ -101,6 +101,26 @@
   link(matches.first().location(), body)
 }
 
+// Named definitions are data, not footnotes at their declaration site. Each
+// page's first reference creates the native note; later references share it.
+#let note-reference(backend, env, scope, id) = {
+  marker("note-reference", scope: scope, id: id)
+  context {
+    let definitions = records("note-definition").filter(it => it.value.scope.occurrence == scope.occurrence and it.value.id == id)
+    assert(definitions.len() == 1, message: "PDF footnote '" + id + "' must be defined exactly once in " + scope.source)
+    let all = records("note-reference")
+    let local = all.filter(it => it.value.scope.occurrence == scope.occurrence and it.value.id == id and it.location().page() == here().page())
+    let first = local.first()
+    let previous = query(selector(metadata).before(here())).filter(it => kind(it.value) == "note-reference" and it.value.scope.occurrence == scope.occurrence and it.value.id == id).last()
+    let index = all.position(it => it.location() == first.location())
+    let target = label("typsite-pdf-note-" + str(index))
+    if previous.location() == first.location() {
+      let body = (backend.decorate)(backend, env, scope, definitions.first().value.body, headings: false)
+      [#footnote(body) #target]
+    } else { footnote(target) }
+  }
+}
+
 // Only a marker occupying the heading body is a heading embed. Do not discard
 // unrelated text, or mistake an embed buried in arbitrary markup for a chapter.
 #let heading-embed(body) = {
@@ -115,6 +135,11 @@
 // heading in a show rule (which would leave a phantom outline/counter entry).
 #let prepare(body) = {
   if type(body) != content { return body }
+  if body.func() == footnote {
+    if type(body.body) == label { return marker("note-ref", id: str(body.body)) }
+    let id = body.at("label", default: none)
+    if id != none { return marker("note-def", id: str(id), body: body.body) }
+  }
   if body.func() == heading {
     let data = heading-embed(body.body)
     if data != none {
@@ -181,6 +206,10 @@
       marker("anchor-record", scope: scope, id: str(data.id))
     } else if name == "goto" {
       anchor-link(scope, data.id, data.body)
+    } else if name == "note-def" {
+      marker("note-definition", scope: scope, id: data.id, body: data.body)
+    } else if name == "note-ref" {
+      note-reference(backend, env, scope, data.id)
     } else if name == "rewrite" {
       let attrs = data.attrs
       if data.id == "cite" or data.id == "cite-with-title" {
@@ -190,17 +219,28 @@
       } else if data.id == "code-inline" or data.id == "code-block" {
         raw(attrs.at("content", default: ""), lang: attrs.at("lang", default: none), block: data.id == "code-block")
       } else if data.id == "footnote-def" {
-        let note = footnote(data.body)
-        if attrs.name == "!numbering" { note } else { [#note #label(attrs.name)] }
+        if attrs.name == "!numbering" { footnote(data.body) }
+        else { marker("note-definition", scope: scope, id: attrs.name, body: data.body) }
       } else if data.id == "footnote-ref" or data.id == "footnote-ref-svg" {
-        footnote(label(attrs.name))
+        note-reference(backend, env, scope, attrs.name)
       } else { data.body }
     } else { it }
+  }
+  show footnote: it => {
+    if type(it.body) == label {
+      if str(it.body).starts-with("typsite-pdf-note-") { return it }
+      return note-reference(backend, env, scope, str(it.body))
+    }
+    let id = it.at("label", default: none)
+    assert(id == none or str(id).starts-with("typsite-pdf-note-"), message: "PDF footnote definition inside opaque context: move the named definition to the article's top level")
+    it
   }
   show link: it => {
     if type(it.dest) == label { anchor-link(scope, str(it.dest), it.body) } else { it }
   }
   show ref: it => context {
+    let notes = records("note-definition").filter(note => note.value.scope.occurrence == scope.occurrence and note.value.id == str(it.target))
+    if notes.len() > 0 { return note-reference(backend, env, scope, str(it.target)) }
     if it.supplement != auto and type(it.supplement) == content {
       let targets = query(it.target)
       // Supplements customize native numbered refs; they are not the complete
@@ -248,6 +288,7 @@
   let backend = (render: render, decorate: decorate)
   let env = (pages: pages, defaults: defaults, default-parent: default-parent, urls: urls)
   set document(title: if title == "" { entry } else { title })
+  set page(header: counter(footnote).update(0))
   outline(title: [Contents])
   pagebreak(weak: true)
   render(backend, env, entry)

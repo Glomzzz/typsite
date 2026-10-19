@@ -416,6 +416,29 @@ fn pdf_cli_does_not_touch_html_outputs_and_is_a_true_noop() {
 
 #[test]
 #[ignore = "requires latest stable Typst; CI runs this explicitly"]
+fn named_footnotes_are_reference_only_and_restart_on_each_pdf_page() {
+    let (project, runner, output) = setup(
+        r#"
+#context {
+  let notes = query(footnote).filter(it => type(it.body) == content)
+  assert(notes.len() == 4, message: "Definitions must not leave phantom notes: " + repr(notes.map(it => it.body)))
+  assert(notes.map(it => counter(footnote).at(it.location())) == ((1,), (2,), (1,), (2,)), message: "Footnotes restart on each physical page")
+  assert(notes.first().location().page() != notes.at(2).location().page())
+  assert(query(metadata).filter(it => type(it.value) == dictionary and it.value.at("typsite-pdf", default: none) == "note-definition").len() == 1)
+}
+"#,
+    );
+    project.source(
+        "index.typ",
+        &format!("{LIB}\n{}", include_str!("fixtures/pdf-footnotes.typ")),
+    );
+    let compiler = compiler(&project, runner, PdfOptions::default(), &output);
+    assert!(compiler.compile().unwrap().written);
+    assert!(!compiler.compile().unwrap().compiled);
+}
+
+#[test]
+#[ignore = "requires latest stable Typst; CI runs this explicitly"]
 fn initialized_demo_compiles_into_a_native_book_with_appendices() {
     let (mut project, runner, output) = setup(
         r#"

@@ -115,6 +115,21 @@ content, and label links have occurrence-local indexes; these do not turn every
 arbitrary native label operation into a scoped one.
 The internal label `typsite-pdf-title` is reserved for article headings.
 
+## Footnotes
+
+In PDF, a labeled definition such as `#footnote[Note text]<note>` is invisible
+where declared. References (`#footnote(<note>)`, `@note`, or the footnote rewrite
+helpers) create the note on the page where it is used. Repeated references on
+one page share a marker and entry; a reference on another page creates that
+page's own entry. Numbering restarts at 1 on each physical PDF page, not each
+article. Anonymous `#footnote[Text]` remains an inline note.
+
+Named notes are scoped to an article occurrence, including repeated embeds.
+Keep named definitions outside opaque layout `context` expressions so they can
+be collected before layout; declarations there fail rather than emit phantom
+markers or entries. The internal label prefix `typsite-pdf-note-` is reserved.
+HTML footnotes retain their existing behavior.
+
 ## Styling and print-specific content
 
 `--template lib/pdf.typ` loads a source-root module exporting
