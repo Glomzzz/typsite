@@ -125,7 +125,7 @@ jobs:
           python scripts/release_draft.py download
           --repository ${{ github.repository }} --commit ${{ github.sha }}
           --tag ${{ needs.stage.outputs.tag }} --asset ${{ matrix.asset }} --directory downloaded
-      - name: init -> compile -> edit -> compile using the downloaded executable
+      - name: Verify HTML and PDF builds, layout, no-ops, and recovery with the downloaded executable
         run: >-
           python scripts/smoke_binary.py --binary downloaded/${{ matrix.asset }}
           --manifest downloaded/release-manifest.json --commit ${{ github.sha }} --report smoke.json

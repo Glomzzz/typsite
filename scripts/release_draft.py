@@ -24,6 +24,11 @@ REQUIRED_STAGES = {
     "edit + selective export + embedded-page refresh",
     "truthful failure + last-good output + repair",
     "clean-build equivalence",
+    "PDF complete demo + covers + shared layout + HTML isolation",
+    "PDF warm no-op",
+    "PDF incremental appendix + layout refresh",
+    "PDF truthful failure + last-good output + repair",
+    "PDF clean-build equivalence",
 }
 
 
@@ -136,9 +141,13 @@ def check_evidence(report, directory):
         raise ValueError("Expected exactly one successful smoke report per native target")
     for asset in report["assets"]:
         entry = by_name.get(asset["name"])
+        pdf = entry.get("pdf") if entry is not None else None
         if (entry is None or entry["sha256"] != asset["sha256"]
                 or entry["version"] != report["version"] or entry["provenance"] != asset
-                or set(entry["passed"]) != REQUIRED_STAGES or entry["pages"] < 14):
+                or set(entry["passed"]) != REQUIRED_STAGES or entry["pages"] < 14
+                or not isinstance(pdf, dict) or not isinstance(pdf.get("sha256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", pdf["sha256"])
+                or not isinstance(pdf.get("size"), int) or pdf["size"] <= 1024):
             raise ValueError(f"Invalid downloaded-asset smoke evidence for {asset['name']}")
     return evidence
 

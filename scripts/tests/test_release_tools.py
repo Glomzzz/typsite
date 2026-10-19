@@ -136,6 +136,7 @@ class ReleaseToolsTests(unittest.TestCase):
             output.write_text(json.dumps({
                 "binary": asset["name"], "sha256": asset["sha256"], "version": VERSION,
                 "provenance": asset, "pages": 14, "passed": sorted(draft.REQUIRED_STAGES),
+                "pdf": {"sha256": "b" * 64, "size": 2048},
             }))
         return directory
 
@@ -155,6 +156,91 @@ class ReleaseToolsTests(unittest.TestCase):
             path.write_text(json.dumps(data))
             with self.assertRaises(ValueError):
                 draft.check_evidence(self.report, directory)
+
+    def test_html_only_or_invalid_pdf_evidence_cannot_be_marked_ready(self):
+        for pdf in (None, {}, {"sha256": "invalid", "size": 2048},
+                    {"sha256": "b" * 64, "size": 12}):
+            directory = self.write_evidence()
+            path = directory / "0/smoke.json"
+            data = json.loads(path.read_text())
+            data["pdf"] = pdf
+            path.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):
+                draft.check_evidence(self.report, directory)
+        directory = self.write_evidence()
+        path = directory / "0/smoke.json"
+        data = json.loads(path.read_text())
+        data["passed"] = [stage for stage in data["passed"] if not stage.startswith("PDF")]
+        path.write_text(json.dumps(data))
+        with self.assertRaises(ValueError):
+            draft.check_evidence(self.report, directory)
+
+    def test_pdf_validation_rejects_missing_and_partial_artifacts(self):
+        path = self.root / "book/site.pdf"
+        path.parent.mkdir()
+        with self.assertRaises(FileNotFoundError):
+            smoke_binary.read_pdf(path)
+        for data in (b"not a PDF" * 200, b"%PDF-1.7\npartial"):
+            path.write_bytes(data)
+            with self.assertRaises(RuntimeError):
+                smoke_binary.read_pdf(path)
+        data = b"%PDF-1.7\n" + b"fixture" * 200
+        path.write_bytes(data)
+        self.assertEqual(smoke_binary.read_pdf(path), data)
+
+    def test_pdf_smoke_records_every_required_stage_and_uses_offline_covers(self):
+        project = self.root / "smoke project"
+        (project / "root/lib").mkdir(parents=True)
+        (project / ".typsite").mkdir()
+        (project / ".typsite/options.toml").write_text('[layout]\nmodule = ""\n', encoding="utf-8")
+        calls = []
+
+        def compile_html():
+            publish = project / "publish"
+            publish.mkdir(exist_ok=True)
+            data = '<html><header class="page-header">Header</header>Body<footer class="page-footer">Footer</footer></html>'
+            (publish / "index.html").write_text(data, encoding="utf-8")
+            return 0, 1, 1, 0
+
+        def run(arguments, success=True, diagnostic=None):
+            calls.append((list(arguments), success, diagnostic))
+            if arguments == ["clean"]:
+                shutil.rmtree(project / ".cache")
+                shutil.rmtree(project / "publish")
+                return "Cleaned"
+            self.assertEqual(arguments[0], "pdf")
+            for option, expected in (("--font-profile", "none"), ("--front-cover", "lib/release-front.typ"),
+                                     ("--back-cover", "lib/release-back.typ")):
+                self.assertEqual(arguments[arguments.index(option) + 1], expected)
+            self.assertIn("--offline", arguments)
+            self.assertEqual(arguments.count("--appendix"), 5)
+            self.assertIn("Release PDF forest", (project / "root/lib/release-pdf.typ").read_text())
+            self.assertIn("release-native-header", (project / "root/lib/release-pdf.typ").read_text())
+            appendix = (project / "root/lib/release-appendix.typ").read_bytes()
+            layout = (project / "root/lib/release-layout.typ").read_bytes()
+            if not success:
+                self.assertIn(b"Unsafe contextual heading", appendix)
+                self.assertEqual(diagnostic, "cannot be normalized safely")
+                return ""
+            output = project / "book/site.pdf"
+            cache = project / ".cache/pdf"
+            cache.mkdir(parents=True, exist_ok=True)
+            output.parent.mkdir(exist_ok=True)
+            data = b"%PDF-1.7\n" + (appendix + layout) * 5
+            artifact = cache / "artifact.pdf"
+            if artifact.exists() and artifact.read_bytes() == data and output.read_bytes() == data:
+                return "PDF unchanged (cached)."
+            artifact.write_bytes(data)
+            output.write_bytes(data)
+            return "PDF written (compiled)."
+
+        stages = []
+        result = smoke_binary.smoke_pdf(project, run, compile_html, stages)
+        self.assertEqual(set(stages), {stage for stage in draft.REQUIRED_STAGES if stage.startswith("PDF")})
+        self.assertGreater(result["size"], 1024)
+        self.assertRegex(result["sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(sum(not success for _, success, _ in calls), 1)
+        self.assertTrue((project / "book/site.pdf").exists())
 
     def test_download_checks_draft_before_network_download(self):
         with mock.patch.object(draft, "find_release", return_value={"draft": False, "target_commitish": SHA}), mock.patch.object(draft, "gh") as gh:

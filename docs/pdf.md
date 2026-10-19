@@ -403,4 +403,9 @@ occurrence-local metadata/anchors, rich/native math, relative images, exact
 heading/counter behavior, deep nesting, ordered/standalone appendices, external
 links, templates, failure recovery, cache no-ops, clean-build equivalence, the
 initialized demo, and the CLI. CI runs it on the same platforms/Typst versions as
-the HTML compatibility suite.
+the HTML compatibility suite. The released/downloaded executable and Nix binary
+also run the [HTML/PDF release smoke harness](releasing.md): real demo books,
+ordered appendices, covers, shared/template furniture, no-ops, edits,
+last-good recovery, HTML isolation, and clean-build byte equivalence. Release
+validation requires PDF evidence on every native platform; a configured CI job
+without an observed green exact-revision run is still pending.

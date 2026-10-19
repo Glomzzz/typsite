@@ -40,13 +40,24 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: '1.89'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: Swatinem/rust-cache@v2
       - uses: typst-community/setup-typst@v4
         with:
           typst-version: '0.15.1'
       - run: cargo check --workspace --all-targets --locked
       - run: cargo test --workspace --all-targets --locked --no-fail-fast
-      - run: cargo test --test typst_latest --test typst_pdf --locked -- --ignored
+      - run: cargo test --test typst_latest --test typst_pdf --locked -- --ignored --test-threads=1
+      - run: cargo build --bin typsite --locked
+      - name: Smoke-test MSRV binary (HTML and PDF)
+        run: python scripts/smoke_binary.py --binary target/debug/typsite --report smoke-msrv.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-check-msrv
+          path: smoke-msrv.json
+          if-no-files-found: error
 
   test:
     strategy:
@@ -67,6 +78,9 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: Swatinem/rust-cache@v2
       - uses: typst-community/setup-typst@v4
         with:
@@ -75,7 +89,15 @@ jobs:
       - run: cargo test --workspace --all-targets --locked --no-fail-fast
       - run: cargo test --workspace --doc --locked
       - name: Real Typst compatibility (HTML helpers, complete demo, and native PDF books)
-        run: cargo test --test typst_latest --test typst_pdf --locked -- --ignored
+        run: cargo test --test typst_latest --test typst_pdf --locked -- --ignored --test-threads=1
+      - run: cargo build --bin typsite --locked
+      - name: Smoke-test native binary (HTML and PDF)
+        run: python scripts/smoke_binary.py --binary target/debug/typsite${{ runner.os == 'Windows' && '.exe' || '' }} --report smoke-native.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-check-${{ matrix.os }}-${{ matrix.typst }}
+          path: smoke-native.json
+          if-no-files-found: error
 
   nix:
     runs-on: ubuntu-latest
@@ -92,8 +114,13 @@ jobs:
         run: nix flake check --all-systems --no-build
       - name: Build documented Nix package
         run: nix build --no-link --print-out-paths .#default > nix-output.txt
-      - name: Smoke-test Nix binary
-        run: python scripts/smoke_binary.py --binary "$(tail -n 1 nix-output.txt)/bin/typsite"
+      - name: Smoke-test Nix binary (HTML and PDF)
+        run: python scripts/smoke_binary.py --binary "$(tail -n 1 nix-output.txt)/bin/typsite" --report smoke-nix.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-check-nix
+          path: smoke-nix.json
+          if-no-files-found: error
 
   required:
     if: ${{ always() }}

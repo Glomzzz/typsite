@@ -8,8 +8,11 @@ create a release, or publish one.
 ## Automated order
 
 1. `check.yml` runs formatting/strict Clippy, release-tool unit tests, Rust 1.89
-   all-target checking/tests with real Typst, Linux Typst 0.15.1 + rolling latest, Windows/macOS latest
-   real-Typst tests, and the documented Nix build plus binary smoke test. The
+   all-target checking/tests with real Typst, Linux Typst 0.15.1 + rolling latest,
+   Windows/macOS latest real-Typst tests, and the documented Nix build. Native,
+   MSRV, and Nix binaries all run the HTML **and PDF** smoke harness. Real-Typst
+   suites run serially to avoid transient inherited-lock contention while other
+   tests spawn subprocesses. The
    `required` job fails unless every dependency succeeded; skipped/cancelled jobs
    are not accepted as green.
 2. On pushes to `main`, `release.yml` calls that same reusable check workflow
@@ -27,10 +30,20 @@ create a release, or publish one.
    verifies SHA/version/checksum/size, then runs `init → compile → edit → compile`
    against real latest Typst. The smoke harness also verifies every demo page,
    RSS, no-op mtimes, embedded-page updates, truthful failure/last-good repair,
-   and incremental/clean equivalence. All package paths are temporary; release
-   tokens are removed from the executable's child environment.
+   and incremental/clean equivalence. It then compiles a native book with ordered
+   appendices, both covers, template and shared page furniture, native equations,
+   images, and footnotes. Typst-side assertions check the document structure,
+   cover positions, numbering, and header/footer counts without requiring PDF
+   extraction tools. The PDF stages verify byte/mtime no-ops, appendix/layout
+   edits, failed-build recovery, HTML ownership isolation, and clean-build byte
+   equivalence. All package paths are temporary; remote fonts are disabled and
+   `SOURCE_DATE_EPOCH` is fixed. Release tokens are removed from the executable's
+   child environment.
 6. The final `ready` job validates all smoke reports, redownloads/rechecks the
-   asset manifest and binary checksums, and marks the **draft** validated. A
+   asset manifest and binary checksums, and marks the **draft** validated.
+   HTML-only reports are rejected: every platform must report all five PDF
+   stages plus a nonempty PDF size and SHA-256. PDF hashes need not match across
+   platforms; clean equivalence is checked within each runner. A
    failure leaves it unpublished; a public-release rerun is refused before
    mutation. Publication must not occur concurrently with validation; the
    script rechecks draft status but is not a server-side atomic release lock.
@@ -50,7 +63,7 @@ secrets to a workflow running untrusted pull-request code.
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --all-targets --locked
-cargo test --test typst_latest --locked -- --ignored
+cargo test --test typst_latest --test typst_pdf --locked -- --ignored --test-threads=1
 python3 -m unittest discover -s scripts/tests -v
 nix build --no-link --print-out-paths .#default
 cargo build --release --locked
@@ -73,7 +86,8 @@ never changes the invoking process cwd/HOME or normal installed packages.
 ## Candidate evidence
 
 Record the candidate SHA, Check workflow URL/conclusion, Release workflow URL,
-Nix result, per-platform smoke-report artifacts, and exact binary checksums.
+Nix result, per-platform smoke-report artifacts (including `pdf.size` and
+`pdf.sha256`), and exact binary checksums.
 Changing code, lockfiles, resources, or workflow definitions creates a new
 candidate: rerun the full matrix. A run configured in YAML but not observed
 passing is **pending**, not validation.
