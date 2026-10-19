@@ -488,6 +488,117 @@ fn native_link_styles_preserve_destinations_and_allow_local_external_customizati
 
 #[test]
 #[ignore = "requires latest stable Typst; CI runs this explicitly"]
+fn template_headers_survive_resets_and_compose_with_shared_layout() {
+    for shared in [false, true] {
+        let assertions = format!(
+            r#"
+#context {{
+  let values(key) = query(metadata).filter(it => type(it.value) == dictionary and key in it.value)
+  let front = query(metadata).find(it => it.value == "front")
+  let back = query(metadata).find(it => it.value == "back")
+  let pages = range(front.location().page() + 1, back.location().page())
+  let inherited = values("native-header")
+  assert(inherited.map(it => it.location().page()) == pages, message: "Template header preserved on every non-cover page")
+  assert(inherited.map(it => it.value.native-header) == range(1, pages.len() + 1), message: "Template context evaluated on its page")
+  let shared = values("shared-header")
+  assert(shared.len() == {}, message: "Shared header composes with native header")
+  let native-footer = values("native-footer")
+  assert(native-footer.len() == {}, message: "Template footer preserved without a shared override")
+  let notes = query(footnote).filter(it => type(it.body) == content)
+  assert(notes.map(it => counter(footnote).at(it.location())) == ((1,), (1,)), message: "Template headers preserve footnote resets")
+}}
+"#,
+            if shared { "pages.len()" } else { "0" },
+            if shared { "0" } else { "pages.len()" }
+        );
+        let (project, runner, output) = setup(&assertions);
+        project.source(
+            "index.typ",
+            &format!(
+                "{LIB}\n#title[Root]\nFirst#footnote[One].\n#pagebreak()\nSecond#footnote[Two]."
+            ),
+        );
+        project.source("lib/front.typ", "#metadata(\"front\") Front cover");
+        project.source("lib/back.typ", "#metadata(\"back\") Back cover");
+        project.source("lib/template.typ", r#"
+#let book-style(body) = {
+  set page(header: context [CUSTOM HEADER #counter(page).display() #metadata((native-header: counter(page).get().first()))],
+    footer: [CUSTOM FOOTER #metadata((native-footer: true))])
+  body
+}
+"#);
+        if shared {
+            project.source("lib/test-layout.typ", "#let page-header(info) = [SHARED HEADER #metadata((shared-header: true))]\n#let page-footer(info) = [SHARED FOOTER]");
+            let config = fs::read_to_string(project.config.join("options.toml"))
+                .unwrap()
+                .replace("module = \"\"", "module = \"lib/test-layout.typ\"");
+            project.configure("options.toml", &config);
+        }
+        let compiler = compiler(
+            &project,
+            runner,
+            PdfOptions {
+                template: Some("lib/template.typ".into()),
+                front_cover: Some("lib/front.typ".into()),
+                back_cover: Some("lib/back.typ".into()),
+                ..PdfOptions::default()
+            },
+            &output,
+        );
+        assert!(compiler.compile().unwrap().written);
+        assert!(!compiler.compile().unwrap().compiled);
+    }
+}
+
+#[test]
+#[ignore = "requires latest stable Typst; CI runs this explicitly"]
+fn automatic_top_page_numbers_survive_the_footnote_reset_header() {
+    let (project, runner, output) = setup(
+        r#"
+#context {
+  let pages = query(metadata).filter(it => type(it.value) == dictionary and "auto-number" in it.value)
+  assert(pages.map(it => it.value.auto-number) == range(1, counter(page).final().first() + 1), message: "Auto numbering evaluated once on each page")
+  assert(pages.all(it => it.value.total == counter(page).final().first()))
+  let notes = query(footnote).filter(it => type(it.body) == content)
+  assert(notes.map(it => counter(footnote).at(it.location())) == ((1,), (1,)))
+}
+"#,
+    );
+    project.source(
+        "index.typ",
+        &format!("{LIB}\n#title[Root]\nFirst#footnote[One].\n#pagebreak()\nSecond#footnote[Two]."),
+    );
+    project.source(
+        "lib/template.typ",
+        r#"
+#let book-style(body) = {
+  let page-number(n, ..rest) = {
+    let total = rest.pos().at(0, default: none)
+    [#n / #total #if total != none { metadata((auto-number: n, total: total)) }]
+  }
+  set page(header: auto, numbering: page-number, number-align: right + top)
+  body
+}
+"#,
+    );
+    assert!(
+        compiler(
+            &project,
+            runner,
+            PdfOptions {
+                template: Some("lib/template.typ".into()),
+                ..PdfOptions::default()
+            },
+            &output
+        )
+        .compile()
+        .unwrap()
+        .written
+    );
+}
+
+#[test]
+#[ignore = "requires latest stable Typst; CI runs this explicitly"]
 fn one_shared_layout_customizes_html_and_pdf_without_repeating_embed_furniture() {
     let (project, runner, output) = setup(
         r#"

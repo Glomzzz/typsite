@@ -372,7 +372,7 @@
 }
 
 // Exported by the package as pdf-book; normal authors keep using schema/embed.
-#let book(pages: (:), entry: "/index", appendices: (), title: "", defaults: (:), default-parent: none, urls: (:), front-cover: none, back-cover: none, page-header: none, page-footer: none) = {
+#let book(pages: (:), entry: "/index", appendices: (), title: "", defaults: (:), default-parent: none, urls: (:), front-cover: none, back-cover: none, page-header: none, page-footer: none) = context {
   assert(enabled, message: "Use typsite pdf to prepare a native book")
   let backend = (render: render, decorate: decorate)
   let env = (pages: pages, defaults: defaults, default-parent: default-parent, urls: urls)
@@ -388,9 +388,27 @@
       else if articles.len() > 0 { articles.last().value.scope.source }
     render((target: "pdf", source: source, title: text(title), page: counter(page).get().first()))
   }
-  // Reset independently of custom furniture so headers cannot break per-page
-  // footnotes. Covers explicitly opt out of both furniture and page numbering.
-  let header = [#counter(footnote).update(0)#if page-header != none { furniture(page-header) }]
+  // Capture the template's style before adding the reset. Evaluate contextual
+  // header content/numbering on each page, not once at the book's call site.
+  let inherited-header = page.header
+  let inherited-numbering = page.numbering
+  let inherited-number-align = page.number-align
+  let header = [
+    #counter(footnote).update(0)
+    #context {
+      if inherited-header == auto {
+        // Replacing an auto header must preserve top-aligned page numbering.
+        // As with native Typst, explicit shared furniture takes precedence.
+        if page-header == none and inherited-numbering != none and inherited-number-align.y == top {
+          align(inherited-number-align.x, counter(page).display(inherited-numbering, both: true))
+        }
+      } else if inherited-header != none { inherited-header }
+      if page-header != none {
+        if inherited-header != auto and inherited-header != none and inherited-header != [] { parbreak() }
+        furniture(page-header)
+      }
+    }
+  ]
   if page-footer != none {
     set page(header: header, footer: furniture(page-footer))
     book-body(backend, env, entry, appendices, front-cover, back-cover)

@@ -260,8 +260,14 @@ footers. The metadata names `__typsite-page-header` and
 `__typsite-page-footer` are reserved.
 
 PDF uses the functions on every contents/body/appendix page, never on covers.
-Its header always preserves the footnote reset. A custom footer replaces the
-default page-number footer, so include `info.page` if you want numbers. Page
+Its header always preserves the footnote reset and the native template header.
+If both a template header and shared header are present, the template header
+comes first, followed by the shared header on a new paragraph. Contextual
+headers are evaluated on their own page. With no explicit header, top-aligned
+automatic page numbering is preserved too. An explicit shared header takes the
+place of automatic header numbering, matching Typst's explicit-header behavior.
+A shared footer replaces the template/default footer, so include `info.page` if
+you want numbers; without a shared footer the template footer is unchanged. Page
 margins, header/footer ascent/descent, typography, and alignment remain normal
 Typst settings in `--template lib/pdf.typ`. Layout edits invalidate both
 formats; failed layout evaluation preserves their last successful outputs.
