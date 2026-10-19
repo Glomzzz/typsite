@@ -1,15 +1,9 @@
 // Site lib, feel free to customize your own site
 #import "html.typ" as html
+#import "links.typ" as links
 
-
-#let link-local-style(content) = context {
-  if target() != "html" { return content }
-  html.span(class: "link local", content)
-}
-#let link-external-style(content) = context {
-  if target() != "html" { return content }
-  html.span(class: "link external", content)
-}
+#let link-local-style(content) = links.local-style(content)
+#let link-external-style(content) = links.external-style(content)
 
 #let href(url, content) = html.a(href: str(url), title: str(url), content)
 

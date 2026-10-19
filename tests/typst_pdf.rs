@@ -424,6 +424,70 @@ fn pdf_cli_does_not_touch_html_outputs_and_is_a_true_noop() {
 
 #[test]
 #[ignore = "requires latest stable Typst; CI runs this explicitly"]
+fn native_link_styles_preserve_destinations_and_allow_local_external_customization() {
+    let (project, runner, output) = setup(
+        r#"
+#context {
+  assert(query(metadata).filter(it => it.value == "custom-local").len() > 0)
+  assert(query(metadata).filter(it => it.value == "custom-external").len() > 0)
+  assert(query(link).any(it => it.dest == "https://example.org/"), message: "External URL preserved")
+  assert(query(link).any(it => it.dest == "mailto:hello@example.org"), message: "Non-HTTP external URI preserved")
+}
+"#,
+    );
+    let links = fs::read_to_string(project.input.join("lib/links.typ"))
+        .unwrap()
+        .replace(
+            "else { text(fill: local-color",
+            "else { metadata(\"custom-local\"); text(fill: local-color",
+        )
+        .replace(
+            "else { text(fill: external-color",
+            "else { metadata(\"custom-external\"); text(fill: external-color",
+        );
+    project.source("lib/links.typ", &links);
+    project.source(
+        "index.typ",
+        &format!(
+            r#"{LIB}
+#import "@local/typsite:0.1.0": anchor, goto
+#title[Links]
+#anchor("local") #goto("local")[Local anchor].
+#link("https://example.org/")[External site] and #link("mailto:hello@example.org")[Email].
+#cite-title("child.typ")
+= #embed("child.typ")
+"#
+        ),
+    );
+    project.source("child.typ", &format!("{LIB}\n#title[Child]\nContent."));
+    let pdf = compiler(
+        &project,
+        runner,
+        PdfOptions {
+            template: Some("lib/pdf.typ".into()),
+            ..PdfOptions::default()
+        },
+        &output,
+    );
+    assert!(pdf.compile().unwrap().written);
+    assert!(!pdf.compile().unwrap().compiled);
+    let html = project
+        .compiler(Arc::new(
+            CommandTypst::new(std::env::var_os("TYPST").unwrap_or_else(|| "typst".into()))
+                .with_package_path(project.root.join("package namespace")),
+        ))
+        .compile()
+        .unwrap();
+    assert!(html.is_success(), "{:?}", html.diagnostics);
+    let index = fs::read_to_string(project.output.join("index.html")).unwrap();
+    assert!(
+        index.contains("class=\"link local\"")
+            && index.matches("class=\"link external\"").count() >= 2
+    );
+}
+
+#[test]
+#[ignore = "requires latest stable Typst; CI runs this explicitly"]
 fn one_shared_layout_customizes_html_and_pdf_without_repeating_embed_furniture() {
     let (project, runner, output) = setup(
         r#"

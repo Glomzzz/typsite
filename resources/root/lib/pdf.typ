@@ -1,5 +1,6 @@
 // Optional native book style. Use: typsite pdf --template lib/pdf.typ
 // Keep this module inside the Typst source root; .typsite is not that root.
+#import "links.typ": style-links
 #let book-style(body) = {
   set page(paper: "a4", margin: (x: 22mm, y: 20mm), numbering: "1")
   let chinese = sys.inputs.at("typsite-font-family", default: "")
@@ -8,6 +9,7 @@
   set par(justify: true, leading: 0.7em)
   set heading(numbering: "1.1")
   show raw: set text(font: if chinese == "" { ("DejaVu Sans Mono",) } else { ("DejaVu Sans Mono", chinese) })
+  show: style-links
   show strong: set text(weight: 500)
   // Local headings inherit source text settings; set explicit point sizes so
   // CJK fallback fonts and nested articles cannot inflate the hierarchy.

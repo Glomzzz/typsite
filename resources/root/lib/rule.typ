@@ -186,7 +186,8 @@
     let dest-type = type(dest)
     // Common link
     if dest-type == str {
-      if dest.starts-with("mailto:") or dest.starts-with("http") {
+      import "links.typ": is-external
+      if is-external(dest) {
         link-external(dest, it.body)
       } else {
         link-local(dest, it.body)
